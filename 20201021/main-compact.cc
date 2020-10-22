@@ -78,10 +78,10 @@ std::vector<std::vector<bool>> ParseFASTQ(const std::filesystem::path& path) {
   return ParseFASTQ(is);
 }
 
-template <int K>
+template <int K, int8_t CUTOFF = 2>
 std::vector<std::bitset<K * 2>> FindKmers(
     const std::vector<std::vector<bool>>& reads) {
-  google::sparse_hash_set<std::bitset<K * 2>> kmers;
+  google::sparse_hash_map<std::bitset<K * 2>, int> kmers;
 
   {
     std::atomic_int64_t count = 0;
@@ -111,15 +111,26 @@ std::vector<std::bitset<K * 2>> FindKmers(
     {
       std::unique_lock lck{mu};
 
-      for (const auto& kmer : kmers_buf) kmers.insert(kmer);
+      for (const auto& kmer : kmers_buf) kmers[kmer] += 1;
     }
   }
 
   std::vector<std::bitset<K * 2>> v;
   v.reserve(kmers.size());
-  for (const auto& kmer : kmers) {
+  int cut = 0;
+
+  for (const auto& p : kmers) {
+    const auto& [kmer, count] = p;
+    if (count < CUTOFF) {
+      cut++;
+      continue;
+    }
     v.push_back(kmer);
   }
+
+  std::cerr << "cut = " << cut << std::endl;
+
+  v.shrink_to_fit();
 
   return v;
 }
@@ -257,7 +268,7 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
 }
 
 int main(int argc, char* argv[]) {
-  const int K = 21;
+  const int K = 31;
 
   std::vector<std::vector<bool>> reads;
 
