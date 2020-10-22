@@ -9,12 +9,12 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
-#include <google/dense_hash_map>
-#include <google/sparse_hash_map>
-#include <google/sparse_hash_set>
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/sparse_hash_map>
+#include <sparsehash/sparse_hash_set>
 #include <sstream>
 #include <stack>
 #include <string>
