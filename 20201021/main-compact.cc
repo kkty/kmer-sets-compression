@@ -1,9 +1,12 @@
+#include <glog/logging.h>
 #include <omp.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <bitset>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <google/dense_hash_map>
@@ -12,28 +15,46 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <sstream>
 #include <stack>
 #include <string>
 #include <vector>
 
 std::vector<std::vector<bool>> ParseFASTQ(std::istream& is) {
-  std::array<std::string, 4> lines;
+  std::array<std::string, 4> buf;
 
-  auto read_lines = [&]() {
+  // Reads 4 lines from "is" and pushes to "buf".
+  auto consume = [&is, &buf]() {
     for (int i = 0; i < 4; i++) {
-      if (!std::getline(is, lines[i])) return false;
+      if (!std::getline(is, buf[i])) return false;
     }
+
     return true;
   };
 
-  std::vector<std::vector<bool>> reads;
+  std::vector<std::string> reads_s;
+  while (consume() && buf[0].length() && buf[0][0] == '@') {
+    reads_s.push_back(buf[1]);
+  }
 
-  int skipped = 0;
+  const int size = reads_s.size();
 
-  while (read_lines() && lines[0].length() && lines[0][0] == '@') {
-    std::string read_s = lines[1];
-    std::vector<bool> read_b;
-    read_b.reserve(read_s.length() * 2);
+  LOG(INFO) << "size = " << size;
+
+  std::vector<std::vector<bool>> reads_b(size);
+
+  std::atomic_int count_a = 0;
+  std::atomic_int count_c = 0;
+  std::atomic_int count_g = 0;
+  std::atomic_int count_t = 0;
+  std::atomic_int count_unknown = 0;
+
+#pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    const std::string& read_s = reads_s[i];
+    std::vector<bool>& read_b = reads_b[i];
+
+    read_b.reserve(read_s.length() * 3);
 
     bool skip = false;
 
@@ -42,35 +63,44 @@ std::vector<std::vector<bool>> ParseFASTQ(std::istream& is) {
         case 'A':
           read_b.push_back(false);
           read_b.push_back(false);
+          read_b.push_back(false);
+          count_a++;
           break;
         case 'C':
           read_b.push_back(false);
+          read_b.push_back(false);
           read_b.push_back(true);
+          count_c++;
           break;
         case 'G':
+          read_b.push_back(false);
           read_b.push_back(true);
           read_b.push_back(false);
+          count_g++;
           break;
         case 'T':
+          read_b.push_back(false);
           read_b.push_back(true);
           read_b.push_back(true);
+          count_t++;
           break;
         default:
-          skip = true;
+          // Unknown character.
+          read_b.push_back(true);
+          read_b.push_back(false);
+          read_b.push_back(false);
+          count_unknown++;
       }
     }
-
-    if (skip) {
-      skipped += 1;
-      continue;
-    }
-
-    reads.push_back(read_b);
   }
 
-  std::cerr << "skipped = " << skipped << std::endl;
+  LOG(INFO) << "count_a = " << count_a;
+  LOG(INFO) << "count_c = " << count_c;
+  LOG(INFO) << "count_g = " << count_g;
+  LOG(INFO) << "count_t = " << count_t;
+  LOG(INFO) << "count_unknown = " << count_unknown;
 
-  return reads;
+  return reads_b;
 }
 
 std::vector<std::vector<bool>> ParseFASTQ(const std::filesystem::path& path) {
@@ -84,25 +114,47 @@ std::vector<std::bitset<K * 2>> FindKmers(
   google::sparse_hash_map<std::bitset<K * 2>, int> kmers;
 
   {
+    // Number of kmers, including duplicates;
     std::atomic_int64_t count = 0;
+
 #pragma omp parallel for
     for (const auto& read : reads) {
-      count += read.size() / 2 - K + 1;
+      count += read.size() / 3 - K + 1;
     }
+
+    // Rough estimation.
     kmers.resize(count / 10);
   }
 
   std::mutex mu;
 
+  std::atomic_uint skipped = 0;
+
 #pragma omp parallel for
   for (const auto& read : reads) {
     std::vector<std::bitset<K * 2>> kmers_buf;
 
-    for (int i = 0; i + K <= read.size() / 2; i++) {
+    for (int i = 0; i + K <= read.size() / 3; i++) {
       std::bitset<K * 2> kmer;
 
-      for (int j = 0; j < K * 2; j++) {
-        kmer.set(j, read[i * 2 + j]);
+      bool has_unkown = false;
+      for (int j = 0; j < K; j++) {
+        // Looking at the following.
+        // - kmer[j * 2], kmer[j * 2 + 1]
+        // - read[(i + j) * 3], read[(i + j) * 3 + 1], read[(i + j) * 3 + 2]
+
+        if (read[(i + j) * 3]) {
+          has_unkown = true;
+          break;
+        }
+
+        kmer.set(j * 2, read[(i + j) * 3 + 1]);
+        kmer.set(j * 2 + 1, read[(i + j) * 3 + 2]);
+      }
+
+      if (has_unkown) {
+        skipped += 1;
+        continue;
       }
 
       kmers_buf.push_back(kmer);
@@ -114,6 +166,8 @@ std::vector<std::bitset<K * 2>> FindKmers(
       for (const auto& kmer : kmers_buf) kmers[kmer] += 1;
     }
   }
+
+  LOG(INFO) << "skipped = " << skipped;
 
   std::vector<std::bitset<K * 2>> v;
   v.reserve(kmers.size());
@@ -128,7 +182,7 @@ std::vector<std::bitset<K * 2>> FindKmers(
     v.push_back(kmer);
   }
 
-  std::cerr << "cut = " << cut << std::endl;
+  LOG(INFO) << "cut = " << cut;
 
   v.shrink_to_fit();
 
@@ -164,7 +218,7 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
     nodes[kmer] = new Node;
   }
 
-  std::cerr << "adding edges" << std::endl;
+  LOG(INFO) << "adding edges";
 
   std::atomic_int64_t edges = 0;
 
@@ -215,11 +269,11 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
     }
   }
 
-  std::cerr << "added edges" << std::endl;
+  LOG(INFO) << "added edges";
 
-  std::cerr << "edges = " << edges << std::endl;
+  LOG(INFO) << "edges = " << edges;
 
-  std::cerr << "calculating index" << std::endl;
+  LOG(INFO) << "calculating index";
 
   int64_t next_index = 0;
 
@@ -243,9 +297,9 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
     }
   }
 
-  std::cerr << "calculated index" << std::endl;
+  LOG(INFO) << "calculated index";
 
-  std::cerr << "calculating distances" << std::endl;
+  LOG(INFO) << "calculating distances";
 
   google::dense_hash_map<int64_t, int64_t> distances;
   distances.set_empty_key(-1);
@@ -262,12 +316,15 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
     }
   }
 
-  std::cerr << "calculated distances" << std::endl;
+  LOG(INFO) << "calculated distances";
 
   return Graph<K>{std::move(nodes), std::move(distances), edges};
 }
 
 int main(int argc, char* argv[]) {
+  google::InitGoogleLogging(argv[0]);
+  FLAGS_logtostderr = 1;
+
   const int K = 31;
 
   std::vector<std::vector<bool>> reads;
@@ -278,18 +335,18 @@ int main(int argc, char* argv[]) {
     std::filesystem::path path{argv[1]};
     reads = ParseFASTQ(path);
   } else {
-    std::cerr << "invalid arguments" << std::endl;
+    LOG(INFO) << "invalid arguments";
     exit(1);
   }
 
-  std::cerr << "reads.size() = " << reads.size() << std::endl;
+  LOG(INFO) << "reads.size() = " << reads.size();
 
   auto kmers = FindKmers<K>(reads);
-  std::cerr << "kmers.size() = " << kmers.size() << std::endl;
+  LOG(INFO) << "kmers.size() = " << kmers.size();
 
-  std::cerr << "constructing the graph" << std ::endl;
+  LOG(INFO) << "constructing the graph";
   auto graph = ConstructGraph<K>(kmers);
-  std::cerr << "constructed the graph" << std ::endl;
+  LOG(INFO) << "constructed the graph";
 
   {
     auto& distances = graph.distances;
