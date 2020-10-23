@@ -7,7 +7,6 @@
 #include <bitset>
 #include <chrono>
 #include <ctime>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -103,7 +102,7 @@ std::vector<std::vector<bool>> ParseFASTQ(std::istream& is) {
   return reads_b;
 }
 
-std::vector<std::vector<bool>> ParseFASTQ(const std::filesystem::path& path) {
+std::vector<std::vector<bool>> ParseFASTQ(const std::string& path) {
   std::ifstream is{path};
   return ParseFASTQ(is);
 }
@@ -332,7 +331,7 @@ int main(int argc, char* argv[]) {
   if (argc == 1) {
     reads = ParseFASTQ(std::cin);
   } else if (argc == 2) {
-    std::filesystem::path path{argv[1]};
+    std::string path{argv[1]};
     reads = ParseFASTQ(path);
   } else {
     LOG(INFO) << "invalid arguments";
