@@ -1,0 +1,12 @@
+[submodule "extern/glog"]
+	path = extern/glog
+	url = https://github.com/google/glog.git
+[submodule "extern/mimalloc"]
+	path = extern/mimalloc
+	url = https://github.com/microsoft/mimalloc
+[submodule "extern/gflags"]
+	path = extern/gflags
+	url = https://github.com/gflags/gflags.git
+[submodule "extern/sparsehash"]
+	path = extern/sparsehash
+	url = https://github.com/sparsehash/sparsehash-c11.git
