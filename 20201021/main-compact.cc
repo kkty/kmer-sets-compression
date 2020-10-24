@@ -322,6 +322,7 @@ Graph<K> ConstructGraph(const std::vector<std::bitset<K * 2>>& kmers) {
 
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
+  google::InstallFailureSignalHandler();
   FLAGS_logtostderr = 1;
 
   const int K = 31;
