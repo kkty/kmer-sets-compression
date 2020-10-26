@@ -16,6 +16,33 @@
 #include "omp.h"
 #include "spdlog/spdlog.h"
 
+template <int K = 31>
+std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
+  std::bitset<K * 2> kmer_b;
+
+  for (int j = 0; j < K; j++) {
+    switch (kmer_s[j]) {
+      case 'A':
+        break;
+      case 'C':
+        kmer_b.set(j * 2);
+        break;
+      case 'G':
+        kmer_b.set(j * 2 + 1);
+        break;
+      case 'T':
+        kmer_b.set(j * 2);
+        kmer_b.set(j * 2 + 1);
+        break;
+      default:
+        spdlog::error("unknown character: {}", kmer_s[j]);
+        std::exit(1);
+    }
+  }
+
+  return kmer_b;
+}
+
 // Use (1 << B) buckets internally.
 template <int K = 31, int B = 6>
 class KmerSet {
@@ -61,27 +88,7 @@ class KmerSet {
       for (const auto& fragment : fragments) {
         for (int i = 0; i + K <= fragment.length(); i++) {
           const std::string kmer_s = fragment.substr(i, K);
-          std::bitset<K * 2> kmer_b;
-
-          for (int j = 0; j < K; j++) {
-            switch (kmer_s[j]) {
-              case 'A':
-                break;
-              case 'C':
-                kmer_b.set(j * 2);
-                break;
-              case 'G':
-                kmer_b.set(j * 2 + 1);
-                break;
-              case 'T':
-                kmer_b.set(j * 2);
-                kmer_b.set(j * 2 + 1);
-                break;
-              default:
-                spdlog::error("unknown character: {}", kmer_s[j]);
-                exit(1);
-            }
-          }
+          std::bitset<K * 2> kmer_b = GetCompactKmer<K>(kmer_s);
 
           int bucket;
           std::bitset<K * 2 - B> key;
@@ -154,11 +161,6 @@ class KmerSet {
     return {bucket, key};
   }
 };
-
-std::string GetFormattedTime() {
-  absl::Time now = absl::Now();
-  return absl::FormatTime(now, absl::UTCTimeZone());
-}
 
 int main() {
   std::ios_base::sync_with_stdio(false);
