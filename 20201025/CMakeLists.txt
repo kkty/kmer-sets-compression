@@ -15,5 +15,4 @@ add_subdirectory(extern/spdlog)
 find_package(OpenMP REQUIRED)
 
 add_executable(main main.cc)
-target_link_libraries(main absl::strings absl::flat_hash_set mimalloc OpenMP::OpenMP_CXX spdlog)
-
+target_link_libraries(main absl::strings absl::flat_hash_set absl::flat_hash_map mimalloc OpenMP::OpenMP_CXX spdlog)
