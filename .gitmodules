@@ -10,3 +10,12 @@
 [submodule "extern/sparsehash"]
 	path = extern/sparsehash
 	url = https://github.com/sparsehash/sparsehash-c11.git
+[submodule "20201025/extern/abseil-cpp"]
+	path = 20201025/extern/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
+[submodule "20201025/extern/mimalloc"]
+	path = 20201025/extern/mimalloc
+	url = https://github.com/microsoft/mimalloc
+[submodule "20201025/extern/spdlog"]
+	path = 20201025/extern/spdlog
+	url = https://github.com/gabime/spdlog.git
