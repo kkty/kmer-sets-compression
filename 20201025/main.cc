@@ -187,7 +187,9 @@ class KmerSet {
   }
 };
 
+template <int K>
 struct SearchResult {
+  absl::flat_hash_map<std::bitset<K * 2>, int64_t> distances;
   int64_t reached_nodes;
   int64_t max_distance;
   double avg_distance;
@@ -195,8 +197,8 @@ struct SearchResult {
 
 // BFS from "start". "limit" is used to specify the search space.
 template <int K, int B>
-SearchResult Search(const KmerSet<K, B>& kmer_set,
-                    const std::bitset<K * 2>& start, const int limit) {
+SearchResult<K> Search(const KmerSet<K, B>& kmer_set,
+                       const std::bitset<K * 2>& start, const int limit) {
   if (!kmer_set.Contains(start)) {
     spdlog::error("node not found: {}", start.to_string());
     std::exit(1);
@@ -247,6 +249,7 @@ SearchResult Search(const KmerSet<K, B>& kmer_set,
   }
 
   return {
+      distances,
       distances.size(),
       max_distance,
       (double)sum_distance / distances.size(),
