@@ -14,10 +14,14 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include "absl/strings/str_split.h"
 #include "absl/time/time.h"
 #include "omp.h"
 #include "spdlog/spdlog.h"
+
+ABSL_FLAG(bool, debug, false, "enable debugging messages");
 
 template <int K>
 std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
@@ -400,8 +404,13 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   return {};
 }
 
-int main() {
-  // spdlog::set_level(spdlog::level::debug);
+int main(int argc, char** argv) {
+  absl::ParseCommandLine(argc, argv);
+
+  if (absl::GetFlag(FLAGS_debug)) {
+    spdlog::set_level(spdlog::level::debug);
+  }
+
   std::srand(std::time(nullptr));
   std::ios_base::sync_with_stdio(false);
 
