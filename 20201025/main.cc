@@ -219,7 +219,7 @@ BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
   int64_t sum_distance = 0;
 
   while (!queue.empty()) {
-    const auto from = queue.front();
+    const std::bitset<K* 2> from = queue.front();
     queue.pop();
 
     for (const char c : std::vector<char>{'A', 'C', 'G', 'T'}) {
@@ -324,35 +324,31 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   // g(n) gives an approximate of distance(start, n).
   const auto g = [&](const std::bitset<K * 2>& n) { return f[n] - h(n); };
 
-  absl::flat_hash_set<std::bitset<K * 2>> open;
+  const auto cmp = [&](const std::bitset<K * 2>& lhs,
+                       const std::bitset<K * 2>& rhs) {
+    return f[lhs] > f[rhs];
+  };
+
+  std::priority_queue<std::bitset<K * 2>, std::vector<std::bitset<K * 2>>,
+                      decltype(cmp)>
+      open(cmp);
+
   absl::flat_hash_set<std::bitset<K * 2>> close;
 
   // This will be used to re-construct the path from "start" to "goal".
   absl::flat_hash_map<std::bitset<K * 2>, std::bitset<K * 2>> parents;
 
   f[start] = h(start);
-  open.insert(start);
+  open.emplace(start);
 
   while (!open.empty()) {
     spdlog::debug("open.size() = {}", open.size());
     spdlog::debug("close.size() = {}", close.size());
 
-    const std::bitset<K* 2> n = [&] {
-      std::vector<std::bitset<K * 2>> v;
-      v.reserve(open.size());
-
-      for (const auto& n : open) {
-        v.push_back(n);
-      }
-
-      std::sort(v.begin(), v.end(),
-                [&](const std::bitset<K * 2>& lhs,
-                    const std::bitset<K * 2>& rhs) { return f[lhs] < f[rhs]; });
-      return v.front();
-    }();
+    const std::bitset<K* 2> n = open.top();
+    open.pop();
 
     spdlog::debug("n = {}", n.to_string());
-    open.erase(n);
 
     if (goal == n) {
       // Re-constrcut the path.
@@ -366,8 +362,6 @@ std::optional<AStarSearchResult<K>> AStarSearch(
       spdlog::info("path.size() = {}", path.size());
       return {{path, visited_nodes}};
     }
-
-    close.insert(n);
 
     for (const char c : std::vector<char>{'A', 'C', 'G', 'T'}) {
       std::bitset<K* 2> to = n << 2;
@@ -389,27 +383,14 @@ std::optional<AStarSearchResult<K>> AStarSearch(
       if (kmer_set.Contains(to)) {
         const int new_f = g(n) + 1 + h(to);
 
-        const bool in_open = open.find(to) != open.end();
-        const bool in_close = close.find(to) != close.end();
+        spdlog::debug("to = {}", to.to_string());
+        spdlog::debug("new_f = {}", new_f);
 
-        if (!in_open && !in_close) {
+        const auto it = f.find(to);
+        if (it == f.end() || new_f < it->second) {
           f[to] = new_f;
-          open.insert(to);
+          open.push(to);
           parents[to] = n;
-        } else if (in_open) {
-          if (new_f < f[to]) {
-            open.erase(to);
-            f[to] = new_f;
-            open.insert(to);
-            parents[to] = n;
-          }
-        } else if (in_close) {
-          if (new_f < f[to]) {
-            close.erase(to);
-            f[to] = new_f;
-            open.insert(to);
-            parents[to] = n;
-          }
         }
       }
     }
@@ -420,12 +401,12 @@ std::optional<AStarSearchResult<K>> AStarSearch(
 }
 
 int main() {
+  // spdlog::set_level(spdlog::level::debug);
   std::srand(std::time(nullptr));
   std::ios_base::sync_with_stdio(false);
 
   const int K = 31;
   const int B = 6;
-  const int L = 5;
 
   spdlog::info("constructing kmer_set");
   KmerSet<K, B> kmer_set(std::cin, 100'000'000, 500'000'000);
@@ -481,7 +462,7 @@ int main() {
   spdlog::info("starting A* search from {} to {}", start.to_string(),
                goal.to_string());
 
-  const auto a_star_search_result = AStarSearch<K, B, 3>(kmer_set, start, goal);
+  const auto a_star_search_result = AStarSearch<K, B, 5>(kmer_set, start, goal);
 
   if (!a_star_search_result) {
     spdlog::error("A* search failed");
