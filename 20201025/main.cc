@@ -12,11 +12,12 @@
 #include <thread>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_split.h"
+#include "absl/time/time.h"
 #include "omp.h"
 #include "spdlog/spdlog.h"
-#include "tsl/robin_map.h"
-#include "tsl/robin_set.h"
 
 template <int K>
 std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
@@ -176,7 +177,7 @@ class KmerSet {
   }
 
  private:
-  std::array<tsl::robin_set<std::bitset<K * 2 - B>>, 1 << B> buckets_;
+  std::array<absl::flat_hash_set<std::bitset<K * 2 - B>>, 1 << B> buckets_;
 
   static std::pair<int, std::bitset<K * 2 - B>> GetBucketAndKey(
       const std::bitset<K * 2>& kmer) {
@@ -189,7 +190,7 @@ class KmerSet {
 
 template <int K>
 struct BFSResult {
-  tsl::robin_map<std::bitset<K * 2>, int64_t> distances;
+  absl::flat_hash_map<std::bitset<K * 2>, int64_t> distances;
   int64_t reached_nodes;
   int64_t max_distance;
   double avg_distance;
@@ -204,7 +205,7 @@ BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
     std::exit(1);
   }
 
-  tsl::robin_map<std::bitset<K * 2>, int64_t> distances;
+  absl::flat_hash_map<std::bitset<K * 2>, int64_t> distances;
   distances[start] = 0;
 
   const auto is_visited = [&](const std::bitset<K * 2>& node) {
@@ -278,7 +279,7 @@ std::optional<AStarSearchResult<K>> AStarSearch(
     // Returns the ith bit of "kmer" from left.
     const auto get = [&](int i) { return kmer[K * 2 - 1 - i]; };
 
-    tsl::robin_set<std::bitset<L * 2>> lmers;
+    absl::flat_hash_set<std::bitset<L * 2>> lmers;
 
     for (int i = 0; i < K - L + 1; i++) {
       std::bitset<L * 2> lmer;
@@ -318,7 +319,7 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   };
 
   // f[n] = h(n) + g(n).
-  tsl::robin_map<std::bitset<K * 2>, int> f;
+  absl::flat_hash_map<std::bitset<K * 2>, int> f;
 
   // g(n) gives an approximate of distance(start, n).
   const auto g = [&](const std::bitset<K * 2>& n) { return f[n] - h(n); };
@@ -332,10 +333,10 @@ std::optional<AStarSearchResult<K>> AStarSearch(
                       decltype(cmp)>
       open(cmp);
 
-  tsl::robin_set<std::bitset<K * 2>> close;
+  absl::flat_hash_set<std::bitset<K * 2>> close;
 
   // This will be used to re-construct the path from "start" to "goal".
-  tsl::robin_map<std::bitset<K * 2>, std::bitset<K * 2>> parents;
+  absl::flat_hash_map<std::bitset<K * 2>, std::bitset<K * 2>> parents;
 
   f[start] = h(start);
   open.emplace(start);
