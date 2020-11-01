@@ -22,6 +22,7 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
+ABSL_FLAG(bool, dump, false, "enable dumping kmers");
 
 template <int K>
 std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
@@ -482,20 +483,12 @@ int main(int argc, char** argv) {
     spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
   }
 
-  {
+  if (absl::GetFlag(FLAGS_dump)) {
     spdlog::info("dumping kmer_set");
     std::ofstream kmer_dump_file;
     kmer_dump_file.open("kmer_dump.txt");
     kmer_set.Dump(kmer_dump_file);
     kmer_dump_file.close();
     spdlog::info("dumped kmer_set");
-  }
-
-  {
-    spdlog::info("loading kmer_set_copy");
-    std::ifstream kmer_dump_file{"kmer_dump.txt"};
-    KmerSet<K, B> kmer_set_copy(kmer_dump_file);
-    spdlog::info("loaded kmer_set_copy");
-    spdlog::info("kmer_set_copy.Size() = {}", kmer_set_copy.Size());
   }
 }
