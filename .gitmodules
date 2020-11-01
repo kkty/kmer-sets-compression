@@ -19,6 +19,3 @@
 [submodule "20201025/extern/spdlog"]
 	path = 20201025/extern/spdlog
 	url = https://github.com/gabime/spdlog.git
-[submodule "20201025/extern/robin-map"]
-	path = 20201025/extern/robin-map
-	url = https://github.com/Tessil/robin-map
