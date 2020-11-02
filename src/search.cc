@@ -14,6 +14,7 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "kmer.h"
+#include "kmer_counter.h"
 #include "kmer_set.h"
 #include "spdlog/spdlog.h"
 
@@ -206,11 +207,20 @@ int main(int argc, char** argv) {
   const int K = 31;
   const int B = 6;
 
+  spdlog::info("constructing kmer_counter");
+
+  KmerCounter<K, B> kmer_counter;
+  kmer_counter.FromFASTQ(std::cin);
+
+  spdlog::info("constructed kmer_counter");
+  spdlog::info("kmer_counter.Size() = {}", kmer_counter.Size());
+
   spdlog::info("constructing kmer_set");
-  KmerSet<K, B> kmer_set;
-  kmer_set.FromFASTQ(std::cin);
+
+  const auto [kmer_set, cut_off_count] = kmer_counter.Set(2);
+
   spdlog::info("constructed kmer_set");
-  spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
+  spdlog::info("cut_off_count = {}", cut_off_count);
 
   const auto start = kmer_set.Sample();
 

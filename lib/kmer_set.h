@@ -5,90 +5,36 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <random>
+#include <iostream>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_split.h"
 #include "kmer.h"
 #include "range.h"
+
+// The first N bits are used to get the bucket ID.
+template <int K, int N>
+std::pair<int, std::bitset<K * 2 - N>> GetBucketAndKeyFromKmer(
+    const Kmer<K>& kmer) {
+  const auto& bits = kmer.Bits();
+  const int key_bits = K * 2 - N;
+  const int bucket = bits.to_ullong() >> key_bits;
+  const std::bitset<K * 2 - N> key{bits.to_ullong() % (1ull << key_bits)};
+  return {bucket, key};
+}
+
+template <int K, int N>
+Kmer<K> GetKmerFromBucketAndKey(int bucket, const std::bitset<K * 2 - N>& key) {
+  const int key_bits = K * 2 - N;
+  std::bitset<K * 2> bits{((uint64_t)bucket << key_bits) + key.to_ullong()};
+  return Kmer<K>{bits};
+}
 
 // Use (1 << B) buckets internally.
 template <int K, int B>
 class KmerSet {
  public:
-  // Find k-mers in a FASTQ file.
-  void FromFASTQ(std::istream& is) {
-    std::vector<std::string> lines;
-
-    {
-      std::array<std::string, 4> buf;
-
-      // Reads 4 lines from "is" and pushes to "buf".
-      auto consume = [&is, &buf]() {
-        for (int i = 0; i < 4; i++) {
-          if (!std::getline(is, buf[i])) return false;
-        }
-
-        return true;
-      };
-
-      while (consume() && buf[0].length() && buf[0][0] == '@') {
-        lines.push_back(std::move(buf[1]));
-      }
-    }
-
-    std::array<std::mutex, 1 << B> buckets_mutexes;
-
-    std::vector<std::thread> threads;
-
-    const auto ranges =
-        SplitRange(0, lines.size(), std::thread::hardware_concurrency());
-
-    for (const auto& range : ranges) {
-      threads.emplace_back([&, range] {
-        std::array<Bucket, 1 << B> buf;
-
-        for (int64_t i = range.first; i < range.second; i++) {
-          const auto& line = lines[i];
-          std::vector<std::string> fragments = absl::StrSplit(line, "N");
-          for (const auto& fragment : fragments) {
-            for (int i = 0; i + K <= (int)fragment.length(); i++) {
-              const Kmer<K> kmer(fragment.substr(i, K));
-
-              int bucket;
-              std::bitset<K * 2 - B> key;
-              std::tie(bucket, key) = GetBucketAndKey(kmer);
-
-              buf[bucket].insert(key);
-            }
-          }
-        }
-
-        std::vector<int> v;
-        v.reserve(1 << B);
-        for (int i = 0; i < (1 << B); i++) v.push_back(i);
-
-        {
-          std::default_random_engine e(range.first);
-          std::shuffle(v.begin(), v.end(), e);
-        }
-
-        for (int i : v) {
-          std::lock_guard _{buckets_mutexes[i]};
-          auto& bucket = buckets_[i];
-          bucket.reserve(bucket.size() + buf[i].size());
-          for (const auto& key : buf[i]) {
-            bucket.insert(key);
-          }
-        }
-      });
-    }
-
-    for (std::thread& thread : threads) {
-      thread.join();
-    }
-  }
-
   // Loads from dumped data.
   // Returns "true" if successful.
   bool Load(std::istream& is) {
@@ -134,13 +80,21 @@ class KmerSet {
     return sum;
   }
 
+  void Add(const Kmer<K>& kmer) {
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
+    buckets_[bucket].insert(key);
+  }
+
+  void Add(int bucket, const std::bitset<K * 2 - B>& key) {
+    buckets_[bucket].insert(key);
+  }
+
   bool Contains(const Kmer<K>& kmer) const {
-    int bucket;
-    std::bitset<K * 2 - B> key;
-    std::tie(bucket, key) = GetBucketAndKey(kmer);
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
 
+  // Fetches one k-mer randomly.
   Kmer<K> Sample() const {
     const int bucket = rand() % (1 << B);
     const int64_t n = rand() % buckets_[bucket].size();
@@ -150,29 +104,13 @@ class KmerSet {
 
     const auto key = *it;
 
-    std::bitset<K * 2> kmer;
-
-    for (int i = 0; i < K * 2 - B; i++) kmer.set(i, key[i]);
-    {
-      std::bitset<B> bucket_b(bucket);
-      for (int i = 0; i < B; i++) kmer.set(i + K * 2 - B, bucket_b[i]);
-    }
-
-    return Kmer<K>{kmer};
+    return GetKmerFromBucketAndKey<K, B>(bucket, key);
   }
 
  private:
   using Bucket = absl::flat_hash_set<std::bitset<K * 2 - B>>;
-  std::array<Bucket, 1 << B> buckets_;
 
-  static std::pair<int, std::bitset<K * 2 - B>> GetBucketAndKey(
-      const Kmer<K>& kmer) {
-    const auto& bits = kmer.Bits();
-    const int key_bits = K * 2 - B;
-    const int bucket = bits.to_ullong() >> key_bits;
-    const std::bitset<K * 2 - B> key{bits.to_ullong() % (1ull << key_bits)};
-    return {bucket, key};
-  }
+  std::array<Bucket, 1 << B> buckets_;
 };
 
 #endif
