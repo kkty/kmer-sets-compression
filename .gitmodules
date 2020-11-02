@@ -1,12 +1,12 @@
-[submodule "search/extern/abseil-cpp"]
-	path = search/extern/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
-[submodule "search/extern/mimalloc"]
-	path = search/extern/mimalloc
-	url = https://github.com/microsoft/mimalloc
-[submodule "search/extern/spdlog"]
-	path = search/extern/spdlog
-	url = https://github.com/gabime/spdlog.git
-[submodule "search/extern/googletest"]
-	path = search/extern/googletest
+[submodule "extern/abseil-cpp"]
+	path = extern/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp
+[submodule "extern/googletest"]
+	path = extern/googletest
 	url = https://github.com/google/googletest
+[submodule "extern/mimalloc"]
+	path = extern/mimalloc
+	url = https://github.com/microsoft/mimalloc
+[submodule "extern/spdlog"]
+	path = extern/spdlog
+	url = https://github.com/gabime/spdlog
