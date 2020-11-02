@@ -15,7 +15,7 @@ add_subdirectory(extern/googletest)
 find_package(OpenMP REQUIRED)
 
 add_executable(search src/search.cc)
-add_executable(test test/kmer.cc)
+add_executable(test test/kmer.cc test/kmer_set.cc)
 
 target_include_directories(search PUBLIC lib)
 target_include_directories(test PUBLIC lib)
