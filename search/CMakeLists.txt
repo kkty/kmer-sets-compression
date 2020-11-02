@@ -14,10 +14,10 @@ add_subdirectory(extern/googletest)
 
 find_package(OpenMP REQUIRED)
 
-add_executable(main main.cc)
-add_executable(test test.cc)
+add_executable(search src/search.cc)
+add_executable(test test/kmer.cc)
 
-target_include_directories(main PUBLIC lib)
+target_include_directories(search PUBLIC lib)
 target_include_directories(test PUBLIC lib)
 
 target_link_libraries(
@@ -34,7 +34,7 @@ target_link_libraries(
 )
 
 target_link_libraries(
-    main
+    search
     mimalloc
     spdlog
     absl::strings
