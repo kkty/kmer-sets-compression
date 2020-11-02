@@ -1,7 +1,4 @@
 #include <algorithm>
-#include <array>
-#include <atomic>
-#include <bitset>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -9,227 +6,23 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <random>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "absl/strings/str_split.h"
-#include "absl/time/time.h"
-#include "omp.h"
+#include "kmer.h"
+#include "kmer_set.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(bool, dump, false, "enable dumping kmers");
 
 template <int K>
-std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
-  std::bitset<K * 2> kmer_b;
-
-  // Sets the ith bit from the left.
-  const auto set = [&kmer_b](int i) { kmer_b.set(K * 2 - 1 - i); };
-
-  for (int j = 0; j < K; j++) {
-    switch (kmer_s[j]) {
-      case 'A':
-        break;
-      case 'C':
-        set(j * 2);
-        break;
-      case 'G':
-        set(j * 2 + 1);
-        break;
-      case 'T':
-        set(j * 2);
-        set(j * 2 + 1);
-        break;
-      default:
-        spdlog::error("unknown character: {}", kmer_s[j]);
-        std::exit(1);
-    }
-  }
-
-  return kmer_b;
-}
-
-std::vector<std::pair<int64_t, int64_t>> SplitRange(int64_t begin, int64_t end,
-                                                    int64_t n) {
-  int chunk_size = (end - begin + n - 1) / n;
-
-  std::vector<std::pair<int64_t, int64_t>> ranges;
-  for (int64_t i = 0; i < n; i++) {
-    ranges.emplace_back(i * chunk_size, std::min((i + 1) * chunk_size, end));
-  }
-
-  return ranges;
-}
-
-// Use (1 << B) buckets internally.
-template <int K, int B>
-class KmerSet {
- public:
-  // Find k-mers in a FASTQ file.
-  void FromFASTQ(std::istream& is) {
-    std::vector<std::string> lines;
-
-    {
-      std::array<std::string, 4> buf;
-
-      // Reads 4 lines from "is" and pushes to "buf".
-      auto consume = [&is, &buf]() {
-        for (int i = 0; i < 4; i++) {
-          if (!std::getline(is, buf[i])) return false;
-        }
-
-        return true;
-      };
-
-      while (consume() && buf[0].length() && buf[0][0] == '@') {
-        lines.push_back(std::move(buf[1]));
-      }
-    }
-
-    std::array<std::mutex, 1 << B> buckets_mutexes;
-
-    std::vector<std::thread> threads;
-
-    const auto ranges =
-        SplitRange(0, lines.size(), std::thread::hardware_concurrency());
-
-    for (const auto& range : ranges) {
-      threads.emplace_back([&, range] {
-        std::array<absl::flat_hash_set<std::bitset<K * 2 - B>>, 1 << B> buf;
-
-        for (int64_t i = range.first; i < range.second; i++) {
-          const auto& line = lines[i];
-          std::vector<std::string> fragments = absl::StrSplit(line, "N");
-          for (const auto& fragment : fragments) {
-            for (int i = 0; i + K <= (int)fragment.length(); i++) {
-              const std::string kmer_s = fragment.substr(i, K);
-              std::bitset<K* 2> kmer_b = GetCompactKmer<K>(kmer_s);
-
-              int bucket;
-              std::bitset<K * 2 - B> key;
-              std::tie(bucket, key) = GetBucketAndKey(kmer_b);
-
-              buf[bucket].insert(key);
-            }
-          }
-        }
-
-        std::vector<int> v;
-        v.reserve(1 << B);
-        for (int i = 0; i < (1 << B); i++) v.push_back(i);
-
-        {
-          std::default_random_engine e(range.first);
-          std::shuffle(v.begin(), v.end(), e);
-        }
-
-        for (int i : v) {
-          std::lock_guard _{buckets_mutexes[i]};
-          auto& bucket = buckets_[i];
-          bucket.reserve(bucket.size() + buf[i].size());
-          for (const auto& key : buf[i]) {
-            bucket.insert(key);
-          }
-        }
-      });
-    }
-
-    for (std::thread& thread : threads) {
-      thread.join();
-    }
-  }
-
-  // Loads from dumped data.
-  void Load(std::istream& is) {
-    int k, b;
-    is >> k >> b;
-    if (k != K || b != B) {
-      spdlog::error("incompatible data");
-      return;
-    }
-
-    for (int i = 0; i < (1 << B); i++) {
-      int64_t size;
-      is >> size;
-      buckets_[i].reserve(size);
-
-      for (int64_t j = 0; j < size; j++) {
-        std::string kmer_s;
-        is >> kmer_s;
-        std::bitset<K * 2 - B> kmer_b(kmer_s);
-        buckets_[i].insert(std::move(kmer_b));
-      }
-    }
-  }
-
-  void Dump(std::ostream& os) const {
-    os << K << ' ' << B << '\n';
-
-    for (int i = 0; i < (1 << B); i++) {
-      os << buckets_[i].size() << '\n';
-      for (const auto& key : buckets_[i]) {
-        os << key.to_string() << '\n';
-      }
-    }
-  }
-
-  int Size() const {
-    int sum = 0;
-    for (const auto& bucket : buckets_) {
-      sum += bucket.size();
-    }
-    return sum;
-  }
-
-  bool Contains(const std::bitset<K * 2>& kmer) const {
-    int bucket;
-    std::bitset<K * 2 - B> key;
-    std::tie(bucket, key) = GetBucketAndKey(kmer);
-    return buckets_[bucket].find(key) != buckets_[bucket].end();
-  }
-
-  std::bitset<K * 2> Sample() const {
-    const int bucket = rand() % (1 << B);
-    const int64_t n = rand() % buckets_[bucket].size();
-
-    auto it = buckets_[bucket].begin();
-    for (int64_t i = 0; i < n; i++) it++;
-
-    const auto key = *it;
-
-    std::bitset<K * 2> kmer;
-
-    for (int i = 0; i < K * 2 - B; i++) kmer.set(i, key[i]);
-    {
-      std::bitset<B> bucket_b(bucket);
-      for (int i = 0; i < B; i++) kmer.set(i + K * 2 - B, bucket_b[i]);
-    }
-
-    return kmer;
-  }
-
- private:
-  std::array<absl::flat_hash_set<std::bitset<K * 2 - B>>, 1 << B> buckets_;
-
-  static std::pair<int, std::bitset<K * 2 - B>> GetBucketAndKey(
-      const std::bitset<K * 2>& kmer) {
-    const int key_bits = K * 2 - B;
-    const int bucket = kmer.to_ullong() >> key_bits;
-    const std::bitset<K * 2 - B> key{kmer.to_ullong() % (1ull << key_bits)};
-    return {bucket, key};
-  }
-};
-
-template <int K>
 struct BFSResult {
-  absl::flat_hash_map<std::bitset<K * 2>, int64_t> distances;
+  absl::flat_hash_map<Kmer<K>, int64_t> distances;
   int64_t reached_nodes;
   int64_t max_distance;
   double avg_distance;
@@ -237,47 +30,31 @@ struct BFSResult {
 
 // BFS from "start". "limit" is used to specify the search space.
 template <int K, int B>
-BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
+BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const Kmer<K>& start,
                  const int limit) {
   if (!kmer_set.Contains(start)) {
-    spdlog::error("node not found: {}", start.to_string());
+    spdlog::error("node not found: {}", start.String());
     std::exit(1);
   }
 
-  absl::flat_hash_map<std::bitset<K * 2>, int64_t> distances;
+  absl::flat_hash_map<Kmer<K>, int64_t> distances;
   distances[start] = 0;
 
-  const auto is_visited = [&](const std::bitset<K * 2>& node) {
+  const auto is_visited = [&](const Kmer<K>& node) {
     return distances.find(node) != distances.end();
   };
 
-  std::queue<std::bitset<K * 2>> queue;
+  std::queue<Kmer<K>> queue;
   queue.push(start);
 
   int64_t max_distance = 0;
   int64_t sum_distance = 0;
 
   while (!queue.empty()) {
-    const std::bitset<K* 2> from = queue.front();
+    const Kmer<K> from = queue.front();
     queue.pop();
 
-    for (const char c : std::vector<char>{'A', 'C', 'G', 'T'}) {
-      std::bitset<K* 2> to = from << 2;
-
-      switch (c) {
-        case 'A':
-          break;
-        case 'C':
-          to.set(1);
-          break;
-        case 'G':
-          to.set(0);
-          break;
-        case 'T':
-          to.set(0);
-          to.set(1);
-      }
-
+    for (const auto& to : from.Nexts()) {
       if (kmer_set.Contains(to) && !is_visited(to) && distances[from] < limit) {
         distances[to] = distances[from] + 1;
         queue.push(to);
@@ -305,31 +82,25 @@ BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
 
 template <int K>
 struct AStarSearchResult {
-  std::vector<std::bitset<K * 2>> path;
+  std::vector<Kmer<K>> path;
   int visited_nodes;
 };
 
 // A* search from "start" to "goal".
 // Variable names, etc. follow https://ja.wikipedia.org/wiki/A*.
 template <int K, int B, int L>
-std::optional<AStarSearchResult<K>> AStarSearch(
-    const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
-    const std::bitset<K * 2>& goal) {
+std::optional<AStarSearchResult<K>> AStarSearch(const KmerSet<K, B>& kmer_set,
+                                                const Kmer<K>& start,
+                                                const Kmer<K>& goal) {
   // Returns the set of l-mers present in "kmer".
-  const auto get_lmers = [](const std::bitset<K * 2>& kmer) {
-    // Returns the ith bit of "kmer" from left.
-    const auto get = [&](int i) { return kmer[K * 2 - 1 - i]; };
-
-    absl::flat_hash_set<std::bitset<L * 2>> lmers;
+  const auto get_lmers = [](const Kmer<K>& kmer) {
+    absl::flat_hash_set<Kmer<L>> lmers;
 
     for (int i = 0; i < K - L + 1; i++) {
-      std::bitset<L * 2> lmer;
+      Kmer<L> lmer;
 
-      // Sets the ith bit of "lmer" from left.
-      const auto set = [&](int i, bool v) { lmer[L * 2 - 1 - i] = v; };
-
-      for (int j = 0; j < L * 2; j++) {
-        set(j, get(i * 2 + j));
+      for (int j = 0; j < L; j++) {
+        lmer.Set(j, kmer.Get(i + j));
       }
 
       lmers.insert(lmer);
@@ -343,7 +114,7 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   const auto lmers_goal = get_lmers(goal);
 
   // h(n) gives an approximate of distance(n, goal).
-  const auto h = [&](const std::bitset<K * 2>& n) {
+  const auto h = [&](const Kmer<K>& n) {
     const auto lmers_n = get_lmers(n);
 
     int distance = 0;
@@ -360,24 +131,21 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   };
 
   // f[n] = h(n) + g(n).
-  absl::flat_hash_map<std::bitset<K * 2>, int> f;
+  absl::flat_hash_map<Kmer<K>, int> f;
 
   // g(n) gives an approximate of distance(start, n).
-  const auto g = [&](const std::bitset<K * 2>& n) { return f[n] - h(n); };
+  const auto g = [&](const Kmer<K>& n) { return f[n] - h(n); };
 
-  const auto cmp = [&](const std::bitset<K * 2>& lhs,
-                       const std::bitset<K * 2>& rhs) {
+  const auto cmp = [&](const Kmer<K>& lhs, const Kmer<K>& rhs) {
     return f[lhs] > f[rhs];
   };
 
-  std::priority_queue<std::bitset<K * 2>, std::vector<std::bitset<K * 2>>,
-                      decltype(cmp)>
-      open(cmp);
+  std::priority_queue<Kmer<K>, std::vector<Kmer<K>>, decltype(cmp)> open(cmp);
 
-  absl::flat_hash_set<std::bitset<K * 2>> close;
+  absl::flat_hash_set<Kmer<K>> close;
 
   // This will be used to re-construct the path from "start" to "goal".
-  absl::flat_hash_map<std::bitset<K * 2>, std::bitset<K * 2>> parents;
+  absl::flat_hash_map<Kmer<K>, Kmer<K>> parents;
 
   f[start] = h(start);
   open.emplace(start);
@@ -386,14 +154,14 @@ std::optional<AStarSearchResult<K>> AStarSearch(
     spdlog::debug("open.size() = {}", open.size());
     spdlog::debug("close.size() = {}", close.size());
 
-    const std::bitset<K* 2> n = open.top();
+    const Kmer<K> n = open.top();
     open.pop();
 
-    spdlog::debug("n = {}", n.to_string());
+    spdlog::debug("n = {}", n.String());
 
     if (goal == n) {
       // Re-constrcut the path.
-      std::vector<std::bitset<K * 2>> path;
+      std::vector<Kmer<K>> path;
       path.push_back(n);
       while (parents.find(path.back()) != parents.end()) {
         path.push_back(parents[path.back()]);
@@ -404,27 +172,11 @@ std::optional<AStarSearchResult<K>> AStarSearch(
       return {{path, visited_nodes}};
     }
 
-    for (const char c : std::vector<char>{'A', 'C', 'G', 'T'}) {
-      std::bitset<K* 2> to = n << 2;
-
-      switch (c) {
-        case 'A':
-          break;
-        case 'C':
-          to.set(1);
-          break;
-        case 'G':
-          to.set(0);
-          break;
-        case 'T':
-          to.set(0);
-          to.set(1);
-      }
-
+    for (const auto& to : n.Nexts()) {
       if (kmer_set.Contains(to)) {
         const int new_f = g(n) + 1 + h(to);
 
-        spdlog::debug("to = {}", to.to_string());
+        spdlog::debug("to = {}", to.String());
         spdlog::debug("new_f = {}", new_f);
 
         const auto it = f.find(to);
@@ -462,11 +214,11 @@ int main(int argc, char** argv) {
 
   const auto start = kmer_set.Sample();
 
-  spdlog::info("searching: start = {}", start.to_string());
+  spdlog::info("searching: start = {}", start.String());
 
   const BFSResult bfs_result = BFS(kmer_set, start, 1000);
 
-  spdlog::info("searched: start = {}", start.to_string());
+  spdlog::info("searched: start = {}", start.String());
   spdlog::info("reached_nodes = {}", bfs_result.reached_nodes);
   spdlog::info("max_distance = {}", bfs_result.max_distance);
   spdlog::info("avg_distance = {:.1f}", bfs_result.avg_distance);
@@ -475,7 +227,7 @@ int main(int argc, char** argv) {
 
   for (const auto& p : bfs_result.distances) {
     distance_count[p.second] += 1;
-    spdlog::debug("distances[{}] = {}", p.first.to_string(), p.second);
+    spdlog::debug("distances[{}] = {}", p.first.String(), p.second);
   }
 
   // distance_count_sum[i] = distance_count[0] + ... + distance_count[i];
@@ -490,8 +242,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  const std::bitset<K* 2> goal = [&] {
-    std::vector<std::bitset<K * 2>> nodes;
+  const Kmer<K> goal = [&] {
+    std::vector<Kmer<K>> nodes;
 
     for (const auto& p : bfs_result.distances) {
       nodes.push_back(p.first);
@@ -500,22 +252,22 @@ int main(int argc, char** argv) {
     return nodes[rand() % nodes.size()];
   }();
 
-  spdlog::info("goal = {}", goal.to_string());
-  spdlog::info("distances[{}] = {}", goal.to_string(),
+  spdlog::info("goal = {}", goal.String());
+  spdlog::info("distances[{}] = {}", goal.String(),
                bfs_result.distances.find(goal)->second);
   spdlog::info("distance_count_sum[{}] = {}",
                bfs_result.distances.find(goal)->second,
                distance_count_sum[bfs_result.distances.find(goal)->second]);
-  spdlog::info("starting A* search from {} to {}", start.to_string(),
-               goal.to_string());
+  spdlog::info("starting A* search from {} to {}", start.String(),
+               goal.String());
 
   const auto a_star_search_result = AStarSearch<K, B, 5>(kmer_set, start, goal);
 
   if (!a_star_search_result) {
     spdlog::error("A* search failed");
   } else {
-    spdlog::info("finished A* search from {} to {}", start.to_string(),
-                 goal.to_string());
+    spdlog::info("finished A* search from {} to {}", start.String(),
+                 goal.String());
     spdlog::info("visited_nodes = {}", (*a_star_search_result).visited_nodes);
     spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
   }

@@ -15,6 +15,8 @@ find_package(OpenMP REQUIRED)
 
 add_executable(main main.cc)
 
+target_include_directories(main PUBLIC lib)
+
 target_link_libraries(
     main
     mimalloc
@@ -24,5 +26,4 @@ target_link_libraries(
     absl::flat_hash_map
     absl::flags
     absl::flags_parse
-    OpenMP::OpenMP_CXX
 )
