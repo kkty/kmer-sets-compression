@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -55,6 +56,18 @@ std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
   return kmer_b;
 }
 
+std::vector<std::pair<int64_t, int64_t>> SplitRange(int64_t begin, int64_t end,
+                                                    int64_t n) {
+  int chunk_size = (end - begin + n - 1) / n;
+
+  std::vector<std::pair<int64_t, int64_t>> ranges;
+  for (int64_t i = 0; i < n; i++) {
+    ranges.emplace_back(i * chunk_size, std::min((i + 1) * chunk_size, end));
+  }
+
+  return ranges;
+}
+
 // Use (1 << B) buckets internally.
 template <int K, int B>
 class KmerSet {
@@ -80,27 +93,56 @@ class KmerSet {
       }
     }
 
-    const int64_t n_lines = lines.size();
-
     std::array<std::mutex, 1 << B> buckets_mutexes;
 
-#pragma omp parallel for
-    for (int i = 0; i < n_lines; i++) {
-      const auto& line = lines[i];
-      std::vector<std::string> fragments = absl::StrSplit(line, "N");
-      for (const auto& fragment : fragments) {
-        for (int i = 0; i + K <= (int)fragment.length(); i++) {
-          const std::string kmer_s = fragment.substr(i, K);
-          std::bitset<K* 2> kmer_b = GetCompactKmer<K>(kmer_s);
+    std::vector<std::thread> threads;
 
-          int bucket;
-          std::bitset<K * 2 - B> key;
-          std::tie(bucket, key) = GetBucketAndKey(kmer_b);
+    const auto ranges =
+        SplitRange(0, lines.size(), std::thread::hardware_concurrency());
 
-          std::lock_guard lck{buckets_mutexes[bucket]};
-          buckets_[bucket].insert(key);
+    for (const auto& range : ranges) {
+      threads.emplace_back([&, range] {
+        std::array<absl::flat_hash_set<std::bitset<K * 2 - B>>, 1 << B> buf;
+
+        for (int64_t i = range.first; i < range.second; i++) {
+          const auto& line = lines[i];
+          std::vector<std::string> fragments = absl::StrSplit(line, "N");
+          for (const auto& fragment : fragments) {
+            for (int i = 0; i + K <= (int)fragment.length(); i++) {
+              const std::string kmer_s = fragment.substr(i, K);
+              std::bitset<K* 2> kmer_b = GetCompactKmer<K>(kmer_s);
+
+              int bucket;
+              std::bitset<K * 2 - B> key;
+              std::tie(bucket, key) = GetBucketAndKey(kmer_b);
+
+              buf[bucket].insert(key);
+            }
+          }
         }
-      }
+
+        std::vector<int> v;
+        v.reserve(1 << B);
+        for (int i = 0; i < (1 << B); i++) v.push_back(i);
+
+        {
+          std::default_random_engine e(range.first);
+          std::shuffle(v.begin(), v.end(), e);
+        }
+
+        for (int i : v) {
+          std::lock_guard _{buckets_mutexes[i]};
+          auto& bucket = buckets_[i];
+          bucket.reserve(bucket.size() + buf[i].size());
+          for (const auto& key : buf[i]) {
+            bucket.insert(key);
+          }
+        }
+      });
+    }
+
+    for (std::thread& thread : threads) {
+      thread.join();
     }
   }
 
