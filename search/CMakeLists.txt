@@ -1,7 +1,6 @@
 cmake_minimum_required (VERSION 3.0)
 
-project(20201024)
-
+project(search)
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
