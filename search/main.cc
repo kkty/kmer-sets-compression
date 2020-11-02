@@ -7,6 +7,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <string>
 #include <thread>
@@ -58,20 +59,9 @@ std::bitset<K * 2> GetCompactKmer(const std::string& kmer_s) {
 template <int K, int B>
 class KmerSet {
  public:
-  KmerSet(std::istream& is, const int64_t lines_approximate,
-          const int64_t kmers_approximate) {
-    std::atomic_bool done = false;
-    std::vector<std::thread> threads;
-    std::queue<std::string> queue;
-    std::mutex queue_mutex;
-    std::array<std::mutex, 1 << B> buckets_mutexes;
-
-    for (auto& bucket : buckets_) {
-      bucket.reserve(kmers_approximate >> B);
-    }
-
+  // Find k-mers in a FASTQ file.
+  void FromFASTQ(std::istream& is) {
     std::vector<std::string> lines;
-    lines.reserve(lines_approximate);
 
     {
       std::array<std::string, 4> buf;
@@ -92,12 +82,14 @@ class KmerSet {
 
     const int64_t n_lines = lines.size();
 
+    std::array<std::mutex, 1 << B> buckets_mutexes;
+
 #pragma omp parallel for
     for (int i = 0; i < n_lines; i++) {
       const auto& line = lines[i];
       std::vector<std::string> fragments = absl::StrSplit(line, "N");
       for (const auto& fragment : fragments) {
-        for (int i = 0; i + K <= fragment.length(); i++) {
+        for (int i = 0; i + K <= (int)fragment.length(); i++) {
           const std::string kmer_s = fragment.substr(i, K);
           std::bitset<K* 2> kmer_b = GetCompactKmer<K>(kmer_s);
 
@@ -112,8 +104,8 @@ class KmerSet {
     }
   }
 
-  // Loads from a dumped data.
-  KmerSet(std::istream& is) {
+  // Loads from dumped data.
+  void Load(std::istream& is) {
     int k, b;
     is >> k >> b;
     if (k != K || b != B) {
@@ -253,9 +245,11 @@ BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const std::bitset<K * 2>& start,
     }
   }
 
+  int64_t visited_nodes = distances.size();
+
   return {
       distances,
-      distances.size(),
+      visited_nodes,
       max_distance,
       (double)sum_distance / distances.size(),
   };
@@ -419,7 +413,8 @@ int main(int argc, char** argv) {
   const int B = 6;
 
   spdlog::info("constructing kmer_set");
-  KmerSet<K, B> kmer_set(std::cin, 100'000'000, 500'000'000);
+  KmerSet<K, B> kmer_set;
+  kmer_set.FromFASTQ(std::cin);
   spdlog::info("constructed kmer_set");
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
 
