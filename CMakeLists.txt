@@ -3,9 +3,11 @@ cmake_minimum_required (VERSION 3.0)
 project(search)
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_LINKER_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
+
 
 add_subdirectory(extern/abseil-cpp)
 add_subdirectory(extern/mimalloc)
