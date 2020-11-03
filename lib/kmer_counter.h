@@ -107,7 +107,7 @@ class KmerCounter {
 
     for (const auto& range :
          SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
-      threads.emplace_back([&] {
+      threads.emplace_back([&, range] {
         for (int i = range.first; i < range.second; i++) {
           const Bucket& bucket = buckets_[i];
           for (const auto& [key, count] : bucket) {
