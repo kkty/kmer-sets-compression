@@ -7,6 +7,8 @@
 
 class SuffixArray {
  public:
+  SuffixArray() = default;
+
   SuffixArray(const std::string& s) : s_(s), v_(s.length()) {
     for (int i = 0; i < s_.length(); i++) v_[i] = i;
 
