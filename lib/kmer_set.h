@@ -86,10 +86,6 @@ class KmerSet {
     buckets_[bucket].insert(key);
   }
 
-  void Add(int bucket, const std::bitset<K * 2 - B>& key) {
-    buckets_[bucket].insert(key);
-  }
-
   bool Contains(const Kmer<K>& kmer) const {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
     return buckets_[bucket].find(key) != buckets_[bucket].end();
@@ -109,7 +105,7 @@ class KmerSet {
   }
 
   template <typename Pred>
-  std::vector<Kmer<K>> Find(Pred&& pred) {
+  std::vector<Kmer<K>> Find(Pred&& pred) const {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
@@ -136,8 +132,12 @@ class KmerSet {
 
   std::array<Bucket, 1 << B> buckets_;
 
+  void Add(int bucket, const std::bitset<K * 2 - B>& key) {
+    buckets_[bucket].insert(key);
+  }
+
   template <typename F>
-  void ForEachBucket(F&& f) {
+  void ForEachBucket(F&& f) const {
     std::vector<std::thread> threads;
 
     for (const auto& range :
@@ -155,6 +155,9 @@ class KmerSet {
 
   friend KmerSet operator-(KmerSet lhs, const KmerSet& rhs);
   friend KmerSet operator+(KmerSet lhs, const KmerSet& rhs);
+
+  template <int, int>
+  friend class KmerCounter;
 };
 
 template <int K, int B>
