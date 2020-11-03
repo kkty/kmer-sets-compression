@@ -152,6 +152,31 @@ class KmerSet {
 
     for (auto& thread : threads) thread.join();
   }
+
+  friend KmerSet operator-(KmerSet lhs, const KmerSet& rhs);
+  friend KmerSet operator+(KmerSet lhs, const KmerSet& rhs);
 };
+
+template <int K, int B>
+KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+  lhs.ForEachBucket([&](const auto& bucket, int bucketID) {
+    for (const auto& key : rhs.buckets_[bucketID]) {
+      bucket.erase(key);
+    }
+  });
+
+  return lhs;
+}
+
+template <int K, int B>
+KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+  lhs.ForEachBucket([&](const auto& bucket, int bucketID) {
+    for (const auto& key : rhs.buckets_[bucketID]) {
+      bucket.insert(key);
+    }
+  });
+
+  return lhs;
+}
 
 #endif
