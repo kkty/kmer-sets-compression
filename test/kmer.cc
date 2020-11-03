@@ -1,9 +1,10 @@
+#include "kmer.h"
+
 #include <string>
 #include <unordered_map>
 
 #include "absl/container/flat_hash_map.h"
 #include "gtest/gtest.h"
-#include "kmer.h"
 
 TEST(kmer, String) {
   const std::string s = "AGCTG";
