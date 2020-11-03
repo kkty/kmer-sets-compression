@@ -86,6 +86,11 @@ class KmerSet {
     buckets_[bucket].insert(key);
   }
 
+  void Remove(const Kmer<K>& kmer) {
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
+    buckets_[bucket].erase(key);
+  }
+
   bool Contains(const Kmer<K>& kmer) const {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
     return buckets_[bucket].find(key) != buckets_[bucket].end();
