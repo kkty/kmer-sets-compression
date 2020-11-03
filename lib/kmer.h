@@ -102,6 +102,16 @@ bool operator==(const Kmer<K>& lhs, const Kmer<K>& rhs) {
   return lhs.Bits() == rhs.Bits();
 }
 
+template <int K>
+bool operator!=(const Kmer<K>& lhs, const Kmer<K>& rhs) {
+  return !(lhs == rhs);
+}
+
+template <int K>
+bool operator<(const Kmer<K>& lhs, const Kmer<K>& rhs) {
+  return lhs.Bits().to_ullong() < rhs.Bits().to_ullong();
+}
+
 namespace std {
 template <int K>
 struct hash<Kmer<K>> {
