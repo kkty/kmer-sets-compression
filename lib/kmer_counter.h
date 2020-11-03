@@ -87,9 +87,7 @@ class KmerCounter {
       });
     }
 
-    for (std::thread& thread : threads) {
-      thread.join();
-    }
+    for (std::thread& thread : threads) thread.join();
   }
 
   int Size() const {
@@ -100,10 +98,10 @@ class KmerCounter {
     return sum;
   }
 
-  std::pair<KmerSet<K, B>, int64_t> Set(int cut_off) const {
+  std::pair<KmerSet<K, B>, int64_t> Set(int cutoff) const {
     KmerSet<K, B> set;
     std::vector<std::thread> threads;
-    std::atomic_int64_t cut_off_count = 0;
+    std::atomic_int64_t cutoff_count = 0;
 
     for (const auto& range :
          SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
@@ -111,8 +109,8 @@ class KmerCounter {
         for (int i = range.first; i < range.second; i++) {
           const Bucket& bucket = buckets_[i];
           for (const auto& [key, count] : bucket) {
-            if (count < cut_off) {
-              cut_off_count += 1;
+            if (count < cutoff) {
+              cutoff_count += 1;
               continue;
             }
 
@@ -124,7 +122,7 @@ class KmerCounter {
 
     for (std::thread& thread : threads) thread.join();
 
-    return {set, (int64_t)cut_off_count};
+    return {set, (int64_t)cutoff_count};
   }
 
  private:
