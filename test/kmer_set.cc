@@ -15,6 +15,28 @@ TEST(kmer_set, BucketAndKey) {
   ASSERT_EQ(kmer, (GetKmerFromBucketAndKey<K, N>(bucket, key)));
 }
 
+TEST(kmer_set, AddRemove) {
+  const int K = 5;
+  const int B = 3;
+
+  Kmer<K> kmer("AAAAA");
+
+  KmerSet<K, B> kmer_set;
+
+  ASSERT_EQ(kmer_set.Size(), 0);
+  ASSERT_FALSE(kmer_set.Contains(kmer));
+
+  kmer_set.Add(kmer);
+
+  ASSERT_EQ(kmer_set.Size(), 1);
+  ASSERT_TRUE(kmer_set.Contains(kmer));
+
+  kmer_set.Remove(kmer);
+
+  ASSERT_EQ(kmer_set.Size(), 0);
+  ASSERT_FALSE(kmer_set.Contains(kmer));
+}
+
 TEST(kmer_set, Find) {
   const int K = 5;
   const int B = 3;
