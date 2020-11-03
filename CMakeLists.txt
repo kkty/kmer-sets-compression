@@ -4,44 +4,45 @@ project(search)
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-set(CMAKE_CXX_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_LINKER_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
-
 
 add_subdirectory(extern/abseil-cpp)
 add_subdirectory(extern/mimalloc)
 add_subdirectory(extern/spdlog)
 add_subdirectory(extern/googletest)
 
-find_package(OpenMP REQUIRED)
-
 add_executable(search src/search.cc)
-add_executable(test test/kmer.cc test/kmer_set.cc)
+add_executable(test_kmer test/kmer.cc)
+add_executable(test_kmer_set test/kmer_set.cc)
+add_executable(test_suffix_array test/suffix_array.cc)
 
 target_include_directories(search PUBLIC lib)
-target_include_directories(test PUBLIC lib)
+target_include_directories(test_kmer PUBLIC lib)
+target_include_directories(test_kmer_set PUBLIC lib)
+target_include_directories(test_suffix_array PUBLIC lib)
 
-target_link_libraries(
-    test
-    mimalloc
-    spdlog
-    absl::strings
-    absl::flat_hash_set
-    absl::flat_hash_map
-    absl::flags
-    absl::flags_parse
-    gtest
-    gtest_main
+set(
+  src_libs
+  mimalloc
+  spdlog
+  absl::strings
+  absl::flat_hash_set
+  absl::flat_hash_map
+  absl::flags
+  absl::flags_parse
 )
 
-target_link_libraries(
-    search
-    mimalloc
-    spdlog
-    absl::strings
-    absl::flat_hash_set
-    absl::flat_hash_map
-    absl::flags
-    absl::flags_parse
+set (
+  test_libs
+  ${src_libs}
+  gtest
+  gtest_main
 )
+
+target_link_libraries(search ${src_libs})
+
+target_link_libraries(test_kmer ${test_libs})
+target_link_libraries(test_kmer_set ${test_libs})
+target_link_libraries(test_suffix_array ${test_libs})
