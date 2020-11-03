@@ -2,10 +2,10 @@
 #define KMER_SET_H_
 
 #include <array>
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <iostream>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
@@ -19,15 +19,16 @@ std::pair<int, std::bitset<K * 2 - N>> GetBucketAndKeyFromKmer(
     const Kmer<K>& kmer) {
   const auto& bits = kmer.Bits();
   const int key_bits = K * 2 - N;
-  const int bucket = bits.to_ullong() >> key_bits;
+  const int bucketID = bits.to_ullong() >> key_bits;
   const std::bitset<K * 2 - N> key{bits.to_ullong() % (1ull << key_bits)};
-  return {bucket, key};
+  return {bucketID, key};
 }
 
 template <int K, int N>
-Kmer<K> GetKmerFromBucketAndKey(int bucket, const std::bitset<K * 2 - N>& key) {
+Kmer<K> GetKmerFromBucketAndKey(int bucketID,
+                                const std::bitset<K * 2 - N>& key) {
   const int key_bits = K * 2 - N;
-  std::bitset<K * 2> bits{((uint64_t)bucket << key_bits) + key.to_ullong()};
+  std::bitset<K * 2> bits{((uint64_t)bucketID << key_bits) + key.to_ullong()};
   return Kmer<K>{bits};
 }
 
@@ -107,10 +108,50 @@ class KmerSet {
     return GetKmerFromBucketAndKey<K, B>(bucket, key);
   }
 
+  template <typename Pred>
+  std::vector<Kmer<K>> Find(Pred&& pred) {
+    std::vector<Kmer<K>> kmers;
+    std::mutex mu;
+
+    ForEachBucket([&](const Bucket& bucket, int bucketID) {
+      std::vector<Kmer<K>> buf;
+
+      for (const auto& key : bucket) {
+        const Kmer<K> kmer = GetKmerFromBucketAndKey<K, B>(bucketID, key);
+        if (pred(kmer)) buf.push_back(kmer);
+      }
+
+      std::lock_guard _{mu};
+      kmers.reserve(kmers.size() + buf.size());
+      for (const auto& kmer : buf) {
+        kmers.push_back(kmer);
+      }
+    });
+
+    return kmers;
+  }
+
  private:
   using Bucket = absl::flat_hash_set<std::bitset<K * 2 - B>>;
 
   std::array<Bucket, 1 << B> buckets_;
+
+  template <typename F>
+  void ForEachBucket(F&& f) {
+    std::vector<std::thread> threads;
+
+    for (const auto& range :
+         SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
+      threads.emplace_back([&] {
+        for (int i = range.first; i < range.second; i++) {
+          const Bucket& bucket = buckets_[i];
+          f(bucket, i);
+        }
+      });
+    }
+
+    for (auto& thread : threads) thread.join();
+  }
 };
 
 #endif
