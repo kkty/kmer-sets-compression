@@ -229,7 +229,7 @@ class KmerSetCompact {
 
     for (const auto& range :
          SplitRange(0, boundary_.size(), std::thread::hardware_concurrency())) {
-      threads.emplace_back([&] {
+      threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
         for (int64_t i = range.first; i < range.second; i++) {
