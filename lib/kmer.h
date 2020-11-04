@@ -58,6 +58,12 @@ class Kmer {
     }
   }
 
+  Kmer<K> Complement() const {
+    Kmer<K> complement = *this;
+    complement.bits_.flip();
+    return complement;
+  }
+
   Kmer<K> Next(char c) const {
     Kmer<K> next = *this;
     next.bits_ <<= 2;
