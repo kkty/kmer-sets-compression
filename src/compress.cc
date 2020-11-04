@@ -61,4 +61,12 @@ int main(int argc, char** argv) {
   for (int i = 0; i < n_datasets; i++) {
     spdlog::info("kmer_sets[{}].Size() = {}", i, kmer_sets[i].Size());
   }
+
+  for (int i = 0; i < n_datasets; i++) {
+    for (int j = i + 1; j < n_datasets; j++) {
+      int64_t diff = (kmer_sets[i] - kmer_sets[j]).Size() +
+                     (kmer_sets[j] - kmer_sets[i]).Size();
+      spdlog::info("i = {}, j = {}, diff = {}", i, j, diff);
+    }
+  }
 }
