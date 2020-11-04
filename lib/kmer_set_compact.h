@@ -127,8 +127,9 @@ class KmerSetCompact {
             if (end_kmers.find(current) != end_kmers.end()) break;
             const auto nexts = current.Nexts();
             current = *std::find_if(
-                nexts.begin(), nexts.end(),
-                [&](const Kmer<K>& next) { return kmer_set.Contains(next); });
+                nexts.begin(), nexts.end(), [&](const Kmer<K>& next) {
+                  return kmer_set.Contains(next) && next != current;
+                });
           }
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
