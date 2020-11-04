@@ -109,6 +109,7 @@ class KmerSet {
     return GetKmerFromBucketAndKey<K, B>(bucket, key);
   }
 
+  // Finds all the k-mers that match the condition.
   template <typename Pred>
   std::vector<Kmer<K>> Find(Pred&& pred) const {
     std::vector<Kmer<K>> kmers;
@@ -130,6 +131,21 @@ class KmerSet {
     });
 
     return kmers;
+  }
+
+  // Returns all the k-mers.
+  std::vector<Kmer<K>> Find() const {
+    return Find([&](const Kmer<K>&) { return true; });
+  }
+
+  KmerSet<K, B>& operator+=(const KmerSet<K, B>& rhs) {
+    rhs.ForEachBucket([&](const Bucket& bucket, int bucketID) {
+      for (const auto& key : bucket) {
+        buckets_[bucketID].insert(key);
+      }
+    });
+
+    return *this;
   }
 
  private:
@@ -158,8 +174,13 @@ class KmerSet {
     for (auto& thread : threads) thread.join();
   }
 
-  friend KmerSet operator-(KmerSet lhs, const KmerSet& rhs);
-  friend KmerSet operator+(KmerSet lhs, const KmerSet& rhs);
+  template <int K2, int B2>
+  friend KmerSet<K2, B2> operator-(KmerSet<K2, B2> lhs,
+                                   const KmerSet<K2, B2>& rhs);
+
+  template <int K2, int B2>
+  friend KmerSet<K2, B2> operator+(KmerSet<K2, B2> lhs,
+                                   const KmerSet<K2, B2>& rhs);
 
   template <int, int>
   friend class KmerCounter;
@@ -167,9 +188,9 @@ class KmerSet {
 
 template <int K, int B>
 KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
-  lhs.ForEachBucket([&](const auto& bucket, int bucketID) {
-    for (const auto& key : rhs.buckets_[bucketID]) {
-      bucket.erase(key);
+  rhs.ForEachBucket([&](const auto& bucket, int bucketID) {
+    for (const auto& key : bucket) {
+      lhs.buckets_[bucketID].erase(key);
     }
   });
 
@@ -178,9 +199,9 @@ KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
 
 template <int K, int B>
 KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
-  lhs.ForEachBucket([&](const auto& bucket, int bucketID) {
-    for (const auto& key : rhs.buckets_[bucketID]) {
-      bucket.insert(key);
+  rhs.ForEachBucket([&](const auto& bucket, int bucketID) {
+    for (const auto& key : bucket) {
+      lhs.buckets_[bucketID].insert(key);
     }
   });
 
