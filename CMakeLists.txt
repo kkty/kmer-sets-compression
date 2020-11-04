@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.0)
 
 project(search)
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra")
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -fvisibility=hidden")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
