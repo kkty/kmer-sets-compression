@@ -14,6 +14,7 @@ add_subdirectory(extern/spdlog)
 add_subdirectory(extern/googletest)
 
 add_executable(search src/search.cc)
+add_executable(compact src/compact.cc)
 
 add_executable(test_kmer test/kmer.cc)
 add_executable(test_kmer_set test/kmer_set.cc)
@@ -21,6 +22,7 @@ add_executable(test_kmer_set_compact test/kmer_set_compact.cc)
 add_executable(test_suffix_array test/suffix_array.cc)
 
 target_include_directories(search PUBLIC lib)
+target_include_directories(compact PUBLIC lib)
 
 target_include_directories(test_kmer PUBLIC lib)
 target_include_directories(test_kmer_set PUBLIC lib)
@@ -46,6 +48,7 @@ set (
 )
 
 target_link_libraries(search ${src_libs})
+target_link_libraries(compact ${src_libs})
 
 target_link_libraries(test_kmer ${test_libs})
 target_link_libraries(test_kmer_set ${test_libs})
