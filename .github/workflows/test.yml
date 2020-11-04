@@ -8,7 +8,7 @@ jobs:
         with:
           submodules: true
       - run: mkdir build
-      - run: cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j
+      - run: cmake .. -DCMAKE_BUILD_TYPE=Debug -DBoost_INCLUDE_DIR=$BOOST_ROOT_1_72_0/include && make -j
         working-directory: build
         env:
           CC: gcc-10
