@@ -13,6 +13,8 @@ add_subdirectory(extern/mimalloc)
 add_subdirectory(extern/spdlog)
 add_subdirectory(extern/googletest)
 
+find_package(Boost REQUIRED iostreams)
+
 add_executable(search src/search.cc)
 add_executable(compact src/compact.cc)
 add_executable(compress src/compress.cc)
@@ -44,13 +46,14 @@ set(
   absl::flat_hash_map
   absl::flags
   absl::flags_parse
+  ${Boost_LIBRARIES}
 )
 
 set (
   test_libs
-  ${src_libs}
   gtest
   gtest_main
+  ${src_libs}
 )
 
 target_link_libraries(search ${src_libs})
