@@ -1,0 +1,25 @@
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - run: mkdir build
+      - run: cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j
+        working-directory: build
+        env:
+          CC: gcc-10
+          CXX: g++-10
+      - run: ./test_kmer
+        working-directory: build
+      - run: ./test_kmer_set
+        working-directory: build
+      - run: ./test_suffix_array
+        working-directory: build
+      - run: ./test_kmer_set_compact
+        working-directory: build
+      - run: ./test_range
+        working-directory: build
