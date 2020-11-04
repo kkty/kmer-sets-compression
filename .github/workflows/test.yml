@@ -23,3 +23,5 @@ jobs:
         working-directory: build
       - run: ./test_range
         working-directory: build
+      - run: ./test_graph
+        working-directory: build
