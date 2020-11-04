@@ -12,6 +12,11 @@ TEST(kmer, String) {
   ASSERT_EQ(kmer.String(), s);
 }
 
+TEST(kmer, Complement) {
+  Kmer<5> kmer("AGCTA");
+  ASSERT_EQ(kmer.Complement().String(), "TCGAT");
+}
+
 TEST(kmer, Next) {
   Kmer<5> kmer("AGCTG");
   ASSERT_EQ(kmer.Next('C').String(), "GCTGC");
