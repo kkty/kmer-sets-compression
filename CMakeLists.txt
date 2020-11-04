@@ -21,6 +21,7 @@ add_executable(test_kmer_set test/kmer_set.cc)
 add_executable(test_kmer_set_compact test/kmer_set_compact.cc)
 add_executable(test_suffix_array test/suffix_array.cc)
 add_executable(test_range test/range.cc)
+add_executable(test_graph test/graph.cc)
 
 target_include_directories(search PUBLIC lib)
 target_include_directories(compact PUBLIC lib)
@@ -30,6 +31,7 @@ target_include_directories(test_kmer_set PUBLIC lib)
 target_include_directories(test_suffix_array PUBLIC lib)
 target_include_directories(test_kmer_set_compact PUBLIC lib)
 target_include_directories(test_range PUBLIC lib)
+target_include_directories(test_graph PUBLIC lib)
 
 set(
   src_libs
@@ -57,3 +59,4 @@ target_link_libraries(test_kmer_set ${test_libs})
 target_link_libraries(test_suffix_array ${test_libs})
 target_link_libraries(test_kmer_set_compact ${test_libs})
 target_link_libraries(test_range ${test_libs})
+target_link_libraries(test_graph ${test_libs})
