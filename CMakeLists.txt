@@ -13,7 +13,7 @@ add_subdirectory(extern/mimalloc)
 add_subdirectory(extern/spdlog)
 add_subdirectory(extern/googletest)
 
-find_package(Boost REQUIRED iostreams)
+find_package(Boost REQUIRED COMPONENTS iostreams)
 
 add_executable(search src/search.cc)
 add_executable(compact src/compact.cc)
