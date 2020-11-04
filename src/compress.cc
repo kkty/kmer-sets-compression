@@ -8,6 +8,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "boost/iostreams/filter/gzip.hpp"
+#include "boost/iostreams/filtering_stream.hpp"
 #include "kmer.h"
 #include "kmer_counter.h"
 #include "kmer_set.h"
@@ -15,6 +17,7 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
+ABSL_FLAG(bool, gzip, false, "accept gzipped FASTQ files");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 
 int main(int argc, char** argv) {
@@ -40,12 +43,21 @@ int main(int argc, char** argv) {
 
   for (int i = 0; i < n_datasets; i++) {
     const std::string& file = files[i];
-    std::ifstream is{file};
 
     spdlog::info("constructing kmer_counter for {}", file);
 
     KmerCounter<K, B> kmer_counter;
-    kmer_counter.FromFASTQ(is);
+
+    if (absl::GetFlag(FLAGS_gzip)) {
+      std::ifstream is(file, std::ios_base::binary);
+      boost::iostreams::filtering_istream f_is;
+      f_is.push(boost::iostreams::gzip_decompressor());
+      f_is.push(is);
+      kmer_counter.FromFASTQ(f_is);
+    } else {
+      std::ifstream is{file};
+      kmer_counter.FromFASTQ(is);
+    }
 
     spdlog::info("constructed kmer_counter for {}", file);
     spdlog::info("constructing kmer_set for {}", file);
