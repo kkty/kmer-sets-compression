@@ -28,71 +28,63 @@ class KmerSetCompact {
  public:
   template <int B>
   KmerSetCompact(const KmerSet<K, B>& kmer_set) {
+    const auto get_nexts = [&](const Kmer<K>& kmer) {
+      std::vector<Kmer<K>> v;
+
+      for (const Kmer<K>& next : kmer.Nexts()) {
+        if (next != kmer && kmer_set.Contains(next)) v.push_back(next);
+      }
+
+      return v;
+    };
+
+    const auto get_prevs = [&](const Kmer<K>& kmer) {
+      std::vector<Kmer<K>> v;
+
+      for (const Kmer<K>& prev : kmer.Prevs()) {
+        if (prev != kmer && kmer_set.Contains(prev)) v.push_back(prev);
+      }
+
+      return v;
+    };
+
     const auto start_kmers = kmer_set.Find([&](const Kmer<K>& kmer) {
-      const auto prevs = kmer.Prevs();
+      const auto prevs = get_prevs(kmer);
 
       // If the k-mer has no incoming edges.
-      if (std::none_of(prevs.begin(), prevs.end(), [&](const Kmer<K>& prev) {
-            return kmer_set.Contains(prev) && prev != kmer;
-          }))
-        return true;
+      if (prevs.size() == 0) return true;
 
       // If the k-mer has multiple incoming edges.
-      if (std::count_if(prevs.begin(), prevs.end(), [&](const Kmer<K>& prev) {
-            return kmer_set.Contains(prev) && prev != kmer;
-          }) >= 2)
-        return true;
+      if (prevs.size() >= 2) return true;
 
       // There is an edge from "prev" to "kmer".
-      const auto prev =
-          *std::find_if(prevs.begin(), prevs.end(), [&](const Kmer<K>& prev) {
-            return kmer_set.Contains(prev) && prev != kmer;
-          });
+      const Kmer<K> prev = prevs[0];
 
-      const auto prev_nexts = prev.Nexts();
+      const auto prev_nexts = get_nexts(prev);
 
       // If "prev" has multiple outgoing edges.
-      if (std::count_if(prev_nexts.begin(), prev_nexts.end(),
-                        [&](const Kmer<K>& prev_next) {
-                          return kmer_set.Contains(prev_next) &&
-                                 prev_next != prev;
-                        }) >= 2)
-        return true;
+      if (prev_nexts.size() >= 2) return true;
 
       return false;
     });
 
     const auto end_kmers = [&] {
       const auto v = kmer_set.Find([&](const Kmer<K>& kmer) {
-        const auto nexts = kmer.Nexts();
+        const auto nexts = get_nexts(kmer);
 
         // If the k-mer has no outgoing edges.
-        if (std::none_of(nexts.begin(), nexts.end(), [&](const Kmer<K>& next) {
-              return kmer_set.Contains(next) && next != kmer;
-            }))
-          return true;
+        if (nexts.size() == 0) return true;
 
         // If the k-mer has multiple outgoing edges.
-        if (std::count_if(nexts.begin(), nexts.end(), [&](const Kmer<K>& next) {
-              return kmer_set.Contains(next) && next != kmer;
-            }) >= 2)
-          return true;
+        if (nexts.size() >= 2) return true;
 
         // There is an edge from "kmer" to "next".
-        const auto next =
-            *std::find_if(nexts.begin(), nexts.end(), [&](const Kmer<K>& next) {
-              return kmer_set.Contains(next) && next != kmer;
-            });
+        const Kmer<K> next = nexts[0];
 
-        const auto next_prevs = next.Prevs();
+        const auto next_prevs = get_prevs(next);
 
         // If "next" has multiple incoming edges.
-        if (std::count_if(next_prevs.begin(), next_prevs.end(),
-                          [&](const Kmer<K>& next_prev) {
-                            return kmer_set.Contains(next_prev) &&
-                                   next_prev != next;
-                          }) >= 2)
-          return true;
+        if (next_prevs.size() >= 2) return true;
 
         return false;
       });
@@ -125,11 +117,7 @@ class KmerSetCompact {
             buf_visited.Add(current);
             path.push_back(current);
             if (end_kmers.find(current) != end_kmers.end()) break;
-            const auto nexts = current.Nexts();
-            current = *std::find_if(
-                nexts.begin(), nexts.end(), [&](const Kmer<K>& next) {
-                  return kmer_set.Contains(next) && next != current;
-                });
+            current = get_nexts(current)[0];
           }
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
@@ -165,10 +153,7 @@ class KmerSetCompact {
         while (!visited.Contains(current)) {
           path.push_back(current);
           visited.Add(current);
-          const auto nexts = current.Nexts();
-          current = *std::find_if(
-              nexts.begin(), nexts.end(),
-              [&](const Kmer<K>& next) { return kmer_set.Contains(next); });
+          current = get_nexts(current)[0];
         }
 
         unitigs.push_back(GetUnitigFromKmers(path));
