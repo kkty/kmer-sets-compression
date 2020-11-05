@@ -64,6 +64,8 @@ class Kmer {
     return complement;
   }
 
+  Kmer<K> Canonical() const { return std::min(*this, this->Complement()); }
+
   Kmer<K> Next(char c) const {
     Kmer<K> next = *this;
     next.bits_ <<= 2;

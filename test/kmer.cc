@@ -12,6 +12,11 @@ TEST(kmer, String) {
   ASSERT_EQ(kmer.String(), s);
 }
 
+TEST(kmer, Canonical) {
+  ASSERT_EQ(Kmer<5>("AAAAT").Canonical().String(), "AAAAT");
+  ASSERT_EQ(Kmer<5>("TAAAA").Canonical().String(), "ATTTT");
+}
+
 TEST(kmer, Complement) {
   Kmer<5> kmer("AGCTA");
   ASSERT_EQ(kmer.Complement().String(), "TCGAT");
