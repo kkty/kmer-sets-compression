@@ -33,8 +33,8 @@ class Kmer {
     const bool b1 = get(idx * 2 + 1);
 
     if (!b0 && !b1) return 'A';
-    if (b0 && !b1) return 'C';
-    if (!b0 && b1) return 'G';
+    if (b0 && !b1) return 'G';
+    if (!b0 && b1) return 'C';
     return 'T';
   }
 
@@ -46,10 +46,10 @@ class Kmer {
       case 'A':
         break;
       case 'C':
-        set(idx * 2);
+        set(idx * 2 + 1);
         break;
       case 'G':
-        set(idx * 2 + 1);
+        set(idx * 2);
         break;
       case 'T':
         set(idx * 2);
@@ -59,7 +59,10 @@ class Kmer {
   }
 
   Kmer<K> Complement() const {
-    Kmer<K> complement = *this;
+    Kmer<K> complement;
+    for (int i = 0; i < K; i++) {
+      complement.Set(K - 1 - i, this->Get(i));
+    }
     complement.bits_.flip();
     return complement;
   }
