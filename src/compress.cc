@@ -8,7 +8,7 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "boost/iostreams/filter/gzip.hpp"
+#include "boost/iostreams/filter/bzip2.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 #include "kmer.h"
 #include "kmer_counter.h"
@@ -17,7 +17,7 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(bool, gzip, false, "accept gzipped FASTQ files");
+ABSL_FLAG(bool, bzip2, false, "accept bzip2-ed FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 
@@ -49,10 +49,10 @@ int main(int argc, char** argv) {
 
     KmerCounter<K, B> kmer_counter;
 
-    if (absl::GetFlag(FLAGS_gzip)) {
+    if (absl::GetFlag(FLAGS_bzip2)) {
       std::ifstream is(file, std::ios_base::binary);
       boost::iostreams::filtering_istream f_is;
-      f_is.push(boost::iostreams::gzip_decompressor());
+      f_is.push(boost::iostreams::bzip2_decompressor());
       f_is.push(is);
       kmer_counter.FromFASTQ(f_is, absl::GetFlag(FLAGS_canonical));
     } else {
