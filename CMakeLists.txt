@@ -14,6 +14,7 @@ add_subdirectory(extern/spdlog)
 add_subdirectory(extern/googletest)
 
 find_package(Boost REQUIRED COMPONENTS iostreams)
+include_directories(${Boost_INCLUDE_DIRS})
 
 add_executable(search src/search.cc)
 add_executable(compact src/compact.cc)
