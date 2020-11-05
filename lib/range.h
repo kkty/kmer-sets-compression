@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <vector>
 
+// Splits the interval [begin, end) to n intervals.
 std::vector<std::pair<int64_t, int64_t>> SplitRange(int64_t begin, int64_t end,
                                                     int64_t n) {
   const int small_chunk_size = (end - begin) / n;
