@@ -20,7 +20,7 @@ template <int K, int B>
 class KmerCounter {
  public:
   // Find k-mers in a FASTQ file.
-  void FromFASTQ(std::istream& is) {
+  void FromFASTQ(std::istream& is, bool canonical = false) {
     std::vector<std::string> lines;
 
     {
@@ -57,11 +57,8 @@ class KmerCounter {
           for (const auto& fragment : fragments) {
             for (int i = 0; i + K <= (int)fragment.length(); i++) {
               const Kmer<K> kmer(fragment.substr(i, K));
-
-              int bucket;
-              std::bitset<K * 2 - B> key;
-              std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, B>(kmer);
-
+              const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(
+                  canonical ? kmer.Canonical() : kmer);
               buf[bucket][key] += 1;
             }
           }
