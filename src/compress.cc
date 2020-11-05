@@ -71,10 +71,13 @@ int main(int argc, char** argv) {
     kmer_sets[i] = std::move(kmer_set);
   }
 
+  // Add an empty set in the back.
+  kmer_sets.push_back(KmerSet<K, B>{});
+
   for (int i = 0; i < n_datasets; i++) {
-    for (int j = i + 1; j < n_datasets; j++) {
-      int64_t diff = (kmer_sets[i] - kmer_sets[j]).Size() +
-                     (kmer_sets[j] - kmer_sets[i]).Size();
+    for (int j = i + 1; j < n_datasets + 1; j++) {
+      int64_t diff = (KmerSetCompact{kmer_sets[i] - kmer_sets[j]}).Size() +
+                     (KmerSetCompact{kmer_sets[j] - kmer_sets[i]}).Size();
       spdlog::info("i = {}, j = {}, diff = {}", i, j, diff);
     }
   }
