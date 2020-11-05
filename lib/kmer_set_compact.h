@@ -23,142 +23,149 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   return s;
 }
 
+template <int K, int B>
+std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
+  const auto get_nexts = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (next != kmer && kmer_set.Contains(next)) v.push_back(next);
+    }
+
+    return v;
+  };
+
+  const auto get_prevs = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (prev != kmer && kmer_set.Contains(prev)) v.push_back(prev);
+    }
+
+    return v;
+  };
+
+  const auto start_kmers = kmer_set.Find([&](const Kmer<K>& kmer) {
+    const auto prevs = get_prevs(kmer);
+
+    // If the k-mer has no incoming edges.
+    if (prevs.size() == 0) return true;
+
+    // If the k-mer has multiple incoming edges.
+    if (prevs.size() >= 2) return true;
+
+    // There is an edge from "prev" to "kmer".
+    const Kmer<K> prev = prevs[0];
+
+    const auto prev_nexts = get_nexts(prev);
+
+    // If "prev" has multiple outgoing edges.
+    if (prev_nexts.size() >= 2) return true;
+
+    return false;
+  });
+
+  const auto end_kmers = [&] {
+    const auto v = kmer_set.Find([&](const Kmer<K>& kmer) {
+      const auto nexts = get_nexts(kmer);
+
+      // If the k-mer has no outgoing edges.
+      if (nexts.size() == 0) return true;
+
+      // If the k-mer has multiple outgoing edges.
+      if (nexts.size() >= 2) return true;
+
+      // There is an edge from "kmer" to "next".
+      const Kmer<K> next = nexts[0];
+
+      const auto next_prevs = get_prevs(next);
+
+      // If "next" has multiple incoming edges.
+      if (next_prevs.size() >= 2) return true;
+
+      return false;
+    });
+
+    const absl::flat_hash_set<Kmer<K>> s(v.begin(), v.end());
+
+    return s;
+  }();
+
+  std::vector<std::string> unitigs;
+  KmerSet<K, B> visited;
+
+  std::mutex mu_unitigs;
+  std::mutex mu_visited;
+
+  std::vector<std::thread> threads;
+
+  for (const auto& range :
+       SplitRange(0, start_kmers.size(), std::thread::hardware_concurrency())) {
+    threads.emplace_back([&, range] {
+      std::vector<std::string> buf_unitigs;
+      KmerSet<K, B> buf_visited;
+
+      for (int64_t i = range.first; i < range.second; i++) {
+        const Kmer<K>& start_kmer = start_kmers[i];
+        std::vector<Kmer<K>> path;
+
+        Kmer<K> current = start_kmer;
+        while (true) {
+          buf_visited.Add(current);
+          path.push_back(current);
+          if (end_kmers.find(current) != end_kmers.end()) break;
+          current = get_nexts(current)[0];
+        }
+
+        buf_unitigs.push_back(GetUnitigFromKmers(path));
+      }
+
+      {
+        std::lock_guard _{mu_visited};
+        visited += buf_visited;
+      }
+
+      {
+        std::lock_guard _{mu_unitigs};
+        unitigs.reserve(unitigs.size() + buf_unitigs.size());
+        for (const auto& unitig : buf_unitigs) unitigs.push_back(unitig);
+      }
+    });
+  }
+
+  for (std::thread& thread : threads) thread.join();
+
+  // Consider loops where every no has 1 incoming edge and 1 outgoing edge.
+  {
+    const std::vector<Kmer<K>> not_visited = kmer_set.Find(
+        [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); });
+
+    for (const Kmer<K>& kmer : not_visited) {
+      if (visited.Contains(kmer)) continue;
+
+      Kmer<K> current = kmer;
+
+      std::vector<Kmer<K>> path;
+
+      while (!visited.Contains(current)) {
+        path.push_back(current);
+        visited.Add(current);
+        current = get_nexts(current)[0];
+      }
+
+      unitigs.push_back(GetUnitigFromKmers(path));
+    }
+  }
+
+  return unitigs;
+}
+
 template <int K>
 class KmerSetCompact {
  public:
   template <int B>
   KmerSetCompact(const KmerSet<K, B>& kmer_set) {
-    const auto get_nexts = [&](const Kmer<K>& kmer) {
-      std::vector<Kmer<K>> v;
-
-      for (const Kmer<K>& next : kmer.Nexts()) {
-        if (next != kmer && kmer_set.Contains(next)) v.push_back(next);
-      }
-
-      return v;
-    };
-
-    const auto get_prevs = [&](const Kmer<K>& kmer) {
-      std::vector<Kmer<K>> v;
-
-      for (const Kmer<K>& prev : kmer.Prevs()) {
-        if (prev != kmer && kmer_set.Contains(prev)) v.push_back(prev);
-      }
-
-      return v;
-    };
-
-    const auto start_kmers = kmer_set.Find([&](const Kmer<K>& kmer) {
-      const auto prevs = get_prevs(kmer);
-
-      // If the k-mer has no incoming edges.
-      if (prevs.size() == 0) return true;
-
-      // If the k-mer has multiple incoming edges.
-      if (prevs.size() >= 2) return true;
-
-      // There is an edge from "prev" to "kmer".
-      const Kmer<K> prev = prevs[0];
-
-      const auto prev_nexts = get_nexts(prev);
-
-      // If "prev" has multiple outgoing edges.
-      if (prev_nexts.size() >= 2) return true;
-
-      return false;
-    });
-
-    const auto end_kmers = [&] {
-      const auto v = kmer_set.Find([&](const Kmer<K>& kmer) {
-        const auto nexts = get_nexts(kmer);
-
-        // If the k-mer has no outgoing edges.
-        if (nexts.size() == 0) return true;
-
-        // If the k-mer has multiple outgoing edges.
-        if (nexts.size() >= 2) return true;
-
-        // There is an edge from "kmer" to "next".
-        const Kmer<K> next = nexts[0];
-
-        const auto next_prevs = get_prevs(next);
-
-        // If "next" has multiple incoming edges.
-        if (next_prevs.size() >= 2) return true;
-
-        return false;
-      });
-
-      const absl::flat_hash_set<Kmer<K>> s(v.begin(), v.end());
-
-      return s;
-    }();
-
-    std::vector<std::string> unitigs;
-    KmerSet<K, B> visited;
-
-    std::mutex mu_unitigs;
-    std::mutex mu_visited;
-
-    std::vector<std::thread> threads;
-
-    for (const auto& range : SplitRange(0, start_kmers.size(),
-                                        std::thread::hardware_concurrency())) {
-      threads.emplace_back([&, range] {
-        std::vector<std::string> buf_unitigs;
-        KmerSet<K, B> buf_visited;
-
-        for (int64_t i = range.first; i < range.second; i++) {
-          const Kmer<K>& start_kmer = start_kmers[i];
-          std::vector<Kmer<K>> path;
-
-          Kmer<K> current = start_kmer;
-          while (true) {
-            buf_visited.Add(current);
-            path.push_back(current);
-            if (end_kmers.find(current) != end_kmers.end()) break;
-            current = get_nexts(current)[0];
-          }
-
-          buf_unitigs.push_back(GetUnitigFromKmers(path));
-        }
-
-        {
-          std::lock_guard _{mu_visited};
-          visited += buf_visited;
-        }
-
-        {
-          std::lock_guard _{mu_unitigs};
-          unitigs.reserve(unitigs.size() + buf_unitigs.size());
-          for (const auto& unitig : buf_unitigs) unitigs.push_back(unitig);
-        }
-      });
-    }
-
-    for (std::thread& thread : threads) thread.join();
-
-    // Consider loops where every no has 1 incoming edge and 1 outgoing edge.
-    {
-      const std::vector<Kmer<K>> not_visited = kmer_set.Find(
-          [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); });
-
-      for (const Kmer<K>& kmer : not_visited) {
-        if (visited.Contains(kmer)) continue;
-
-        Kmer<K> current = kmer;
-
-        std::vector<Kmer<K>> path;
-
-        while (!visited.Contains(current)) {
-          path.push_back(current);
-          visited.Add(current);
-          current = get_nexts(current)[0];
-        }
-
-        unitigs.push_back(GetUnitigFromKmers(path));
-      }
-    }
+    std::vector<std::string> unitigs = GetUnitigs(kmer_set);
 
     std::string concatenated;
 
@@ -248,6 +255,7 @@ class KmerSetCompact {
 
  private:
   SuffixArray sa_;
+
   std::vector<int64_t> boundary_;
 };
 
