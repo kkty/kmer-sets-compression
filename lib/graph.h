@@ -46,7 +46,9 @@ class Tree {
   int64_t Parent(int64_t n) const { return parent_.find(n)->second; }
 
   std::vector<int64_t> Children(int64_t n) const {
-    return children_.find(n)->second;
+    const auto it = children_.find(n);
+    if (it == children_.end()) return {};
+    return it->second;
   }
 
  private:
