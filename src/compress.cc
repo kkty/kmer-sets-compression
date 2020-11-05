@@ -18,6 +18,7 @@
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(bool, gzip, false, "accept gzipped FASTQ files");
+ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 
 int main(int argc, char** argv) {
@@ -53,10 +54,10 @@ int main(int argc, char** argv) {
       boost::iostreams::filtering_istream f_is;
       f_is.push(boost::iostreams::gzip_decompressor());
       f_is.push(is);
-      kmer_counter.FromFASTQ(f_is);
+      kmer_counter.FromFASTQ(f_is, absl::GetFlag(FLAGS_canonical));
     } else {
       std::ifstream is{file};
-      kmer_counter.FromFASTQ(is);
+      kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
     }
 
     spdlog::info("constructed kmer_counter for {}", file);
@@ -68,10 +69,6 @@ int main(int argc, char** argv) {
     spdlog::info("constructed kmer_set for {}", file);
 
     kmer_sets[i] = std::move(kmer_set);
-  }
-
-  for (int i = 0; i < n_datasets; i++) {
-    spdlog::info("kmer_sets[{}].Size() = {}", i, kmer_sets[i].Size());
   }
 
   for (int i = 0; i < n_datasets; i++) {
