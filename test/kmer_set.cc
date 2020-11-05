@@ -12,7 +12,8 @@ TEST(kmer_set, BucketAndKey) {
   const int N = 2;
   Kmer<K> kmer("AGCTG");
   const auto [bucket, key] = GetBucketAndKeyFromKmer<K, N>(kmer);
-  ASSERT_EQ(kmer, (GetKmerFromBucketAndKey<K, N>(bucket, key)));
+  ASSERT_EQ(kmer.String(),
+            (GetKmerFromBucketAndKey<K, N>(bucket, key)).String());
 }
 
 TEST(kmer_set, AddRemove) {
