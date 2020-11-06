@@ -14,7 +14,8 @@ find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED)
 find_package(mimalloc REQUIRED)
 
-include_directories(${Boost_INCLUDE_DIRS} lib)
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+include_directories(lib)
 
 link_libraries(
   mimalloc
