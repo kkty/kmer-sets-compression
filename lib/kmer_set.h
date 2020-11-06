@@ -73,8 +73,8 @@ class KmerSet {
     }
   }
 
-  int Size() const {
-    int sum = 0;
+  int64_t Size() const {
+    int64_t sum = 0;
     for (const auto& bucket : buckets_) {
       sum += bucket.size();
     }
