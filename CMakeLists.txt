@@ -12,10 +12,12 @@ find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED)
+find_package(mimalloc REQUIRED)
 
 include_directories(${Boost_INCLUDE_DIRS} lib)
 
 link_libraries(
+  mimalloc
   spdlog::spdlog
   absl::strings
   absl::flat_hash_set
@@ -32,6 +34,7 @@ link_libraries(
   GTest::gtest
   GTest::gtest_main
 )
+
 add_executable(test_kmer test/kmer.cc)
 add_executable(test_kmer_set test/kmer_set.cc)
 add_executable(test_kmer_set_compact test/kmer_set_compact.cc)
