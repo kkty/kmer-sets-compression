@@ -7,9 +7,22 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: true
-      - run: mkdir build
-      - run: cmake .. -DCMAKE_BUILD_TYPE=Debug -DBoost_ARCHITECTURE=-x64 -DBoost_INCLUDE_DIR=$BOOST_ROOT_1_72_0/include && make -j
-        working-directory: build
+      - run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 && make -j && make DESTDIR=/tmp install
+        working-directory: extern/abseil-cpp
+        env:
+          CC: gcc-10
+          CXX: g++-10
+      - run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 && make -j && make DESTDIR=/tmp install
+        working-directory: extern/googletest
+        env:
+          CC: gcc-10
+          CXX: g++-10
+      - run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 && make -j && make DESTDIR=/tmp install
+        working-directory: extern/spdlog
+        env:
+          CC: gcc-10
+          CXX: g++-10
+      - run: mkdir build && cd build && cmake .. -DCMAKE_PREFIX_PATH=/tmp/usr/local -DCMAKE_BUILD_TYPE=Debug -DBoost_ARCHITECTURE=-x64 -DBoost_INCLUDE_DIR=$BOOST_ROOT_1_72_0/include && make -j
         env:
           CC: gcc-10
           CXX: g++-10
