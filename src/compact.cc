@@ -10,6 +10,7 @@
 #include "absl/flags/parse.h"
 #include "boost/iostreams/filter/bzip2.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
+#include "boost/process.hpp"
 #include "kmer.h"
 #include "kmer_counter.h"
 #include "kmer_set.h"
@@ -18,7 +19,8 @@
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
-ABSL_FLAG(bool, bzip2, false, "accept bzip2-ed FASTQ files");
+ABSL_FLAG(std::string, decompressor, "",
+          "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 
 int main(int argc, char** argv) {
@@ -46,15 +48,19 @@ int main(int argc, char** argv) {
 
     KmerCounter<K, B> kmer_counter;
 
-    if (absl::GetFlag(FLAGS_bzip2)) {
-      std::ifstream is(file, std::ios_base::in | std::ios_base::binary);
-      boost::iostreams::filtering_istream f_is;
-      f_is.push(boost::iostreams::bzip2_decompressor());
-      f_is.push(is);
-      kmer_counter.FromFASTQ(f_is, absl::GetFlag(FLAGS_canonical));
-    } else {
-      std::ifstream is{file};
-      kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+    {
+      const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+
+      if (decompressor != "") {
+        boost::process::ipstream ipstream;
+        boost::process::child child(decompressor + ' ' + file,
+                                    boost::process::std_out > ipstream);
+        kmer_counter.FromFASTQ(ipstream, absl::GetFlag(FLAGS_canonical));
+        child.wait();
+      } else {
+        std::ifstream is{file};
+        kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+      }
     }
 
     spdlog::info("constructed kmer_counter");
