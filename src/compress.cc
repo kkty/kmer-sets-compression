@@ -23,6 +23,7 @@ ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
+ABSL_FLAG(bool, fastdiff, false, "use fast diff calculation");
 
 int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
@@ -91,6 +92,10 @@ int main(int argc, char** argv) {
 
   // Returns the required size to represent the difference between s1 and s2.
   const auto get_diff = [&](const KmerSet<K, B>& s1, const KmerSet<K, B>& s2) {
+    if (absl::GetFlag(FLAGS_fastdiff)) {
+      return (s1 - s2).Size() + (s2 - s1).Size();
+    }
+
     // Returns the size after compaction.
     const auto get_size = [&](KmerSet<K, B> s) {
       const std::vector<std::string> unitigs = GetUnitigs(s);
@@ -105,18 +110,6 @@ int main(int argc, char** argv) {
   for (int i = 0; i < n_datasets; i++) {
     const int64_t diff = get_diff(kmer_sets[n_datasets], kmer_sets[i]);
     spdlog::info("i = {}, diff = {}", i, diff);
-  }
-
-  {
-    for (int i = 0; i < n_datasets; i++) {
-      for (int j = i + 1; j < n_datasets; j++) {
-        spdlog::debug("calculating intersection: i = {}, j = {}", i, j);
-        KmerSet<K, B> intersection =
-            kmer_sets[i] - (kmer_sets[i] - kmer_sets[j]);
-        spdlog::debug("calculated intersection: i = {}, j = {}", i, j);
-        kmer_sets.push_back(std::move(intersection));
-      }
-    }
   }
 
   BidirectionalGraph g;
