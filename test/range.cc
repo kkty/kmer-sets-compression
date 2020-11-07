@@ -11,7 +11,7 @@ TEST(Range, Split) {
         ASSERT_EQ(ranges.size(), n);
         ASSERT_EQ(ranges.front().begin, begin);
         for (int i = 0; i < n - 1; i++)
-          ASSERT_EQ(ranges[i].begin, ranges[i + 1].end);
+          ASSERT_EQ(ranges[i].end, ranges[i + 1].begin);
         ASSERT_EQ(ranges.back().end, end);
       }
     }
