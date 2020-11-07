@@ -113,8 +113,10 @@ int main(int argc, char** argv) {
     }
 
     // Returns the size after compaction.
-    const auto get_size = [&](KmerSet<K, B> s) {
-      const std::vector<std::string> unitigs = GetUnitigs(s);
+    const auto get_size = [&](const KmerSet<K, B>& s) {
+      const std::vector<std::string> unitigs = absl::GetFlag(FLAGS_canonical)
+                                                   ? GetUnitigsCanonical(s)
+                                                   : GetUnitigs(s);
       int64_t size = 0;
       for (const std::string& unitig : unitigs) size += unitig.size();
       return size;
