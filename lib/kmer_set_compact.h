@@ -99,13 +99,13 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
 
   std::vector<std::thread> threads;
 
-  for (const auto& range :
-       SplitRange(0, start_kmers.size(), std::thread::hardware_concurrency())) {
+  for (const Range& range : Range(0, start_kmers.size())
+                                .Split(std::thread::hardware_concurrency())) {
     threads.emplace_back([&, range] {
       std::vector<std::string> buf_unitigs;
       KmerSet<K, B> buf_visited;
 
-      for (int64_t i = range.first; i < range.second; i++) {
+      for (int64_t i = range.begin; i < range.end; i++) {
         const Kmer<K>& start_kmer = start_kmers[i];
         std::vector<Kmer<K>> path;
 
@@ -122,18 +122,18 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
 
       std::vector<std::thread> threads;
 
-      threads.emplace_back([&]{
+      threads.emplace_back([&] {
         std::lock_guard _{mu_visited};
         visited += buf_visited;
       });
 
-      threads.emplace_back([&]{
+      threads.emplace_back([&] {
         std::lock_guard _{mu_unitigs};
         unitigs.reserve(unitigs.size() + buf_unitigs.size());
         for (const auto& unitig : buf_unitigs) unitigs.push_back(unitig);
       });
 
-      for (std::thread& thread: threads) thread.join();
+      for (std::thread& thread : threads) thread.join();
     });
   }
 
@@ -223,12 +223,12 @@ class KmerSetCompact {
 
     std::vector<std::thread> threads;
 
-    for (const auto& range :
-         SplitRange(0, boundary_.size(), std::thread::hardware_concurrency())) {
+    for (const Range& range : Range(0, boundary_.size())
+                                  .Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
-        for (int64_t i = range.first; i < range.second; i++) {
+        for (int64_t i = range.begin; i < range.end; i++) {
           const int64_t begin = boundary_[i];
           const int64_t end = (i == (int64_t)boundary_.size() - 1)
                                   ? sa_.String().length()

@@ -57,14 +57,12 @@ class KmerCounter {
 
     std::vector<std::thread> threads;
 
-    const auto ranges =
-        SplitRange(0, lines.size(), std::thread::hardware_concurrency());
-
-    for (const auto& range : ranges) {
+    for (const Range& range :
+         Range(0, lines.size()).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
         std::array<Bucket, 1 << B> buf;
 
-        for (int64_t i = range.first; i < range.second; i++) {
+        for (int64_t i = range.begin; i < range.end; i++) {
           const auto& line = lines[i];
           std::vector<std::string> fragments = absl::StrSplit(line, "N");
           for (const auto& fragment : fragments) {
@@ -107,6 +105,7 @@ class KmerCounter {
   }
 
   // Returns a KmerSet, ignoring ones that appear less often.
+  // The number of ignored k-mers is also returned.
   std::pair<KmerSet<K, B>, int64_t> Set(int cutoff) const {
     KmerSet<K, B> set;
     std::mutex mu;
@@ -151,10 +150,10 @@ class KmerCounter {
   void ForEachBucket(F&& f) const {
     std::vector<std::thread> threads;
 
-    for (const auto& range :
-         SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
+    for (const Range& range :
+         Range(0, 1 << B).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
-        for (int i = range.first; i < range.second; i++) {
+        for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];
           f(bucket, i);
         }

@@ -161,10 +161,10 @@ class KmerSet {
   void ForEachBucket(F&& f) const {
     std::vector<std::thread> threads;
 
-    for (const auto& range :
-         SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
+    for (const Range& range :
+         Range(0, 1 << B).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
-        for (int i = range.first; i < range.second; i++) {
+        for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];
           f(bucket, i);
         }
