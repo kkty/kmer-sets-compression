@@ -8,6 +8,7 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "absl/status/status.h"
 #include "boost/iostreams/filter/bzip2.hpp"
 #include "boost/iostreams/filtering_stream.hpp"
 #include "boost/process.hpp"
@@ -64,11 +65,26 @@ int main(int argc, char** argv) {
         boost::process::ipstream ipstream;
         boost::process::child child(decompressor + ' ' + file,
                                     boost::process::std_out > ipstream);
-        kmer_counter.FromFASTQ(ipstream, absl::GetFlag(FLAGS_canonical));
+
+        const absl::Status status =
+            kmer_counter.FromFASTQ(ipstream, absl::GetFlag(FLAGS_canonical));
+
         child.wait();
+
+        if (!status.ok()) {
+          spdlog::error("failed to parse FASTQ file");
+          std::exit(1);
+        }
       } else {
         std::ifstream is{file};
-        kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+
+        const absl::Status status =
+            kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+
+        if (!status.ok()) {
+          spdlog::error("failed to parse FASTQ file");
+          std::exit(1);
+        }
       }
     }
 

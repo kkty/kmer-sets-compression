@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_split.h"
 #include "kmer.h"
 #include "kmer_set.h"
@@ -19,24 +20,36 @@
 template <int K, int B>
 class KmerCounter {
  public:
-  // Find k-mers in a FASTQ file.
-  void FromFASTQ(std::istream& is, bool canonical = false) {
+  // Returns the number of distinct k-mers.
+  int64_t Size() const {
+    int64_t sum = 0;
+    for (const auto& bucket : buckets_) {
+      sum += bucket.size();
+    }
+    return sum;
+  }
+
+  absl::Status FromFASTQ(std::istream& is, bool canonical) {
     std::vector<std::string> lines;
 
     {
-      std::array<std::string, 4> buf;
+      const absl::Status error =
+          absl::UnknownError("failed to parse FASTQ file");
 
-      // Reads 4 lines from "is" and pushes to "buf".
-      auto consume = [&is, &buf]() {
-        for (int i = 0; i < 4; i++) {
-          if (!std::getline(is, buf[i])) return false;
-        }
+      std::string s;
 
-        return true;
-      };
+      while (true) {
+        // EOF
+        if (!std::getline(is, s)) break;
 
-      while (consume() && buf[0].length() && buf[0][0] == '@') {
-        lines.push_back(std::move(buf[1]));
+        if (s.length() == 0 || s[0] != '@') return error;
+
+        if (!std::getline(is, s)) return error;
+
+        lines.push_back(s);
+
+        if (!std::getline(is, s)) return error;
+        if (!std::getline(is, s)) return error;
       }
     }
 
@@ -85,18 +98,14 @@ class KmerCounter {
     }
 
     for (std::thread& thread : threads) thread.join();
+
+    return absl::OkStatus();
   }
 
-  int Size() const {
-    int sum = 0;
-    for (const auto& bucket : buckets_) {
-      sum += bucket.size();
-    }
-    return sum;
-  }
-
+  // Returns a KmerSet, ignoring ones that appear less often.
   std::pair<KmerSet<K, B>, int64_t> Set(int cutoff) const {
     KmerSet<K, B> set;
+
     std::vector<std::thread> threads;
     std::atomic_int64_t cutoff_count = 0;
 

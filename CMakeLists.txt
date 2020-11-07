@@ -25,6 +25,7 @@ link_libraries(
   absl::flat_hash_map
   absl::flags
   absl::flags_parse
+  absl::status
 )
 
 add_executable(search src/search.cc)
