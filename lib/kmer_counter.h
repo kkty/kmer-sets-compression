@@ -77,21 +77,25 @@ class KmerCounter {
           }
         }
 
-        std::vector<int> v;
-        v.reserve(1 << B);
-        for (int i = 0; i < (1 << B); i++) v.push_back(i);
+        std::bitset<1 << B> done;
 
-        {
-          std::default_random_engine e(range.first);
-          std::shuffle(v.begin(), v.end(), e);
-        }
+        while (!done.all()) {
+          for (int i = 0; i < (1 << B); i++) {
+            if (done[i]) continue;
 
-        for (int i : v) {
-          std::lock_guard _{buckets_mutexes[i]};
-          auto& bucket = buckets_[i];
-          bucket.reserve(bucket.size() + buf[i].size());
-          for (const auto& [key, count] : buf[i]) {
-            bucket[key] += count;
+            auto& mu = buckets_mutexes[i];
+
+            if (mu.try_lock()) {
+              auto& bucket = buckets_[i];
+
+              bucket.reserve(bucket.size() + buf[i].size());
+              for (const auto& [key, count] : buf[i]) {
+                bucket[key] += count;
+              }
+
+              mu.unlock();
+              done[i] = true;
+            }
           }
         }
       });
@@ -105,28 +109,32 @@ class KmerCounter {
   // Returns a KmerSet, ignoring ones that appear less often.
   std::pair<KmerSet<K, B>, int64_t> Set(int cutoff) const {
     KmerSet<K, B> set;
+    std::mutex mu;
 
     std::vector<std::thread> threads;
     std::atomic_int64_t cutoff_count = 0;
 
-    for (const auto& range :
-         SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
-      threads.emplace_back([&, range] {
-        for (int i = range.first; i < range.second; i++) {
-          const Bucket& bucket = buckets_[i];
-          for (const auto& [key, count] : bucket) {
-            if (count < cutoff) {
-              cutoff_count += 1;
-              continue;
-            }
+    ForEachBucket([&](const Bucket& bucket, int bucketID) {
+      std::vector<std::bitset<K * 2 - B>> buf;
 
-            set.Add(i, key);
-          }
+      for (const auto& [key, count] : bucket) {
+        if (count < cutoff) {
+          cutoff_count += 1;
+          continue;
         }
-      });
-    }
 
-    for (std::thread& thread : threads) thread.join();
+        buf.push_back(key);
+      }
+
+      {
+        std::lock_guard _{mu};
+        set.buckets_[bucketID].reserve(set.buckets_[bucketID].size() +
+                                       buf.size());
+        for (const std::bitset<K * 2 - B>& key : buf) {
+          set.buckets_[bucketID].insert(key);
+        }
+      }
+    });
 
     return {set, (int64_t)cutoff_count};
   }
@@ -135,6 +143,26 @@ class KmerCounter {
   using Bucket = absl::flat_hash_map<std::bitset<K * 2 - B>, int>;
 
   std::array<Bucket, 1 << B> buckets_;
+
+  // Dispatches processing for each bucket.
+  // Usage:
+  //   ForEachBucket([&](const Bucket& bucket, int bucketID){ ... });
+  template <typename F>
+  void ForEachBucket(F&& f) const {
+    std::vector<std::thread> threads;
+
+    for (const auto& range :
+         SplitRange(0, 1 << B, std::thread::hardware_concurrency())) {
+      threads.emplace_back([&, range] {
+        for (int i = range.first; i < range.second; i++) {
+          const Bucket& bucket = buckets_[i];
+          f(bucket, i);
+        }
+      });
+    }
+
+    for (auto& thread : threads) thread.join();
+  }
 };
 
 #endif
