@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
     spdlog::info("constructed kmer_set");
     spdlog::info("cutoff_count = {}", cutoff_count);
 
-    const KmerSetCompact kmer_set_compact{kmer_set};
+    const KmerSetCompact kmer_set_compact(kmer_set,
+                                          absl::GetFlag(FLAGS_canonical));
 
     spdlog::info("kmer_set_compact.Size() = {}", kmer_set_compact.Size());
 

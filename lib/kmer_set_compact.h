@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "range.h"
 #include "suffix_array.h"
 
+// "ACCG", "CCGT", "CGTT" -> "ACCGTT"
 template <int K>
 std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   std::string s;
@@ -21,6 +23,197 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
     s += kmers[i].String()[K - 1];
   }
   return s;
+}
+
+template <int K, int B>
+std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, B>& kmer_set) {
+  // Consider a bi-directional graph.
+
+  // Returns neighboring k-mers. Complements are considered.
+  const auto get_neighbors = [&](const Kmer<K>& kmer) {
+    absl::flat_hash_set<Kmer<K>> neighbors;
+
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      const Kmer<K> next_canonical = next.Canonical();
+      if (kmer != next_canonical && kmer_set.Contains(next_canonical))
+        neighbors.insert(next_canonical);
+    }
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      const Kmer<K> prev_canonical = prev.Canonical();
+      if (kmer != prev_canonical && kmer_set.Contains(prev_canonical))
+        neighbors.insert(prev_canonical);
+    }
+
+    return neighbors;
+  };
+
+  // Terminal nodes of simple paths.
+  // Every node in a simple path has degree of 0, 1, or 2.
+  const std::vector<Kmer<K>> terminal_kmers =
+      kmer_set.Find([&](const Kmer<K>& kmer) {
+        const auto neighbors = get_neighbors(kmer);
+
+        if (neighbors.size() >= 3) return false;
+        if (neighbors.size() <= 1) return true;
+
+        for (const Kmer<K>& neighbor : neighbors)
+          if (get_neighbors(neighbor).size() >= 3) return true;
+
+        return false;
+      });
+
+  // If "circular" is false, finds a simple path from "start".
+  // "start" should be one of "terminal_kmers" in this case.
+  // If "circular" is true, finds a path in a non-branching loop.
+  // "start" should belong to a non-branching loop in this case.
+  const auto find_path = [&](const Kmer<K>& start, bool circular) {
+    std::vector<Kmer<K>> path;
+
+    Kmer<K> current = start;
+
+    while (true) {
+      path.push_back(current);
+
+      std::vector<Kmer<K>> unvisited_neighbors;
+
+      for (const Kmer<K>& neighbor : get_neighbors(current)) {
+        if (get_neighbors(neighbor).size() <= 2 &&
+            std::find(path.begin(), path.end(), neighbor) == path.end())
+          unvisited_neighbors.push_back(neighbor);
+      }
+
+      if (!circular) {
+        assert(unvisited_neighbors.size() <= 1);
+      } else {
+        circular = false;
+      }
+
+      if (unvisited_neighbors.size() == 0) break;
+
+      const Kmer<K> unvisited_neighbor = unvisited_neighbors[0];
+
+      current = unvisited_neighbor;
+    }
+
+    return path;
+  };
+
+  // Finds unitigs in a path.
+  // As k-mers in a path can either be used as it is or as its complement,
+  // a path can be split into multiple segments, leading to multiple unitigs.
+  const auto get_unitigs = [](const std::vector<Kmer<K>>& path) {
+    // Returns true if the (K-1)-suffix of "lhs" is equal to the (K-1)-prefix of
+    // "rhs".
+    const auto is_joinable = [](const Kmer<K>& lhs, const Kmer<K>& rhs) {
+      for (int i = 0; i < K - 1; i++) {
+        if (lhs.Get(i + 1) != rhs.Get(i)) return false;
+      }
+
+      return true;
+    };
+
+    std::vector<std::string> unitigs;
+    std::vector<std::vector<Kmer<K>>> joinable_paths;
+
+    for (const Kmer<K>& kmer : path) {
+      if (joinable_paths.size() &&
+          is_joinable(joinable_paths.back().back(), kmer)) {
+        joinable_paths.back().push_back(kmer);
+      } else if (joinable_paths.size() &&
+                 is_joinable(joinable_paths.back().back(), kmer.Complement())) {
+        joinable_paths.back().push_back(kmer.Complement());
+      } else {
+        joinable_paths.push_back(std::vector<Kmer<K>>{kmer});
+      }
+    }
+
+    for (const std::vector<Kmer<K>>& path : joinable_paths) {
+      unitigs.push_back(GetUnitigFromKmers(path));
+    }
+
+    return unitigs;
+  };
+
+  std::vector<std::string> unitigs;
+  absl::flat_hash_set<Kmer<K>> visited;
+
+  std::vector<std::thread> threads;
+  std::mutex mu_unitigs;
+  std::mutex mu_visited;
+
+  for (const Range& range : Range(0, terminal_kmers.size())
+                                .Split(std::thread::hardware_concurrency())) {
+    threads.emplace_back([&, range] {
+      std::vector<std::string> buf_unitigs;
+      absl::flat_hash_set<Kmer<K>> buf_visited;
+
+      for (int i = range.begin; i < range.end; i++) {
+        const Kmer<K> terminal_kmer = terminal_kmers[i];
+
+        std::vector<Kmer<K>> path = find_path(terminal_kmer, false);
+
+        // Not to process the same path for multiple times.
+        if (path[0] < path[path.size() - 1]) continue;
+
+        for (const Kmer<K>& kmer : path) buf_visited.insert(kmer);
+
+        for (const std::string& unitig : get_unitigs(path)) {
+          buf_unitigs.push_back(unitig);
+        }
+      }
+
+      std::vector<std::thread> threads;
+
+      threads.emplace_back([&] {
+        std::lock_guard _{mu_unitigs};
+        unitigs.reserve(unitigs.size() + buf_unitigs.size());
+        for (const std::string& unitig : buf_unitigs) unitigs.push_back(unitig);
+      });
+
+      threads.emplace_back([&] {
+        std::lock_guard _{mu_visited};
+        visited.reserve(visited.size() + buf_visited.size());
+        for (const Kmer<K>& kmer : buf_visited) visited.insert(kmer);
+      });
+
+      for (std::thread& thread : threads) thread.join();
+    });
+  }
+
+  for (std::thread& thread : threads) thread.join();
+
+  // Consider non-branching loops.
+  // This is hard to parallelize.
+
+  const std::vector<Kmer<K>> nodes_in_non_branching_loop =
+      kmer_set.Find([&](const Kmer<K>& kmer) {
+        return get_neighbors(kmer).size() == 2 &&
+               visited.find(kmer) == visited.end();
+      });
+
+  for (const Kmer<K>& kmer : nodes_in_non_branching_loop) {
+    if (visited.find(kmer) != visited.end()) continue;
+
+    std::vector<Kmer<K>> path = find_path(kmer, true);
+
+    for (const Kmer<K>& kmer : path) {
+      visited.insert(kmer);
+    }
+
+    for (const std::string& unitig : get_unitigs(path)) {
+      unitigs.push_back(unitig);
+    }
+  }
+
+  const std::vector<Kmer<K>> branching_kmers = kmer_set.Find(
+      [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; });
+
+  for (const Kmer<K>& kmer : branching_kmers) {
+    unitigs.push_back(kmer.String());
+  }
+
+  return unitigs;
 }
 
 template <int K, int B>
@@ -168,8 +361,10 @@ template <int K>
 class KmerSetCompact {
  public:
   template <int B>
-  KmerSetCompact(const KmerSet<K, B>& kmer_set) {
-    std::vector<std::string> unitigs = GetUnitigs(kmer_set);
+  KmerSetCompact(const KmerSet<K, B>& kmer_set, bool canonical = false)
+      : canonical_(canonical) {
+    const std::vector<std::string> unitigs =
+        canonical ? GetUnitigsCanonical(kmer_set) : GetUnitigs(kmer_set);
 
     std::string concatenated;
 
@@ -188,31 +383,39 @@ class KmerSetCompact {
     sa_ = SuffixArray(concatenated);
   }
 
-  bool Contains(const Kmer<K>& kmer) {
-    std::vector<int64_t> v = sa_.Find(kmer.String());
+  bool Contains(const Kmer<K>& kmer) const {
+    const auto contains = [&](const Kmer<K>& kmer) {
+      std::vector<int64_t> v = sa_.Find(kmer.String());
 
-    // Returns the largest j such that boundary_[j] <= i;
-    const auto f = [&](int64_t i) {
-      // begin == -1 or boundary_[begin] <= i
-      int64_t begin = -1;
+      // Returns the largest j such that boundary_[j] <= i;
+      const auto f = [&](int64_t i) {
+        // begin == -1 or boundary_[begin] <= i
+        int64_t begin = -1;
 
-      // end == boundary_.size() or boundary_[end] > i
-      int64_t end = boundary_.size();
+        // end == boundary_.size() or boundary_[end] > i
+        int64_t end = boundary_.size();
 
-      while (end - begin > 1) {
-        int64_t mid = (begin + end) / 2;
+        while (end - begin > 1) {
+          int64_t mid = (begin + end) / 2;
 
-        if (boundary_[mid] <= i)
-          begin = mid;
-        else
-          end = mid;
-      }
+          if (boundary_[mid] <= i)
+            begin = mid;
+          else
+            end = mid;
+        }
 
-      return begin;
+        return begin;
+      };
+
+      return std::any_of(v.begin(), v.end(),
+                         [&](int64_t i) { return f(i) == f(i + K - 1); });
     };
 
-    return std::any_of(v.begin(), v.end(),
-                       [&](int64_t i) { return f(i) == f(i + K - 1); });
+    if (canonical_) {
+      return contains(kmer) && contains(kmer.Complement());
+    } else {
+      return contains(kmer);
+    }
   }
 
   // Returns the k-mers that match the condition.
@@ -235,7 +438,7 @@ class KmerSetCompact {
                                   : boundary_[i + 1];
           for (int64_t j = 0; begin + j + K - 1 < end; j++) {
             const Kmer<K> kmer{sa_.String().substr(begin + j, K)};
-            if (pred(kmer)) buf.push_back(kmer);
+            if (pred(kmer)) buf.push_back(canonical_ ? kmer.Canonical() : kmer);
           }
         }
 
@@ -258,6 +461,8 @@ class KmerSetCompact {
   int64_t Size() const { return sa_.String().length(); }
 
  private:
+  bool canonical_;
+
   SuffixArray sa_;
 
   std::vector<int64_t> boundary_;
