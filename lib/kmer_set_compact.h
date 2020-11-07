@@ -120,16 +120,20 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
         buf_unitigs.push_back(GetUnitigFromKmers(path));
       }
 
-      {
+      std::vector<std::thread> threads;
+
+      threads.emplace_back([&]{
         std::lock_guard _{mu_visited};
         visited += buf_visited;
-      }
+      });
 
-      {
+      threads.emplace_back([&]{
         std::lock_guard _{mu_unitigs};
         unitigs.reserve(unitigs.size() + buf_unitigs.size());
         for (const auto& unitig : buf_unitigs) unitigs.push_back(unitig);
-      }
+      });
+
+      for (std::thread& thread: threads) thread.join();
     });
   }
 
