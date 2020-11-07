@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "boost/sort/block_indirect_sort/block_indirect_sort.hpp"
+
 class SuffixArray {
  public:
   SuffixArray() = default;
@@ -12,17 +14,19 @@ class SuffixArray {
   SuffixArray(const std::string& s) : s_(s), v_(s.length()) {
     for (int64_t i = 0; i < (int64_t)s_.length(); i++) v_[i] = i;
 
-    std::sort(v_.begin(), v_.end(), [&](int64_t x, int64_t y) {
-      // Equivalent to:
-      // return s_.substr(x, s_.length() - x) < s_.substr(y, s_.length() - y);
+    boost::sort::block_indirect_sort(
+        v_.begin(), v_.end(), [&](int64_t x, int64_t y) {
+          // Equivalent to:
+          // return s_.substr(x, s_.length() - x) < s_.substr(y, s_.length() -
+          // y);
 
-      for (int64_t i = 0; i + std::max(x, y) < (int64_t)s_.length(); i++) {
-        if (s_[x + i] < s_[y + i]) return true;
-        if (s_[x + i] > s_[y + i]) return false;
-      }
+          for (int64_t i = 0; i + std::max(x, y) < (int64_t)s_.length(); i++) {
+            if (s_[x + i] < s_[y + i]) return true;
+            if (s_[x + i] > s_[y + i]) return false;
+          }
 
-      return x > y;
-    });
+          return x > y;
+        });
   }
 
   // Returns a list of indexes in the original string.
