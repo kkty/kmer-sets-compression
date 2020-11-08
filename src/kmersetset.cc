@@ -111,11 +111,19 @@ int main(int argc, char** argv) {
   spdlog::info("kmer_sets_size = {}", kmer_sets_size);
 
   spdlog::info("constructing kmer_set_set");
-  KmerSetSet<K, B> kmer_set_set(kmer_sets);
+
+  const auto cost_function = [](const KmerSet<K, B>& lhs,
+                                const KmerSet<K, B>& rhs) {
+    return (lhs - rhs).Size() + (rhs - lhs).Size();
+  };
+
+  KmerSetSet<K, B, decltype(cost_function)> kmer_set_set(kmer_sets,
+                                                         cost_function);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
   spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
+  spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
 
   // Make sure that we can re-construct original k-mer sets.
 

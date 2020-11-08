@@ -13,36 +13,20 @@
 #include "kmer_set_compact.h"
 #include "spdlog/spdlog.h"
 
-template <int K, int B>
-std::pair<int64_t, Tree> ConstructMST(
-    const std::vector<KmerSet<K, B>>& kmer_sets, int root) {
-  BidirectionalGraph g;
-
-  for (size_t i = 0; i < kmer_sets.size(); i++) {
-    for (size_t j = i + 1; j < kmer_sets.size(); j++) {
-      g.AddEdge(i, j,
-                (kmer_sets[i] - kmer_sets[j]).Size() +
-                    (kmer_sets[j] - kmer_sets[i]).Size());
-    }
-  }
-
-  return g.MST(root);
-}
-
 // KmerSetSet can be used to represent multiple k-mer sets in less space.
 // It is a recursive structure. That is, a KmerSetSet can contain another
 // KmerSetSet internally.
-template <int K, int B>
+template <int K, int B, typename CostFunction>
 class KmerSetSet {
  public:
-  KmerSetSet(std::vector<KmerSet<K, B>> kmer_sets) : n_(kmer_sets.size()) {
+  KmerSetSet(std::vector<KmerSet<K, B>> kmer_sets, CostFunction cost_function)
+      : n_(kmer_sets.size()) {
     // kmer_sets[n_] is an empty set.
     kmer_sets.push_back(KmerSet<K, B>());
 
-    int64_t cost;
-    std::tie(cost, tree_) = ConstructMST(kmer_sets, n_);
+    std::tie(cost_, tree_) = ConstructMST(kmer_sets, n_, cost_function);
 
-    spdlog::debug("constructed MST: cost = {}", cost);
+    spdlog::debug("constructed MST: cost_ = {}", cost_);
 
     std::vector<KmerSet<K, B>> diffs;
 
@@ -63,7 +47,8 @@ class KmerSetSet {
 
       // The same MST can be constructed twice.
       // This is for the sake of simplicity of implementation.
-      improve_by_recursion = ConstructMST(diffs, diffs.size() - 1).first < cost;
+      improve_by_recursion =
+          ConstructMST(diffs, diffs.size() - 1, cost_function).first < cost_;
 
       diffs.pop_back();
     }
@@ -71,24 +56,14 @@ class KmerSetSet {
     spdlog::debug("improve_by_recursion = {}", improve_by_recursion);
 
     if (improve_by_recursion) {
-      diffs_ = new KmerSetSet(diffs);
+      diffs_ = new KmerSetSet(diffs, cost_function);
     } else {
       diffs_ = diffs;
     }
   }
 
   ~KmerSetSet() {
-    KmerSetSet* current = this;
-
-    std::vector<KmerSetSet*> ptrs;
-
-    while (!current->IsTerminal()) {
-      KmerSetSet* next = std::get<KmerSetSet*>(current->diffs_);
-      ptrs.push_back(next);
-      current = next;
-    }
-
-    for (KmerSetSet* ptr : ptrs) delete ptr;
+    if (!IsTerminal()) delete std::get<KmerSetSet*>(diffs_);
   }
 
   // Returns the ith k-mer set.
@@ -115,7 +90,7 @@ class KmerSetSet {
             diffs[diff_table_.find(path[i])->second.find(path[i + 1])->second] -
             diffs[diff_table_.find(path[i + 1])->second.find(path[i])->second];
       } else {
-        KmerSetSet<K, B>* diffs = std::get<KmerSetSet<K, B>*>(diffs_);
+        KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
 
         kmer_set =
             kmer_set +
@@ -140,12 +115,18 @@ class KmerSetSet {
         size += diff.Size();
       }
     } else {
-      KmerSetSet<K, B>* diffs = std::get<KmerSetSet<K, B>*>(diffs_);
+      KmerSetSet<K, B, CostFunction>* diffs = std::get<KmerSetSet*>(diffs_);
 
       return diffs->Size();
     }
 
     return size;
+  }
+
+  int64_t Cost() const {
+    if (IsTerminal()) return cost_;
+
+    return std::get<KmerSetSet*>(diffs_)->Cost();
   }
 
   int Depth() const {
@@ -154,7 +135,7 @@ class KmerSetSet {
     const KmerSetSet* current = this;
 
     while (!current->IsTerminal()) {
-      current = std::get<KmerSetSet<K, B>*>(current->diffs_);
+      current = std::get<KmerSetSet*>(current->diffs_);
       depth += 1;
     }
 
@@ -166,7 +147,23 @@ class KmerSetSet {
     return std::holds_alternative<std::vector<KmerSet<K, B>>>(diffs_);
   }
 
+  static std::pair<int64_t, Tree> ConstructMST(
+      const std::vector<KmerSet<K, B>>& kmer_sets, int root,
+      CostFunction cost_function) {
+    BidirectionalGraph g;
+
+    for (size_t i = 0; i < kmer_sets.size(); i++) {
+      for (size_t j = i + 1; j < kmer_sets.size(); j++) {
+        g.AddEdge(i, j, cost_function(kmer_sets[i], kmer_sets[j]));
+      }
+    }
+
+    return g.MST(root);
+  }
+
   int n_;
+
+  int cost_;
 
   // Tree does not have a default constructor.
   std::optional<Tree> tree_;
