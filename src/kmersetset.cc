@@ -25,6 +25,7 @@ ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
+ABSL_FLAG(bool, fastcost, false, "use fast cost calculation");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -112,9 +113,28 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set_set");
 
-  const auto cost_function = [](const KmerSet<K, B>& lhs,
-                                const KmerSet<K, B>& rhs) {
-    return (lhs - rhs).Size() + (rhs - lhs).Size();
+  const auto cost_function = [fastcost = absl::GetFlag(FLAGS_fastcost),
+                              canonical = absl::GetFlag(FLAGS_canonical)](
+                                 const KmerSet<K, B>& lhs,
+                                 const KmerSet<K, B>& rhs) {
+    int64_t cost = 0;
+
+    if (fastcost) {
+      cost += (lhs - rhs).Size();
+      cost += (rhs - lhs).Size();
+    } else if (canonical) {
+      for (const std::string& unitig : GetUnitigsCanonical(lhs - rhs))
+        cost += unitig.length();
+      for (const std::string& unitig : GetUnitigsCanonical(rhs - lhs))
+        cost += unitig.length();
+    } else {
+      for (const std::string& unitig : GetUnitigs(lhs - rhs))
+        cost += unitig.length();
+      for (const std::string& unitig : GetUnitigs(rhs - lhs))
+        cost += unitig.length();
+    }
+
+    return cost;
   };
 
   KmerSetSet<K, B, decltype(cost_function)> kmer_set_set(kmer_sets,
