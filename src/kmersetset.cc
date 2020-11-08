@@ -17,6 +17,7 @@
 #include "kmer_set.h"
 #include "kmer_set_compact.h"
 #include "kmer_set_set.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(std::string, decompressor, "",
@@ -25,6 +26,8 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 
 int main(int argc, char** argv) {
+  spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
+
   // List of FASTQ file names.
   const std::vector<std::string> files = [&] {
     std::vector<std::string> v;
@@ -115,21 +118,6 @@ int main(int argc, char** argv) {
   for (int i = 0; i < n_datasets; i++) {
     spdlog::info("kmer_sets[{}] == kmer_set_set.Get({}) = {}", i, i,
                  kmer_sets[i] == kmer_set_set.Get(i));
-  }
-
-  // Can we reduce size by recursively making KmerSetSet?
-
-  while (true) {
-    spdlog::info("constructing kmer_set_set");
-
-    int64_t size_before = kmer_set_set.Size();
-    kmer_set_set = KmerSetSet<K, B>(kmer_set_set.Diffs());
-    int64_t size_after = kmer_set_set.Size();
-
-    spdlog::info("constructed kmer_set_set");
-    spdlog::info("kmer_set_set.Size() = {}", size_after);
-
-    if (size_before == size_after) break;
   }
 
   return 0;
