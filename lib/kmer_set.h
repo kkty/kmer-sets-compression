@@ -213,4 +213,9 @@ KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
   return lhs;
 }
 
+template <int K, int B>
+bool operator==(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+  return (lhs - rhs).Size() + (rhs - lhs).Size() == 0;
+}
+
 #endif
