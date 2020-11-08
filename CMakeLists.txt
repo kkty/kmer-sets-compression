@@ -31,6 +31,7 @@ link_libraries(
 add_executable(search src/search.cc)
 add_executable(compact src/compact.cc)
 add_executable(compress src/compress.cc)
+add_executable(kmersetset src/kmersetset.cc)
 
 link_libraries(
   GTest::gtest
