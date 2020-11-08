@@ -163,7 +163,7 @@ class KmerSetSet {
 
   int n_;
 
-  int cost_;
+  int64_t cost_;
 
   // Tree does not have a default constructor.
   std::optional<Tree> tree_;
