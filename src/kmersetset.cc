@@ -111,8 +111,6 @@ int main(int argc, char** argv) {
 
   spdlog::info("kmer_sets_size = {}", kmer_sets_size);
 
-  spdlog::info("constructing kmer_set_set");
-
   const auto cost_function = [fastcost = absl::GetFlag(FLAGS_fastcost),
                               canonical = absl::GetFlag(FLAGS_canonical)](
                                  const KmerSet<K, B>& lhs,
@@ -136,6 +134,18 @@ int main(int argc, char** argv) {
 
     return cost;
   };
+
+  {
+    int64_t total_cost = 0;
+    for (int i = 0; i < n_datasets; i++) {
+      int64_t cost = cost_function(KmerSet<K, B>(), kmer_sets[i]);
+      spdlog::info("i = {}, cost = {}", i, cost);
+      total_cost += cost;
+    }
+    spdlog::info("total_cost = {}", total_cost);
+  }
+
+  spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, B, decltype(cost_function)> kmer_set_set(kmer_sets,
                                                          cost_function);
