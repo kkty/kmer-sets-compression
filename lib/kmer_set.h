@@ -198,6 +198,11 @@ KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
 }
 
 template <int K, int B>
+KmerSet<K, B> operator&(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+  return lhs - (lhs - rhs);
+}
+
+template <int K, int B>
 KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
   rhs.ForEachBucket([&](const auto& bucket, int bucketID) {
     for (const auto& key : bucket) {
