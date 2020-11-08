@@ -20,6 +20,7 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
+ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
@@ -40,6 +41,8 @@ int main(int argc, char** argv) {
     v.erase(v.begin());
     return v;
   }();
+
+  if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int K = 21;
   const int B = 6;
@@ -112,6 +115,7 @@ int main(int argc, char** argv) {
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
+  spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
 
   // Make sure that we can re-construct original k-mer sets.
 
