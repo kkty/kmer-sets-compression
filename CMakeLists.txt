@@ -11,7 +11,7 @@ set(CMAKE_LINKER_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
 find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
 find_package(mimalloc REQUIRED)
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
@@ -26,6 +26,7 @@ link_libraries(
   absl::flags
   absl::flags_parse
   absl::status
+  ${Boost_LIBRARIES}
 )
 
 add_executable(search src/search.cc)
