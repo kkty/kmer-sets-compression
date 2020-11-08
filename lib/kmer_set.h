@@ -138,10 +138,20 @@ class KmerSet {
     return Find([&](const Kmer<K>&) { return true; });
   }
 
-  KmerSet<K, B>& operator+=(const KmerSet<K, B>& rhs) {
-    rhs.ForEachBucket([&](const Bucket& bucket, int bucketID) {
-      for (const auto& key : bucket) {
-        buckets_[bucketID].insert(key);
+  KmerSet& operator+=(const KmerSet& rhs) {
+    rhs.ForEachBucket([&](const Bucket& rhs_bucket, int bucket_id) {
+      for (const auto& key : rhs_bucket) {
+        buckets_[bucket_id].insert(key);
+      }
+    });
+
+    return *this;
+  }
+
+  KmerSet& operator-=(const KmerSet& rhs) {
+    rhs.ForEachBucket([&](const Bucket& rhs_bucket, int bucket_id) {
+      for (const auto& key : rhs_bucket) {
+        buckets_[bucket_id].erase(key);
       }
     });
 
@@ -174,47 +184,27 @@ class KmerSet {
     for (auto& thread : threads) thread.join();
   }
 
-  template <int K2, int B2>
-  friend KmerSet<K2, B2> operator-(KmerSet<K2, B2> lhs,
-                                   const KmerSet<K2, B2>& rhs);
-
-  template <int K2, int B2>
-  friend KmerSet<K2, B2> operator+(KmerSet<K2, B2> lhs,
-                                   const KmerSet<K2, B2>& rhs);
-
   template <int, int>
   friend class KmerCounter;
 };
 
 template <int K, int B>
 KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
-  rhs.ForEachBucket([&](const auto& bucket, int bucketID) {
-    for (const auto& key : bucket) {
-      lhs.buckets_[bucketID].erase(key);
-    }
-  });
-
-  return lhs;
-}
-
-template <int K, int B>
-KmerSet<K, B> operator&(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
-  return lhs - (lhs - rhs);
+  return lhs -= rhs;
 }
 
 template <int K, int B>
 KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
-  rhs.ForEachBucket([&](const auto& bucket, int bucketID) {
-    for (const auto& key : bucket) {
-      lhs.buckets_[bucketID].insert(key);
-    }
-  });
-
-  return lhs;
+  return lhs += rhs;
 }
 
 template <int K, int B>
-bool operator==(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+KmerSet<K, B> operator&(const KmerSet<K, B>& lhs, const KmerSet<K, B>& rhs) {
+  return lhs - (lhs - rhs);
+}
+
+template <int K, int B>
+bool operator==(const KmerSet<K, B>& lhs, const KmerSet<K, B>& rhs) {
   return (lhs - rhs).Size() + (rhs - lhs).Size() == 0;
 }
 
