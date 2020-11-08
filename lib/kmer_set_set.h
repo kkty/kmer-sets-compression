@@ -72,8 +72,20 @@ class KmerSetSet {
     return size;
   }
 
+  std::vector<KmerSet<K, B>> Diffs() const {
+    std::vector<KmerSet<K, B>> diffs;
+
+    for (const auto& p1 : diff_) {
+      for (const auto& p2 : p1.second) {
+        diffs.push_back(p2.second);
+      }
+    }
+
+    return diffs;
+  }
+
  private:
-  const int n_;
+  int n_;
 
   // Tree does not have a default constructor.
   std::optional<Tree> tree_;
