@@ -19,7 +19,8 @@
 template <int K, typename KeyType, typename CostFunction>
 class KmerSetSet {
  public:
-  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, CostFunction cost_function)
+  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets,
+             CostFunction cost_function)
       : n_(kmer_sets.size()) {
     // kmer_sets[n_] is an empty set.
     kmer_sets.push_back(KmerSet<K, KeyType>());
@@ -56,7 +57,7 @@ class KmerSetSet {
     spdlog::debug("improve_by_recursion = {}", improve_by_recursion);
 
     if (improve_by_recursion) {
-      diffs_ = new KmerSetSet(diffs, cost_function);
+      diffs_ = new KmerSetSet(std::move(diffs), cost_function);
     } else {
       diffs_ = diffs;
     }
