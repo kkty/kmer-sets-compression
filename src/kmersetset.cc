@@ -27,6 +27,7 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(bool, fastcost, false, "use fast cost calculation");
 ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -157,7 +158,8 @@ int main(int argc, char** argv) {
   spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-      std::move(kmer_sets), 5, cost_function, n_workers);
+      std::move(kmer_sets), absl::GetFlag(FLAGS_recursion), cost_function,
+      n_workers);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
@@ -167,8 +169,9 @@ int main(int argc, char** argv) {
   // Make sure that we can re-construct original k-mer sets.
 
   for (int i = 0; i < n_datasets; i++) {
-    spdlog::info("Equals(kmer_sets[{}], kmer_set_set.Get({})) = {}", i, i,
-                 Equals(kmer_sets[i], kmer_set_set.Get(i, n_workers), n_workers));
+    spdlog::info(
+        "Equals(kmer_sets[{}], kmer_set_set.Get({})) = {}", i, i,
+        Equals(kmer_sets[i], kmer_set_set.Get(i, n_workers), n_workers));
   }
 
   return 0;
