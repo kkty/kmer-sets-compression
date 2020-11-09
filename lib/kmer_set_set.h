@@ -191,11 +191,12 @@ class KmerSetSet {
         for (int i = range.begin; i < range.end; i++) {
           std::pair<int, int> pair = pairs[i];
 
+          int64_t cost =
+              cost_function(kmer_sets[pair.first], kmer_sets[pair.second], 1);
+
           std::lock_guard lck(mu);
 
-          g.AddEdge(
-              pair.first, pair.second,
-              cost_function(kmer_sets[pair.first], kmer_sets[pair.second], 1));
+          g.AddEdge(pair.first, pair.second, cost);
         }
       });
     }
