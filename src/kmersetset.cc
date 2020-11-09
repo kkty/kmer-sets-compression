@@ -158,8 +158,7 @@ int main(int argc, char** argv) {
   spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-      std::move(kmer_sets), absl::GetFlag(FLAGS_recursion), cost_function,
-      n_workers);
+      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
