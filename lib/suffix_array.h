@@ -11,11 +11,12 @@ class SuffixArray {
  public:
   SuffixArray() = default;
 
-  SuffixArray(const std::string& s) : s_(s), v_(s.length()) {
+  SuffixArray(const std::string& s, int n_workers) : s_(s), v_(s.length()) {
     for (int64_t i = 0; i < (int64_t)s_.length(); i++) v_[i] = i;
 
     boost::sort::block_indirect_sort(
-        v_.begin(), v_.end(), [&](int64_t x, int64_t y) {
+        v_.begin(), v_.end(),
+        [&](int64_t x, int64_t y) {
           // Equivalent to:
           // return s_.substr(x, s_.length() - x) < s_.substr(y, s_.length() -
           // y);
@@ -26,7 +27,8 @@ class SuffixArray {
           }
 
           return x > y;
-        });
+        },
+        n_workers);
   }
 
   // Returns a list of indexes in the original string.

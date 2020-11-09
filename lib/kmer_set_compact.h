@@ -26,7 +26,8 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
 }
 
 template <int K, typename KeyType>
-std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set) {
+std::vector<std::string> GetUnitigsCanonical(
+    const KmerSet<K, KeyType>& kmer_set, int n_workers) {
   // Consider a bi-directional graph.
 
   // Returns neighboring k-mers. Complements are considered.
@@ -50,8 +51,8 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set
 
   // Terminal nodes of simple paths.
   // Every node in a simple path has degree of 0, 1, or 2.
-  const std::vector<Kmer<K>> terminal_kmers =
-      kmer_set.Find([&](const Kmer<K>& kmer) {
+  const std::vector<Kmer<K>> terminal_kmers = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
         const auto neighbors = get_neighbors(kmer);
 
         if (neighbors.size() >= 3) return false;
@@ -61,7 +62,8 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set
           if (get_neighbors(neighbor).size() >= 3) return true;
 
         return false;
-      });
+      },
+      n_workers);
 
   // If "circular" is false, finds a simple path from "start".
   // "start" should be one of "terminal_kmers" in this case.
@@ -186,11 +188,12 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set
   // Consider non-branching loops.
   // This is hard to parallelize.
 
-  const std::vector<Kmer<K>> nodes_in_non_branching_loop =
-      kmer_set.Find([&](const Kmer<K>& kmer) {
+  const std::vector<Kmer<K>> nodes_in_non_branching_loop = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
         return get_neighbors(kmer).size() == 2 &&
                visited.find(kmer) == visited.end();
-      });
+      },
+      n_workers);
 
   for (const Kmer<K>& kmer : nodes_in_non_branching_loop) {
     if (visited.find(kmer) != visited.end()) continue;
@@ -207,7 +210,8 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set
   }
 
   const std::vector<Kmer<K>> branching_kmers = kmer_set.Find(
-      [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; });
+      [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; },
+      n_workers);
 
   for (const Kmer<K>& kmer : branching_kmers) {
     unitigs.push_back(kmer.String());
@@ -217,7 +221,8 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set
 }
 
 template <int K, typename KeyType>
-std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
+std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
+                                    int n_workers) {
   const auto get_nexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
@@ -238,46 +243,50 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
     return v;
   };
 
-  const auto start_kmers = kmer_set.Find([&](const Kmer<K>& kmer) {
-    const auto prevs = get_prevs(kmer);
+  const auto start_kmers = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
+        const auto prevs = get_prevs(kmer);
 
-    // If the k-mer has no incoming edges.
-    if (prevs.size() == 0) return true;
+        // If the k-mer has no incoming edges.
+        if (prevs.size() == 0) return true;
 
-    // If the k-mer has multiple incoming edges.
-    if (prevs.size() >= 2) return true;
+        // If the k-mer has multiple incoming edges.
+        if (prevs.size() >= 2) return true;
 
-    // There is an edge from "prev" to "kmer".
-    const Kmer<K> prev = prevs[0];
+        // There is an edge from "prev" to "kmer".
+        const Kmer<K> prev = prevs[0];
 
-    const auto prev_nexts = get_nexts(prev);
+        const auto prev_nexts = get_nexts(prev);
 
-    // If "prev" has multiple outgoing edges.
-    if (prev_nexts.size() >= 2) return true;
+        // If "prev" has multiple outgoing edges.
+        if (prev_nexts.size() >= 2) return true;
 
-    return false;
-  });
+        return false;
+      },
+      n_workers);
 
   const auto end_kmers = [&] {
-    const auto v = kmer_set.Find([&](const Kmer<K>& kmer) {
-      const auto nexts = get_nexts(kmer);
+    const auto v = kmer_set.Find(
+        [&](const Kmer<K>& kmer) {
+          const auto nexts = get_nexts(kmer);
 
-      // If the k-mer has no outgoing edges.
-      if (nexts.size() == 0) return true;
+          // If the k-mer has no outgoing edges.
+          if (nexts.size() == 0) return true;
 
-      // If the k-mer has multiple outgoing edges.
-      if (nexts.size() >= 2) return true;
+          // If the k-mer has multiple outgoing edges.
+          if (nexts.size() >= 2) return true;
 
-      // There is an edge from "kmer" to "next".
-      const Kmer<K> next = nexts[0];
+          // There is an edge from "kmer" to "next".
+          const Kmer<K> next = nexts[0];
 
-      const auto next_prevs = get_prevs(next);
+          const auto next_prevs = get_prevs(next);
 
-      // If "next" has multiple incoming edges.
-      if (next_prevs.size() >= 2) return true;
+          // If "next" has multiple incoming edges.
+          if (next_prevs.size() >= 2) return true;
 
-      return false;
-    });
+          return false;
+        },
+        n_workers);
 
     const absl::flat_hash_set<Kmer<K>> s(v.begin(), v.end());
 
@@ -292,8 +301,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
 
   std::vector<std::thread> threads;
 
-  for (const Range& range : Range(0, start_kmers.size())
-                                .Split(std::thread::hardware_concurrency())) {
+  for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
     threads.emplace_back([&, range] {
       std::vector<std::string> buf_unitigs;
       KmerSet<K, KeyType> buf_visited;
@@ -317,7 +325,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
 
       threads.emplace_back([&] {
         std::lock_guard _{mu_visited};
-        visited += buf_visited;
+        visited.Add(buf_visited, n_workers);
       });
 
       threads.emplace_back([&] {
@@ -335,7 +343,8 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
   // Consider loops where every no has 1 incoming edge and 1 outgoing edge.
   {
     const std::vector<Kmer<K>> not_visited = kmer_set.Find(
-        [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); });
+        [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); },
+        n_workers);
 
     for (const Kmer<K>& kmer : not_visited) {
       if (visited.Contains(kmer)) continue;
@@ -361,10 +370,12 @@ template <int K>
 class KmerSetCompact {
  public:
   template <typename KeyType>
-  KmerSetCompact(const KmerSet<K, KeyType>& kmer_set, bool canonical = false)
+  KmerSetCompact(const KmerSet<K, KeyType>& kmer_set, bool canonical,
+                 int n_workers)
       : canonical_(canonical) {
     const std::vector<std::string> unitigs =
-        canonical ? GetUnitigsCanonical(kmer_set) : GetUnitigs(kmer_set);
+        canonical ? GetUnitigsCanonical(kmer_set, n_workers)
+                  : GetUnitigs(kmer_set, n_workers);
 
     std::string concatenated;
 
@@ -380,7 +391,7 @@ class KmerSetCompact {
       concatenated += unitig;
     }
 
-    sa_ = SuffixArray(concatenated);
+    sa_ = SuffixArray(concatenated, n_workers);
   }
 
   bool Contains(const Kmer<K>& kmer) const {
@@ -420,14 +431,13 @@ class KmerSetCompact {
 
   // Returns the k-mers that match the condition.
   template <typename Pred>
-  std::vector<Kmer<K>> Find(Pred&& pred) const {
+  std::vector<Kmer<K>> Find(Pred&& pred, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
     std::vector<std::thread> threads;
 
-    for (const Range& range : Range(0, boundary_.size())
-                                  .Split(std::thread::hardware_concurrency())) {
+    for (const Range& range : Range(0, boundary_.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
@@ -454,8 +464,8 @@ class KmerSetCompact {
   }
 
   // Return all the k-mers.
-  std::vector<Kmer<K>> Find() const {
-    return Find([&](const Kmer<K>&) { return true; });
+  std::vector<Kmer<K>> Find(int n_workers) const {
+    return Find([&](const Kmer<K>&) { return true; }, n_workers);
   }
 
   int64_t Size() const { return sa_.String().length(); }

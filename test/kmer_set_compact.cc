@@ -20,7 +20,7 @@ TEST(KmerSetCompact, Contains) {
     kmer_set.Add(kmer);
   }
 
-  KmerSetCompact<K> kmer_set_compact{kmer_set};
+  KmerSetCompact<K> kmer_set_compact(kmer_set, false, 1);
 
   for (const Kmer<K>& kmer : kmers) {
     ASSERT_TRUE(kmer_set_compact.Contains(kmer));

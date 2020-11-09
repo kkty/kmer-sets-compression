@@ -29,7 +29,7 @@ class KmerCounter {
     return sum;
   }
 
-  absl::Status FromFASTQ(std::istream& is, bool canonical) {
+  absl::Status FromFASTQ(std::istream& is, bool canonical, int n_workers) {
     std::vector<std::string> lines;
 
     {
@@ -57,8 +57,7 @@ class KmerCounter {
 
     std::vector<std::thread> threads;
 
-    for (const Range& range :
-         Range(0, lines.size()).Split(std::thread::hardware_concurrency())) {
+    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
@@ -108,34 +107,36 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, KeyType>, int64_t> Set(int cutoff) const {
+  std::pair<KmerSet<K, KeyType>, int64_t> Set(int cutoff, int n_workers) const {
     KmerSet<K, KeyType> set;
     std::mutex mu;
 
     std::vector<std::thread> threads;
     std::atomic_int64_t cutoff_count = 0;
 
-    ForEachBucket([&](const Bucket& bucket, int bucketID) {
-      std::vector<KeyType> buf;
+    ForEachBucket(
+        [&](const Bucket& bucket, int bucket_id) {
+          std::vector<KeyType> buf;
 
-      for (const auto& [key, count] : bucket) {
-        if (count < cutoff) {
-          cutoff_count += 1;
-          continue;
-        }
+          for (const auto& [key, count] : bucket) {
+            if (count < cutoff) {
+              cutoff_count += 1;
+              continue;
+            }
 
-        buf.push_back(key);
-      }
+            buf.push_back(key);
+          }
 
-      {
-        std::lock_guard _{mu};
-        set.buckets_[bucketID].reserve(set.buckets_[bucketID].size() +
-                                       buf.size());
-        for (KeyType key : buf) {
-          set.buckets_[bucketID].insert(key);
-        }
-      }
-    });
+          {
+            std::lock_guard _{mu};
+            set.buckets_[bucket_id].reserve(set.buckets_[bucket_id].size() +
+                                            buf.size());
+            for (KeyType key : buf) {
+              set.buckets_[bucket_id].insert(key);
+            }
+          }
+        },
+        n_workers);
 
     return {set, (int64_t)cutoff_count};
   }
@@ -150,13 +151,12 @@ class KmerCounter {
 
   // Dispatches processing for each bucket.
   // Usage:
-  //   ForEachBucket([&](const Bucket& bucket, int bucketID){ ... });
+  //   ForEachBucket([&](const Bucket& bucket, int bucket_id){ ... }, 4);
   template <typename F>
-  void ForEachBucket(F&& f) const {
+  void ForEachBucket(F&& f, int n_workers) const {
     std::vector<std::thread> threads;
 
-    for (const Range& range :
-         Range(0, kBucketsNum).Split(std::thread::hardware_concurrency())) {
+    for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
       threads.emplace_back([&, range] {
         for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];

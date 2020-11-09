@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "kmer.h"
 #include "kmer_set.h"
 #include "kmer_set_compact.h"
+#include "range.h"
 #include "spdlog/spdlog.h"
 
 // KmerSetSet can be used to represent multiple k-mer sets in less space.
@@ -20,12 +22,13 @@ template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSet {
  public:
   KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
-             CostFunctionType cost_function)
+             CostFunctionType cost_function, int n_workers)
       : n_(kmer_sets.size()) {
     // kmer_sets[n_] is an empty set.
     kmer_sets.push_back(KmerSet<K, KeyType>());
 
-    std::tie(cost_, tree_) = ConstructMST(kmer_sets, n_, cost_function);
+    std::tie(cost_, tree_) =
+        ConstructMST(kmer_sets, n_, cost_function, n_workers);
 
     spdlog::debug("constructed MST: cost_ = {}", cost_);
 
@@ -35,10 +38,10 @@ class KmerSetSet {
       const int parent = tree_->Parent(i);
 
       diff_table_[i][parent] = diffs.size();
-      diffs.push_back(kmer_sets[parent] - kmer_sets[i]);
+      diffs.push_back(Sub(kmer_sets[parent], kmer_sets[i], n_workers));
 
       diff_table_[parent][i] = diffs.size();
-      diffs.push_back(kmer_sets[i] - kmer_sets[parent]);
+      diffs.push_back(Sub(kmer_sets[i], kmer_sets[parent], n_workers));
     }
 
     bool use_recursion;
@@ -54,7 +57,8 @@ class KmerSetSet {
         // The same MST can be constructed twice.
         // This is for the sake of simplicity of implementation.
         improve_by_recursion =
-            ConstructMST(diffs, diffs.size() - 1, cost_function).first < cost_;
+            ConstructMST(diffs, diffs.size() - 1, cost_function, n_workers)
+                .first < cost_;
 
         diffs.pop_back();
       }
@@ -65,8 +69,8 @@ class KmerSetSet {
     }
 
     if (use_recursion) {
-      diffs_ =
-          new KmerSetSet(std::move(diffs), recursion_limit - 1, cost_function);
+      diffs_ = new KmerSetSet(std::move(diffs), recursion_limit - 1,
+                              cost_function, n_workers);
     } else {
       diffs_ = diffs;
     }
@@ -77,7 +81,7 @@ class KmerSetSet {
   }
 
   // Returns the ith k-mer set.
-  KmerSet<K, KeyType> Get(int i) const {
+  KmerSet<K, KeyType> Get(int i, int n_workers) const {
     std::vector<int> path;
 
     while (true) {
@@ -95,19 +99,29 @@ class KmerSetSet {
         std::vector<KmerSet<K, KeyType>> diffs =
             std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
-        kmer_set =
-            kmer_set +
-            diffs[diff_table_.find(path[i])->second.find(path[i + 1])->second] -
-            diffs[diff_table_.find(path[i + 1])->second.find(path[i])->second];
+        kmer_set
+            .Add(diffs[diff_table_.find(path[i])
+                           ->second.find(path[i + 1])
+                           ->second],
+                 n_workers)
+            .Sub(diffs[diff_table_.find(path[i + 1])
+                           ->second.find(path[i])
+                           ->second],
+                 n_workers);
       } else {
         KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
 
-        kmer_set =
-            kmer_set +
-            diffs->Get(
-                diff_table_.find(path[i])->second.find(path[i + 1])->second) -
-            diffs->Get(
-                diff_table_.find(path[i + 1])->second.find(path[i])->second);
+        kmer_set
+            .Add(
+                diffs->Get(
+                    diff_table_.find(path[i])->second.find(path[i + 1])->second,
+                    n_workers),
+                n_workers)
+            .Sub(
+                diffs->Get(
+                    diff_table_.find(path[i + 1])->second.find(path[i])->second,
+                    n_workers),
+                n_workers);
       }
     }
 
@@ -159,14 +173,34 @@ class KmerSetSet {
 
   static std::pair<int64_t, Tree> ConstructMST(
       const std::vector<KmerSet<K, KeyType>>& kmer_sets, int root,
-      CostFunctionType cost_function) {
-    BidirectionalGraph g;
+      CostFunctionType cost_function, int n_workers) {
+    std::vector<std::pair<int, int>> pairs;
 
     for (size_t i = 0; i < kmer_sets.size(); i++) {
       for (size_t j = i + 1; j < kmer_sets.size(); j++) {
-        g.AddEdge(i, j, cost_function(kmer_sets[i], kmer_sets[j]));
+        pairs.emplace_back(i, j);
       }
     }
+
+    BidirectionalGraph g;
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (int i = range.begin; i < range.end; i++) {
+          std::pair<int, int> pair = pairs[i];
+
+          std::lock_guard lck(mu);
+
+          g.AddEdge(
+              pair.first, pair.second,
+              cost_function(kmer_sets[pair.first], kmer_sets[pair.second], 1));
+        }
+      });
+    }
+
+    for (std::thread& thread : threads) thread.join();
 
     return g.MST(root);
   }

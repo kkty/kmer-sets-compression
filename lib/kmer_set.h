@@ -72,49 +72,56 @@ class KmerSet {
 
   // Finds all the k-mers that match the condition.
   template <typename Pred>
-  std::vector<Kmer<K>> Find(Pred&& pred) const {
+  std::vector<Kmer<K>> Find(Pred&& pred, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
-    ForEachBucket([&](const Bucket& bucket, int bucketID) {
-      std::vector<Kmer<K>> buf;
+    ForEachBucket(
+        [&](const Bucket& bucket, int bucket_id) {
+          std::vector<Kmer<K>> buf;
 
-      for (const auto& key : bucket) {
-        const Kmer<K> kmer = GetKmerFromBucketAndKey<K, KeyType>(bucketID, key);
-        if (pred(kmer)) buf.push_back(kmer);
-      }
+          for (const auto& key : bucket) {
+            const Kmer<K> kmer =
+                GetKmerFromBucketAndKey<K, KeyType>(bucket_id, key);
+            if (pred(kmer)) buf.push_back(kmer);
+          }
 
-      std::lock_guard _{mu};
-      kmers.reserve(kmers.size() + buf.size());
-      for (const auto& kmer : buf) {
-        kmers.push_back(kmer);
-      }
-    });
+          std::lock_guard _{mu};
+          kmers.reserve(kmers.size() + buf.size());
+          for (const auto& kmer : buf) {
+            kmers.push_back(kmer);
+          }
+        },
+        n_workers);
 
     return kmers;
   }
 
   // Returns all the k-mers.
-  std::vector<Kmer<K>> Find() const {
-    return Find([&](const Kmer<K>&) { return true; });
+  std::vector<Kmer<K>> Find(int n_workers) const {
+    return Find([&](const Kmer<K>&) { return true; }, n_workers);
   }
 
-  KmerSet& operator+=(const KmerSet& rhs) {
-    rhs.ForEachBucket([&](const Bucket& rhs_bucket, int bucket_id) {
-      for (const auto& key : rhs_bucket) {
-        buckets_[bucket_id].insert(key);
-      }
-    });
+  KmerSet& Add(const KmerSet& other, int n_workers) {
+    other.ForEachBucket(
+        [&](const Bucket& other_bucket, int bucket_id) {
+          for (const auto& key : other_bucket) {
+            buckets_[bucket_id].insert(key);
+          }
+        },
+        n_workers);
 
     return *this;
   }
 
-  KmerSet& operator-=(const KmerSet& rhs) {
-    rhs.ForEachBucket([&](const Bucket& rhs_bucket, int bucket_id) {
-      for (const auto& key : rhs_bucket) {
-        buckets_[bucket_id].erase(key);
-      }
-    });
+  KmerSet& Sub(const KmerSet& other, int n_workers) {
+    other.ForEachBucket(
+        [&](const Bucket& other_bucket, int bucket_id) {
+          for (const auto& key : other_bucket) {
+            buckets_[bucket_id].erase(key);
+          }
+        },
+        n_workers);
 
     return *this;
   }
@@ -130,11 +137,10 @@ class KmerSet {
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
   template <typename F>
-  void ForEachBucket(F&& f) const {
+  void ForEachBucket(F&& f, int n_workers) const {
     std::vector<std::thread> threads;
 
-    for (const Range& range :
-         Range(0, kBucketsNum).Split(std::thread::hardware_concurrency())) {
+    for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
       threads.emplace_back([&, range] {
         for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];
@@ -151,27 +157,28 @@ class KmerSet {
 };
 
 template <int K, typename KeyType>
-KmerSet<K, KeyType> operator-(KmerSet<K, KeyType> lhs,
-                              const KmerSet<K, KeyType>& rhs) {
-  return lhs -= rhs;
+KmerSet<K, KeyType> Add(KmerSet<K, KeyType> lhs, const KmerSet<K, KeyType>& rhs,
+                        int n_workers) {
+  return lhs.Add(rhs, n_workers);
 }
 
 template <int K, typename KeyType>
-KmerSet<K, KeyType> operator+(KmerSet<K, KeyType> lhs,
-                              const KmerSet<K, KeyType>& rhs) {
-  return lhs += rhs;
+KmerSet<K, KeyType> Sub(KmerSet<K, KeyType> lhs, const KmerSet<K, KeyType>& rhs,
+                        int n_workers) {
+  return lhs.Sub(rhs, n_workers);
 }
 
 template <int K, typename KeyType>
-KmerSet<K, KeyType> operator&(const KmerSet<K, KeyType>& lhs,
-                              const KmerSet<K, KeyType>& rhs) {
-  return lhs - (lhs - rhs);
+KmerSet<K, KeyType> Intersection(KmerSet<K, KeyType> lhs,
+                                 const KmerSet<K, KeyType>& rhs,
+                                 int n_workers) {
+  return lhs.Sub(Sub(lhs, rhs, n_workers), n_workers);
 }
 
 template <int K, typename KeyType>
-bool operator==(const KmerSet<K, KeyType>& lhs,
-                const KmerSet<K, KeyType>& rhs) {
-  return (lhs - rhs).Size() + (rhs - lhs).Size() == 0;
+bool Equals(const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs,
+            int n_workers) {
+  return Sub(lhs, rhs, n_workers).Size() + Sub(rhs, lhs, n_workers).Size() == 0;
 }
 
 #endif

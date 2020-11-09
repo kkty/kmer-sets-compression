@@ -21,6 +21,7 @@
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
+ABSL_FLAG(int, workers, 1, "number of workers");
 
 template <int K>
 struct BFSResult {
@@ -206,6 +207,7 @@ int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
 
   const int K = 31;
+  const int n_workers = absl::GetFlag(FLAGS_workers);
   using KeyType = uint32_t;
 
   spdlog::info("constructing kmer_counter");
@@ -214,7 +216,7 @@ int main(int argc, char** argv) {
 
   {
     const absl::Status status =
-        kmer_counter.FromFASTQ(std::cin, absl::GetFlag(FLAGS_canonical));
+        kmer_counter.FromFASTQ(std::cin, absl::GetFlag(FLAGS_canonical), n_workers);
 
     if (!status.ok()) {
       spdlog::error("failed to parse FASTQ file");
@@ -227,7 +229,7 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set");
 
-  const auto [kmer_set, cut_off_count] = kmer_counter.Set(2);
+  const auto [kmer_set, cut_off_count] = kmer_counter.Set(2, n_workers);
 
   spdlog::info("constructed kmer_set");
   spdlog::info("cut_off_count = {}", cut_off_count);

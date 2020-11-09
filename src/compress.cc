@@ -26,6 +26,7 @@ ABSL_FLAG(std::string, decompressor, "",
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(bool, fastdiff, false, "use fast diff calculation");
+ABSL_FLAG(int, workers, 1, "number of workers");
 
 int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int K = 21;
+  const int n_workers = absl::GetFlag(FLAGS_workers);
   using KeyType = uint32_t;
 
   const int n_datasets = files.size();
@@ -67,8 +69,8 @@ int main(int argc, char** argv) {
         boost::process::child child(decompressor + ' ' + file,
                                     boost::process::std_out > ipstream);
 
-        const absl::Status status =
-            kmer_counter.FromFASTQ(ipstream, absl::GetFlag(FLAGS_canonical));
+        const absl::Status status = kmer_counter.FromFASTQ(
+            ipstream, absl::GetFlag(FLAGS_canonical), n_workers);
 
         child.wait();
 
@@ -79,8 +81,8 @@ int main(int argc, char** argv) {
       } else {
         std::ifstream is{file};
 
-        const absl::Status status =
-            kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+        const absl::Status status = kmer_counter.FromFASTQ(
+            is, absl::GetFlag(FLAGS_canonical), n_workers);
 
         if (!status.ok()) {
           spdlog::error("failed to parse FASTQ file");
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
     spdlog::info("constructing kmer_set for {}", file);
 
     const auto [kmer_set, cutoff_count] =
-        kmer_counter.Set(absl::GetFlag(FLAGS_cutoff));
+        kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
 
     spdlog::info("constructed kmer_set for {}", file);
 
@@ -108,22 +110,23 @@ int main(int argc, char** argv) {
   kmer_sets.push_back(KmerSet<K, KeyType>{});
 
   // Returns the required size to represent the difference between s1 and s2.
-  const auto get_diff = [&](const KmerSet<K, KeyType>& s1, const KmerSet<K, KeyType>& s2) {
+  const auto get_diff = [&](const KmerSet<K, KeyType>& s1,
+                            const KmerSet<K, KeyType>& s2) {
     if (absl::GetFlag(FLAGS_fastdiff)) {
-      return (s1 - s2).Size() + (s2 - s1).Size();
+      return Sub(s1, s2, n_workers).Size() + Sub(s2, s1, n_workers).Size();
     }
 
     // Returns the size after compaction.
     const auto get_size = [&](const KmerSet<K, KeyType>& s) {
       const std::vector<std::string> unitigs = absl::GetFlag(FLAGS_canonical)
-                                                   ? GetUnitigsCanonical(s)
-                                                   : GetUnitigs(s);
+                                                   ? GetUnitigsCanonical(s, n_workers)
+                                                   : GetUnitigs(s, n_workers);
       int64_t size = 0;
       for (const std::string& unitig : unitigs) size += unitig.size();
       return size;
     };
 
-    return get_size(s1 - s2) + get_size(s2 - s1);
+    return get_size(Sub(s1, s2, n_workers)) + get_size(Sub(s2, s1, n_workers));
   };
 
   for (int i = 0; i < n_datasets; i++) {

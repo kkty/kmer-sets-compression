@@ -23,6 +23,7 @@ ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
+ABSL_FLAG(int, workers, 1, "number of workers");
 
 int main(int argc, char** argv) {
   std::vector<std::string> files = [&] {
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
 
   const int K = 21;
+  const int n_workers = absl::GetFlag(FLAGS_workers);
   using KeyType = uint32_t;
 
   for (const std::string& file : files) {
@@ -57,8 +59,8 @@ int main(int argc, char** argv) {
         boost::process::child child(decompressor + ' ' + file,
                                     boost::process::std_out > ipstream);
 
-        const absl::Status status =
-            kmer_counter.FromFASTQ(ipstream, absl::GetFlag(FLAGS_canonical));
+        const absl::Status status = kmer_counter.FromFASTQ(
+            ipstream, absl::GetFlag(FLAGS_canonical), n_workers);
 
         child.wait();
 
@@ -69,8 +71,8 @@ int main(int argc, char** argv) {
       } else {
         std::ifstream is{file};
 
-        const absl::Status status =
-            kmer_counter.FromFASTQ(is, absl::GetFlag(FLAGS_canonical));
+        const absl::Status status = kmer_counter.FromFASTQ(
+            is, absl::GetFlag(FLAGS_canonical), n_workers);
 
         if (!status.ok()) {
           spdlog::error("failed to parse FASTQ file");
@@ -85,24 +87,24 @@ int main(int argc, char** argv) {
     spdlog::info("constructing kmer_set");
 
     const auto [kmer_set, cutoff_count] =
-        kmer_counter.Set(absl::GetFlag(FLAGS_cutoff));
+        kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
 
     spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
 
     spdlog::info("constructed kmer_set");
     spdlog::info("cutoff_count = {}", cutoff_count);
 
-    const KmerSetCompact kmer_set_compact(kmer_set,
-                                          absl::GetFlag(FLAGS_canonical));
+    const KmerSetCompact kmer_set_compact(
+        kmer_set, absl::GetFlag(FLAGS_canonical), n_workers);
 
     spdlog::info("kmer_set_compact.Size() = {}", kmer_set_compact.Size());
 
     spdlog::info("kmer_set_compact.Find().size() = {}",
-                 kmer_set_compact.Find().size());
+                 kmer_set_compact.Find(n_workers).size());
 
     {
-      std::vector<Kmer<K>> original = kmer_set.Find();
-      std::vector<Kmer<K>> from_compact = kmer_set_compact.Find();
+      std::vector<Kmer<K>> original = kmer_set.Find(n_workers);
+      std::vector<Kmer<K>> from_compact = kmer_set_compact.Find(n_workers);
 
       std::sort(original.begin(), original.end());
       std::sort(from_compact.begin(), from_compact.end());

@@ -5,7 +5,7 @@
 #include "gtest/gtest.h"
 
 TEST(SuffixArray, Find) {
-  SuffixArray sa("mississippi");
+  SuffixArray sa("mississippi", 1);
 
   {
     std::vector<int64_t> v = sa.Find("m");

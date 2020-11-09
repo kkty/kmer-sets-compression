@@ -48,14 +48,14 @@ TEST(KmerSet, Find) {
 
   {
     const auto kmers = kmer_set.Find(
-        [](const Kmer<K>& kmer) { return kmer.String()[0] == 'A'; });
+        [](const Kmer<K>& kmer) { return kmer.String()[0] == 'A'; }, 1);
     ASSERT_EQ(kmers.size(), 1);
     ASSERT_EQ(kmers[0].String(), "AAAAA");
   }
 
   {
     const auto kmers = kmer_set.Find(
-        [](const Kmer<K>& kmer) { return kmer.String()[1] == 'C'; });
+        [](const Kmer<K>& kmer) { return kmer.String()[1] == 'C'; }, 1);
     ASSERT_EQ(kmers.size(), 1);
     ASSERT_EQ(kmers[0].String(), "CCCCC");
   }
@@ -76,9 +76,9 @@ TEST(KmetSet, Operators) {
   kmer_set2.Add(Kmer<K>("TTTTT"));
   kmer_set2.Add(Kmer<K>("GGGGG"));
 
-  ASSERT_EQ((kmer_set1 + kmer_set2).Size(), 4);
-  ASSERT_EQ((kmer_set1 - kmer_set2).Size(), 1);
-  ASSERT_EQ((kmer_set2 - kmer_set1).Size(), 1);
-  ASSERT_EQ((kmer_set2 - kmer_set1).Size(), 1);
-  ASSERT_EQ((kmer_set2 & kmer_set1).Size(), 2);
+  ASSERT_EQ(Add(kmer_set1, kmer_set2, 1).Size(), 4);
+  ASSERT_EQ(Sub(kmer_set1, kmer_set2, 1).Size(), 1);
+  ASSERT_EQ(Sub(kmer_set2, kmer_set1, 1).Size(), 1);
+  ASSERT_EQ(Sub(kmer_set2, kmer_set1, 1).Size(), 1);
+  ASSERT_EQ(Intersection(kmer_set2, kmer_set1, 1).Size(), 2);
 }
