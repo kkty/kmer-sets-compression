@@ -40,14 +40,14 @@ int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
 
   const int K = 21;
-  const int B = 6;
+  using KeyType = uint32_t;
 
   for (const std::string& file : files) {
     spdlog::info("file = {}", file);
 
     spdlog::info("constructing kmer_counter");
 
-    KmerCounter<K, B> kmer_counter;
+    KmerCounter<K, KeyType> kmer_counter;
 
     {
       const std::string decompressor = absl::GetFlag(FLAGS_decompressor);

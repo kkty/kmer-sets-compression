@@ -20,7 +20,6 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(bool, dump, false, "enable dumping kmers");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 
 template <int K>
@@ -32,8 +31,8 @@ struct BFSResult {
 };
 
 // BFS from "start". "limit" is used to specify the search space.
-template <int K, int B>
-BFSResult<K> BFS(const KmerSet<K, B>& kmer_set, const Kmer<K>& start,
+template <int K, typename KeyType>
+BFSResult<K> BFS(const KmerSet<K, KeyType>& kmer_set, const Kmer<K>& start,
                  const int limit) {
   if (!kmer_set.Contains(start)) {
     spdlog::error("node not found: {}", start.String());
@@ -91,10 +90,10 @@ struct AStarSearchResult {
 
 // A* search from "start" to "goal".
 // Variable names, etc. follow https://ja.wikipedia.org/wiki/A*.
-template <int K, int B, int L>
-std::optional<AStarSearchResult<K>> AStarSearch(const KmerSet<K, B>& kmer_set,
-                                                const Kmer<K>& start,
-                                                const Kmer<K>& goal) {
+template <int K, typename KeyType, int L>
+std::optional<AStarSearchResult<K>> AStarSearch(
+    const KmerSet<K, KeyType>& kmer_set, const Kmer<K>& start,
+    const Kmer<K>& goal) {
   // Returns the set of l-mers present in "kmer".
   const auto get_lmers = [](const Kmer<K>& kmer) {
     absl::flat_hash_set<Kmer<L>> lmers;
@@ -207,11 +206,11 @@ int main(int argc, char** argv) {
   std::ios_base::sync_with_stdio(false);
 
   const int K = 31;
-  const int B = 6;
+  using KeyType = uint32_t;
 
   spdlog::info("constructing kmer_counter");
 
-  KmerCounter<K, B> kmer_counter;
+  KmerCounter<K, KeyType> kmer_counter;
 
   {
     const absl::Status status =
@@ -282,7 +281,8 @@ int main(int argc, char** argv) {
   spdlog::info("starting A* search from {} to {}", start.String(),
                goal.String());
 
-  const auto a_star_search_result = AStarSearch<K, B, 5>(kmer_set, start, goal);
+  const auto a_star_search_result =
+      AStarSearch<K, KeyType, 5>(kmer_set, start, goal);
 
   if (!a_star_search_result) {
     spdlog::error("A* search failed");
@@ -291,14 +291,5 @@ int main(int argc, char** argv) {
                  goal.String());
     spdlog::info("visited_nodes = {}", (*a_star_search_result).visited_nodes);
     spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
-  }
-
-  if (absl::GetFlag(FLAGS_dump)) {
-    spdlog::info("dumping kmer_set");
-    std::ofstream kmer_dump_file;
-    kmer_dump_file.open("kmer_dump.txt");
-    kmer_set.Dump(kmer_dump_file);
-    kmer_dump_file.close();
-    spdlog::info("dumped kmer_set");
   }
 }

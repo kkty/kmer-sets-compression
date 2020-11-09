@@ -16,8 +16,7 @@
 #include "kmer_set.h"
 #include "range.h"
 
-// Use (1 << B) buckets internally.
-template <int K, int B>
+template <int K, typename KeyType>
 class KmerCounter {
  public:
   // Returns the number of distinct k-mers.
@@ -53,14 +52,14 @@ class KmerCounter {
       }
     }
 
-    std::array<std::mutex, 1 << B> buckets_mutexes;
+    std::array<std::mutex, kBucketsNum> buckets_mutexes;
 
     std::vector<std::thread> threads;
 
     for (const Range& range :
          Range(0, lines.size()).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
-        std::array<Bucket, 1 << B> buf;
+        std::array<Bucket, kBucketsNum> buf;
 
         for (int64_t i = range.begin; i < range.end; i++) {
           const auto& line = lines[i];
@@ -68,17 +67,18 @@ class KmerCounter {
           for (const auto& fragment : fragments) {
             for (int i = 0; i + K <= (int)fragment.length(); i++) {
               const Kmer<K> kmer(fragment.substr(i, K));
-              const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(
+              const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
               buf[bucket][key] += 1;
             }
           }
         }
 
-        std::bitset<1 << B> done;
+        std::vector<bool> done(kBucketsNum);
+        int done_count = 0;
 
-        while (!done.all()) {
-          for (int i = 0; i < (1 << B); i++) {
+        while (done_count < kBucketsNum) {
+          for (int i = 0; i < kBucketsNum; i++) {
             if (done[i]) continue;
 
             auto& mu = buckets_mutexes[i];
@@ -93,6 +93,7 @@ class KmerCounter {
 
               mu.unlock();
               done[i] = true;
+              done_count += 1;
             }
           }
         }
@@ -106,15 +107,15 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, B>, int64_t> Set(int cutoff) const {
-    KmerSet<K, B> set;
+  std::pair<KmerSet<K, KeyType>, int64_t> Set(int cutoff) const {
+    KmerSet<K, KeyType> set;
     std::mutex mu;
 
     std::vector<std::thread> threads;
     std::atomic_int64_t cutoff_count = 0;
 
     ForEachBucket([&](const Bucket& bucket, int bucketID) {
-      std::vector<std::bitset<K * 2 - B>> buf;
+      std::vector<KeyType> buf;
 
       for (const auto& [key, count] : bucket) {
         if (count < cutoff) {
@@ -129,7 +130,7 @@ class KmerCounter {
         std::lock_guard _{mu};
         set.buckets_[bucketID].reserve(set.buckets_[bucketID].size() +
                                        buf.size());
-        for (const std::bitset<K * 2 - B>& key : buf) {
+        for (KeyType key : buf) {
           set.buckets_[bucketID].insert(key);
         }
       }
@@ -139,9 +140,12 @@ class KmerCounter {
   }
 
  private:
-  using Bucket = absl::flat_hash_map<std::bitset<K * 2 - B>, int>;
+  static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
+  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
-  std::array<Bucket, 1 << B> buckets_;
+  using Bucket = absl::flat_hash_map<KeyType, int>;
+
+  std::array<Bucket, kBucketsNum> buckets_;
 
   // Dispatches processing for each bucket.
   // Usage:
@@ -151,7 +155,7 @@ class KmerCounter {
     std::vector<std::thread> threads;
 
     for (const Range& range :
-         Range(0, 1 << B).Split(std::thread::hardware_concurrency())) {
+         Range(0, kBucketsNum).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
         for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];

@@ -46,18 +46,18 @@ int main(int argc, char** argv) {
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int K = 21;
-  const int B = 6;
+  using KeyType = uint32_t;
 
   const int n_datasets = files.size();
 
-  std::vector<KmerSet<K, B>> kmer_sets(n_datasets);
+  std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
 
   for (int i = 0; i < n_datasets; i++) {
     const std::string& file = files[i];
 
     spdlog::info("constructing kmer_counter for {}", file);
 
-    KmerCounter<K, B> kmer_counter;
+    KmerCounter<K, KeyType> kmer_counter;
 
     {
       const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
@@ -113,8 +113,7 @@ int main(int argc, char** argv) {
 
   const auto cost_function = [fastcost = absl::GetFlag(FLAGS_fastcost),
                               canonical = absl::GetFlag(FLAGS_canonical)](
-                                 const KmerSet<K, B>& lhs,
-                                 const KmerSet<K, B>& rhs) {
+                                 const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs) {
     int64_t cost = 0;
 
     if (fastcost) {
@@ -138,7 +137,7 @@ int main(int argc, char** argv) {
   {
     int64_t total_cost = 0;
     for (int i = 0; i < n_datasets; i++) {
-      int64_t cost = cost_function(KmerSet<K, B>(), kmer_sets[i]);
+      int64_t cost = cost_function(KmerSet<K, KeyType>(), kmer_sets[i]);
       spdlog::info("i = {}, cost = {}", i, cost);
       total_cost += cost;
     }
@@ -147,8 +146,8 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set_set");
 
-  KmerSetSet<K, B, decltype(cost_function)> kmer_set_set(kmer_sets,
-                                                         cost_function);
+  KmerSetSet<K, uint32_t, decltype(cost_function)> kmer_set_set(kmer_sets,
+                                                                cost_function);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());

@@ -14,65 +14,25 @@
 #include "range.h"
 
 // The first N bits are used to get the bucket ID.
-template <int K, int N>
-std::pair<int, std::bitset<K * 2 - N>> GetBucketAndKeyFromKmer(
-    const Kmer<K>& kmer) {
+template <int K, typename KeyType>
+std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
   const auto& bits = kmer.Bits();
-  const int key_bits = K * 2 - N;
-  const int bucketID = bits.to_ullong() >> key_bits;
-  const std::bitset<K * 2 - N> key{bits.to_ullong() % (1ull << key_bits)};
-  return {bucketID, key};
+  const int key_bits = sizeof(KeyType) * 8;
+  const int bucket_id = bits.to_ullong() >> key_bits;
+  const KeyType key = bits.to_ullong() % (1ull << key_bits);
+  return {bucket_id, key};
 }
 
-template <int K, int N>
-Kmer<K> GetKmerFromBucketAndKey(int bucketID,
-                                const std::bitset<K * 2 - N>& key) {
-  const int key_bits = K * 2 - N;
-  std::bitset<K * 2> bits{((uint64_t)bucketID << key_bits) + key.to_ullong()};
+template <int K, typename KeyType>
+Kmer<K> GetKmerFromBucketAndKey(int bucketID, KeyType key) {
+  const int key_bits = sizeof(KeyType) * 8;
+  std::bitset<K * 2> bits{((uint64_t)bucketID << key_bits) + (uint64_t)key};
   return Kmer<K>{bits};
 }
 
-// Use (1 << B) buckets internally.
-template <int K, int B>
+template <int K, typename KeyType>
 class KmerSet {
  public:
-  // Loads from dumped data.
-  // Returns "true" if successful.
-  bool Load(std::istream& is) {
-    int k, b;
-    is >> k >> b;
-
-    if (k != K || b != B) {
-      return false;
-    }
-
-    for (int i = 0; i < (1 << B); i++) {
-      int64_t size;
-      is >> size;
-      buckets_[i].reserve(size);
-
-      for (int64_t j = 0; j < size; j++) {
-        std::string kmer_s;
-        is >> kmer_s;
-        std::bitset<K * 2 - B> kmer_b(kmer_s);
-        buckets_[i].insert(std::move(kmer_b));
-      }
-    }
-
-    return true;
-  }
-
-  void Dump(std::ostream& os) const {
-    os << K << ' ' << B << '\n';
-
-    for (int i = 0; i < (1 << B); i++) {
-      os << buckets_[i].size() << '\n';
-      for (const auto& key : buckets_[i]) {
-        os << key.to_string() << '\n';
-      }
-    }
-  }
-
   int64_t Size() const {
     int64_t sum = 0;
     for (const auto& bucket : buckets_) {
@@ -82,23 +42,23 @@ class KmerSet {
   }
 
   void Add(const Kmer<K>& kmer) {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     buckets_[bucket].insert(key);
   }
 
   void Remove(const Kmer<K>& kmer) {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     buckets_[bucket].erase(key);
   }
 
   bool Contains(const Kmer<K>& kmer) const {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, B>(kmer);
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
 
   // Fetches one k-mer randomly.
   Kmer<K> Sample() const {
-    const int bucket = rand() % (1 << B);
+    const int bucket = rand() % kBucketsNum;
     const int64_t n = rand() % buckets_[bucket].size();
 
     auto it = buckets_[bucket].begin();
@@ -106,7 +66,7 @@ class KmerSet {
 
     const auto key = *it;
 
-    return GetKmerFromBucketAndKey<K, B>(bucket, key);
+    return GetKmerFromBucketAndKey<K, KeyType>(bucket, key);
   }
 
   // Finds all the k-mers that match the condition.
@@ -119,7 +79,7 @@ class KmerSet {
       std::vector<Kmer<K>> buf;
 
       for (const auto& key : bucket) {
-        const Kmer<K> kmer = GetKmerFromBucketAndKey<K, B>(bucketID, key);
+        const Kmer<K> kmer = GetKmerFromBucketAndKey<K, KeyType>(bucketID, key);
         if (pred(kmer)) buf.push_back(kmer);
       }
 
@@ -158,21 +118,22 @@ class KmerSet {
     return *this;
   }
 
+  static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
+  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
+
  private:
-  using Bucket = absl::flat_hash_set<std::bitset<K * 2 - B>>;
+  using Bucket = absl::flat_hash_set<KeyType>;
 
-  std::array<Bucket, 1 << B> buckets_;
+  std::array<Bucket, kBucketsNum> buckets_;
 
-  void Add(int bucket, const std::bitset<K * 2 - B>& key) {
-    buckets_[bucket].insert(key);
-  }
+  void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
   template <typename F>
   void ForEachBucket(F&& f) const {
     std::vector<std::thread> threads;
 
     for (const Range& range :
-         Range(0, 1 << B).Split(std::thread::hardware_concurrency())) {
+         Range(0, kBucketsNum).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
         for (int i = range.begin; i < range.end; i++) {
           const Bucket& bucket = buckets_[i];
@@ -184,27 +145,31 @@ class KmerSet {
     for (auto& thread : threads) thread.join();
   }
 
-  template <int, int>
+  template <int, typename>
   friend class KmerCounter;
 };
 
-template <int K, int B>
-KmerSet<K, B> operator-(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+template <int K, typename KeyType>
+KmerSet<K, KeyType> operator-(KmerSet<K, KeyType> lhs,
+                              const KmerSet<K, KeyType>& rhs) {
   return lhs -= rhs;
 }
 
-template <int K, int B>
-KmerSet<K, B> operator+(KmerSet<K, B> lhs, const KmerSet<K, B>& rhs) {
+template <int K, typename KeyType>
+KmerSet<K, KeyType> operator+(KmerSet<K, KeyType> lhs,
+                              const KmerSet<K, KeyType>& rhs) {
   return lhs += rhs;
 }
 
-template <int K, int B>
-KmerSet<K, B> operator&(const KmerSet<K, B>& lhs, const KmerSet<K, B>& rhs) {
+template <int K, typename KeyType>
+KmerSet<K, KeyType> operator&(const KmerSet<K, KeyType>& lhs,
+                              const KmerSet<K, KeyType>& rhs) {
   return lhs - (lhs - rhs);
 }
 
-template <int K, int B>
-bool operator==(const KmerSet<K, B>& lhs, const KmerSet<K, B>& rhs) {
+template <int K, typename KeyType>
+bool operator==(const KmerSet<K, KeyType>& lhs,
+                const KmerSet<K, KeyType>& rhs) {
   return (lhs - rhs).Size() + (rhs - lhs).Size() == 0;
 }
 

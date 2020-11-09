@@ -25,8 +25,8 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   return s;
 }
 
-template <int K, int B>
-std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, B>& kmer_set) {
+template <int K, typename KeyType>
+std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, KeyType>& kmer_set) {
   // Consider a bi-directional graph.
 
   // Returns neighboring k-mers. Complements are considered.
@@ -216,8 +216,8 @@ std::vector<std::string> GetUnitigsCanonical(const KmerSet<K, B>& kmer_set) {
   return unitigs;
 }
 
-template <int K, int B>
-std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
+template <int K, typename KeyType>
+std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set) {
   const auto get_nexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
@@ -285,7 +285,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
   }();
 
   std::vector<std::string> unitigs;
-  KmerSet<K, B> visited;
+  KmerSet<K, KeyType> visited;
 
   std::mutex mu_unitigs;
   std::mutex mu_visited;
@@ -296,7 +296,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
                                 .Split(std::thread::hardware_concurrency())) {
     threads.emplace_back([&, range] {
       std::vector<std::string> buf_unitigs;
-      KmerSet<K, B> buf_visited;
+      KmerSet<K, KeyType> buf_visited;
 
       for (int64_t i = range.begin; i < range.end; i++) {
         const Kmer<K>& start_kmer = start_kmers[i];
@@ -360,8 +360,8 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, B>& kmer_set) {
 template <int K>
 class KmerSetCompact {
  public:
-  template <int B>
-  KmerSetCompact(const KmerSet<K, B>& kmer_set, bool canonical = false)
+  template <typename KeyType>
+  KmerSetCompact(const KmerSet<K, KeyType>& kmer_set, bool canonical = false)
       : canonical_(canonical) {
     const std::vector<std::string> unitigs =
         canonical ? GetUnitigsCanonical(kmer_set) : GetUnitigs(kmer_set);

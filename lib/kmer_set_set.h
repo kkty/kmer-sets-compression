@@ -16,19 +16,19 @@
 // KmerSetSet can be used to represent multiple k-mer sets in less space.
 // It is a recursive structure. That is, a KmerSetSet can contain another
 // KmerSetSet internally.
-template <int K, int B, typename CostFunction>
+template <int K, typename KeyType, typename CostFunction>
 class KmerSetSet {
  public:
-  KmerSetSet(std::vector<KmerSet<K, B>> kmer_sets, CostFunction cost_function)
+  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, CostFunction cost_function)
       : n_(kmer_sets.size()) {
     // kmer_sets[n_] is an empty set.
-    kmer_sets.push_back(KmerSet<K, B>());
+    kmer_sets.push_back(KmerSet<K, KeyType>());
 
     std::tie(cost_, tree_) = ConstructMST(kmer_sets, n_, cost_function);
 
     spdlog::debug("constructed MST: cost_ = {}", cost_);
 
-    std::vector<KmerSet<K, B>> diffs;
+    std::vector<KmerSet<K, KeyType>> diffs;
 
     for (int i = 0; i < n_; i++) {
       const int parent = tree_->Parent(i);
@@ -43,7 +43,7 @@ class KmerSetSet {
     bool improve_by_recursion;
 
     {
-      diffs.push_back(KmerSet<K, B>());
+      diffs.push_back(KmerSet<K, KeyType>());
 
       // The same MST can be constructed twice.
       // This is for the sake of simplicity of implementation.
@@ -67,7 +67,7 @@ class KmerSetSet {
   }
 
   // Returns the ith k-mer set.
-  KmerSet<K, B> Get(int i) const {
+  KmerSet<K, KeyType> Get(int i) const {
     std::vector<int> path;
 
     while (true) {
@@ -78,12 +78,12 @@ class KmerSetSet {
 
     std::reverse(path.begin(), path.end());
 
-    KmerSet<K, B> kmer_set;
+    KmerSet<K, KeyType> kmer_set;
 
     for (size_t i = 0; i < path.size() - 1; i++) {
       if (IsTerminal()) {
-        std::vector<KmerSet<K, B>> diffs =
-            std::get<std::vector<KmerSet<K, B>>>(diffs_);
+        std::vector<KmerSet<K, KeyType>> diffs =
+            std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
         kmer_set =
             kmer_set +
@@ -108,14 +108,14 @@ class KmerSetSet {
     int64_t size = 0;
 
     if (IsTerminal()) {
-      std::vector<KmerSet<K, B>> diffs =
-          std::get<std::vector<KmerSet<K, B>>>(diffs_);
+      std::vector<KmerSet<K, KeyType>> diffs =
+          std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
       for (const auto& diff : diffs) {
         size += diff.Size();
       }
     } else {
-      KmerSetSet<K, B, CostFunction>* diffs = std::get<KmerSetSet*>(diffs_);
+      KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
 
       return diffs->Size();
     }
@@ -144,11 +144,11 @@ class KmerSetSet {
 
  private:
   bool IsTerminal() const {
-    return std::holds_alternative<std::vector<KmerSet<K, B>>>(diffs_);
+    return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
   }
 
   static std::pair<int64_t, Tree> ConstructMST(
-      const std::vector<KmerSet<K, B>>& kmer_sets, int root,
+      const std::vector<KmerSet<K, KeyType>>& kmer_sets, int root,
       CostFunction cost_function) {
     BidirectionalGraph g;
 
@@ -168,11 +168,11 @@ class KmerSetSet {
   // Tree does not have a default constructor.
   std::optional<Tree> tree_;
 
-  // If diffs_ is of type std::vector<KmerSet<K, B>>,
+  // If diffs_ is of type std::vector<KmerSet<K, KeyType>>,
   // diffs_[diff_table_[i][j]] represents the diff from ith data to jth data.
   // If diffs_ is of type KmerSetSet*, diffs_->Get(diff_table_[i][j]) represents
   // the diff from ith data to jth data.
-  std::variant<std::vector<KmerSet<K, B>>, KmerSetSet*> diffs_;
+  std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSet*> diffs_;
   absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
 };
 

@@ -7,7 +7,7 @@
 
 TEST(KmerSetCompact, Contains) {
   const int K = 5;
-  const int B = 3;
+  using KeyType = uint8_t;
 
   std::vector<Kmer<K>> kmers;
   kmers.emplace_back("AAAAA");
@@ -15,7 +15,7 @@ TEST(KmerSetCompact, Contains) {
   kmers.emplace_back("AAACC");
   kmers.emplace_back("AAACA");
 
-  KmerSet<K, B> kmer_set;
+  KmerSet<K, KeyType> kmer_set;
   for (const Kmer<K>& kmer : kmers) {
     kmer_set.Add(kmer);
   }

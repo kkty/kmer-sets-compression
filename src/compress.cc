@@ -17,6 +17,7 @@
 #include "kmer_counter.h"
 #include "kmer_set.h"
 #include "kmer_set_compact.h"
+#include "kmer_set_set.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
@@ -45,18 +46,18 @@ int main(int argc, char** argv) {
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int K = 21;
-  const int B = 6;
+  using KeyType = uint32_t;
 
   const int n_datasets = files.size();
 
-  std::vector<KmerSet<K, B>> kmer_sets(n_datasets);
+  std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
 
   for (int i = 0; i < n_datasets; i++) {
     const std::string& file = files[i];
 
     spdlog::info("constructing kmer_counter for {}", file);
 
-    KmerCounter<K, B> kmer_counter;
+    KmerCounter<K, KeyType> kmer_counter;
 
     {
       const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
@@ -104,16 +105,16 @@ int main(int argc, char** argv) {
   }
 
   // kmer_sets[n_datasets] is an empty set.
-  kmer_sets.push_back(KmerSet<K, B>{});
+  kmer_sets.push_back(KmerSet<K, KeyType>{});
 
   // Returns the required size to represent the difference between s1 and s2.
-  const auto get_diff = [&](const KmerSet<K, B>& s1, const KmerSet<K, B>& s2) {
+  const auto get_diff = [&](const KmerSet<K, KeyType>& s1, const KmerSet<K, KeyType>& s2) {
     if (absl::GetFlag(FLAGS_fastdiff)) {
       return (s1 - s2).Size() + (s2 - s1).Size();
     }
 
     // Returns the size after compaction.
-    const auto get_size = [&](const KmerSet<K, B>& s) {
+    const auto get_size = [&](const KmerSet<K, KeyType>& s) {
       const std::vector<std::string> unitigs = absl::GetFlag(FLAGS_canonical)
                                                    ? GetUnitigsCanonical(s)
                                                    : GetUnitigs(s);
@@ -140,7 +141,7 @@ int main(int argc, char** argv) {
   }
 
   // Constructs the MST whose root is an empty set.
-  const auto [cost, tree] = g.MST(n_datasets);
+  auto [cost, tree] = g.MST(n_datasets);
 
   spdlog::info("cost = {}", cost);
 
