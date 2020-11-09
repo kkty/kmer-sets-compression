@@ -2,6 +2,7 @@
 #define KMER_COUNTER_H_
 
 #include <atomic>
+#include <limits>
 #include <mutex>
 #include <random>
 #include <string>
@@ -15,7 +16,7 @@
 #include "kmer_set.h"
 #include "range.h"
 
-template <int K, typename KeyType>
+template <int K, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
  public:
   KmerCounter() : buckets_(kBucketsNum) {}
@@ -64,12 +65,16 @@ class KmerCounter {
         for (int64_t i = range.begin; i < range.end; i++) {
           const auto& line = lines[i];
           std::vector<std::string> fragments = absl::StrSplit(line, "N");
+
           for (const auto& fragment : fragments) {
-            for (int i = 0; i + K <= (int)fragment.length(); i++) {
+            for (size_t i = 0; i + K <= fragment.length(); i++) {
               const Kmer<K> kmer(fragment.substr(i, K));
+
               const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
-              buf[bucket][key] += 1;
+
+              if (buf[bucket][key] != std::numeric_limits<ValueType>::max())
+                buf[bucket][key] += 1;
             }
           }
         }
@@ -88,7 +93,9 @@ class KmerCounter {
 
               bucket.reserve(bucket.size() + buf[i].size());
               for (const auto& [key, count] : buf[i]) {
-                bucket[key] += count;
+                bucket[key] =
+                    std::max((uint64_t)bucket[key] + count,
+                             (uint64_t)std::numeric_limits<ValueType>::max());
               }
 
               mu.unlock();
@@ -145,7 +152,7 @@ class KmerCounter {
   static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
   static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
-  using Bucket = absl::flat_hash_map<KeyType, int>;
+  using Bucket = absl::flat_hash_map<KeyType, ValueType>;
 
   std::vector<Bucket> buckets_;
 

@@ -152,7 +152,7 @@ class KmerSet {
     for (auto& thread : threads) thread.join();
   }
 
-  template <int, typename>
+  template <int, typename, typename>
   friend class KmerCounter;
 };
 
