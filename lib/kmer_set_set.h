@@ -16,11 +16,11 @@
 // KmerSetSet can be used to represent multiple k-mer sets in less space.
 // It is a recursive structure. That is, a KmerSetSet can contain another
 // KmerSetSet internally.
-template <int K, typename KeyType, typename CostFunction>
+template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSet {
  public:
-  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets,
-             CostFunction cost_function)
+  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
+             CostFunctionType cost_function)
       : n_(kmer_sets.size()) {
     // kmer_sets[n_] is an empty set.
     kmer_sets.push_back(KmerSet<K, KeyType>());
@@ -41,23 +41,32 @@ class KmerSetSet {
       diffs.push_back(kmer_sets[i] - kmer_sets[parent]);
     }
 
-    bool improve_by_recursion;
+    bool use_recursion;
 
-    {
-      diffs.push_back(KmerSet<K, KeyType>());
+    if (recursion_limit == 0) {
+      use_recursion = false;
+    } else {
+      bool improve_by_recursion;
 
-      // The same MST can be constructed twice.
-      // This is for the sake of simplicity of implementation.
-      improve_by_recursion =
-          ConstructMST(diffs, diffs.size() - 1, cost_function).first < cost_;
+      {
+        diffs.push_back(KmerSet<K, KeyType>());
 
-      diffs.pop_back();
+        // The same MST can be constructed twice.
+        // This is for the sake of simplicity of implementation.
+        improve_by_recursion =
+            ConstructMST(diffs, diffs.size() - 1, cost_function).first < cost_;
+
+        diffs.pop_back();
+      }
+
+      spdlog::debug("improve_by_recursion = {}", improve_by_recursion);
+
+      use_recursion = improve_by_recursion;
     }
 
-    spdlog::debug("improve_by_recursion = {}", improve_by_recursion);
-
-    if (improve_by_recursion) {
-      diffs_ = new KmerSetSet(std::move(diffs), cost_function);
+    if (use_recursion) {
+      diffs_ =
+          new KmerSetSet(std::move(diffs), recursion_limit - 1, cost_function);
     } else {
       diffs_ = diffs;
     }
@@ -150,7 +159,7 @@ class KmerSetSet {
 
   static std::pair<int64_t, Tree> ConstructMST(
       const std::vector<KmerSet<K, KeyType>>& kmer_sets, int root,
-      CostFunction cost_function) {
+      CostFunctionType cost_function) {
     BidirectionalGraph g;
 
     for (size_t i = 0; i < kmer_sets.size(); i++) {

@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
-  const int K = 11;
+  const int K = 15;
   using KeyType = uint16_t;
 
   const int n_datasets = files.size();
@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
   spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-      std::move(kmer_sets), cost_function);
+      std::move(kmer_sets), 5, cost_function);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
