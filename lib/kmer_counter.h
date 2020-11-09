@@ -1,7 +1,6 @@
 #ifndef KMER_COUNTER_H_
 #define KMER_COUNTER_H_
 
-#include <array>
 #include <atomic>
 #include <mutex>
 #include <random>
@@ -19,6 +18,8 @@
 template <int K, typename KeyType>
 class KmerCounter {
  public:
+  KmerCounter() : buckets_(kBucketsNum) {}
+
   // Returns the number of distinct k-mers.
   int64_t Size() const {
     int64_t sum = 0;
@@ -52,14 +53,14 @@ class KmerCounter {
       }
     }
 
-    std::array<std::mutex, kBucketsNum> buckets_mutexes;
+    std::vector<std::mutex> buckets_mutexes(kBucketsNum);
 
     std::vector<std::thread> threads;
 
     for (const Range& range :
          Range(0, lines.size()).Split(std::thread::hardware_concurrency())) {
       threads.emplace_back([&, range] {
-        std::array<Bucket, kBucketsNum> buf;
+        std::vector<Bucket> buf(kBucketsNum);
 
         for (int64_t i = range.begin; i < range.end; i++) {
           const auto& line = lines[i];
@@ -145,7 +146,7 @@ class KmerCounter {
 
   using Bucket = absl::flat_hash_map<KeyType, int>;
 
-  std::array<Bucket, kBucketsNum> buckets_;
+  std::vector<Bucket> buckets_;
 
   // Dispatches processing for each bucket.
   // Usage:

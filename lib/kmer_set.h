@@ -1,7 +1,6 @@
 #ifndef KMER_SET_H_
 #define KMER_SET_H_
 
-#include <array>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -33,6 +32,8 @@ Kmer<K> GetKmerFromBucketAndKey(int bucketID, KeyType key) {
 template <int K, typename KeyType>
 class KmerSet {
  public:
+  KmerSet() : buckets_(kBucketsNum) {}
+
   int64_t Size() const {
     int64_t sum = 0;
     for (const auto& bucket : buckets_) {
@@ -124,7 +125,7 @@ class KmerSet {
  private:
   using Bucket = absl::flat_hash_set<KeyType>;
 
-  std::array<Bucket, kBucketsNum> buckets_;
+  std::vector<Bucket> buckets_;
 
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
