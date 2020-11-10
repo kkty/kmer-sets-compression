@@ -169,8 +169,8 @@ int main(int argc, char** argv) {
 
   for (int i = 0; i < n_datasets; i++) {
     spdlog::info(
-        "Equals(kmer_sets[{}], kmer_set_set.Get({})) = {}", i, i,
-        Equals(kmer_sets[i], kmer_set_set.Get(i, n_workers), n_workers));
+        "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
+        kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
   }
 
   return 0;

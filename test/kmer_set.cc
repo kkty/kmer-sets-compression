@@ -81,4 +81,37 @@ TEST(KmetSet, Operators) {
   ASSERT_EQ(Sub(kmer_set2, kmer_set1, 1).Size(), 1);
   ASSERT_EQ(Sub(kmer_set2, kmer_set1, 1).Size(), 1);
   ASSERT_EQ(Intersection(kmer_set2, kmer_set1, 1).Size(), 2);
+  ASSERT_EQ(Intersection(kmer_set2, kmer_set1, 1).Size(), 2);
+}
+
+TEST(KmetSet, EqualsAndDiff) {
+  const int K = 5;
+  using KeyType = uint8_t;
+
+  KmerSet<K, KeyType> kmer_set1;
+  KmerSet<K, KeyType> kmer_set2;
+  KmerSet<K, KeyType> kmer_set3;
+
+  kmer_set1.Add(Kmer<K>("AAAAA"));
+  kmer_set1.Add(Kmer<K>("TTTTT"));
+
+  kmer_set2.Add(Kmer<K>("AAAAA"));
+  kmer_set2.Add(Kmer<K>("TTTTT"));
+
+  kmer_set3.Add(Kmer<K>("AAAAA"));
+  kmer_set3.Add(Kmer<K>("CCCCC"));
+  kmer_set3.Add(Kmer<K>("GGGGG"));
+
+  ASSERT_TRUE(kmer_set1.Equals(kmer_set1, 1));
+  ASSERT_TRUE(kmer_set2.Equals(kmer_set2, 1));
+  ASSERT_TRUE(kmer_set3.Equals(kmer_set3, 1));
+
+  ASSERT_TRUE(kmer_set1.Equals(kmer_set2, 1));
+  ASSERT_TRUE(kmer_set2.Equals(kmer_set1, 1));
+
+  ASSERT_FALSE(kmer_set1.Equals(kmer_set3, 1));
+  ASSERT_FALSE(kmer_set3.Equals(kmer_set1, 1));
+
+  ASSERT_EQ(kmer_set1.Diff(kmer_set3, 1), 3);
+  ASSERT_EQ(kmer_set3.Diff(kmer_set1, 1), 3);
 }

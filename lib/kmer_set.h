@@ -126,6 +126,35 @@ class KmerSet {
     return *this;
   }
 
+  int64_t Diff(const KmerSet& other, int n_workers) const {
+    std::atomic_int64_t count = 0;
+
+    other.ForEachBucket(
+        [&](const Bucket& other_bucket, int bucket_id) {
+          for (const KeyType& key : other_bucket) {
+            if (buckets_[bucket_id].find(key) == buckets_[bucket_id].end())
+              count += 1;
+          }
+        },
+        n_workers);
+
+    ForEachBucket(
+        [&](const Bucket& bucket, int bucket_id) {
+          for (const KeyType& key : bucket) {
+            if (other.buckets_[bucket_id].find(key) ==
+                other.buckets_[bucket_id].end())
+              count += 1;
+          }
+        },
+        n_workers);
+
+    return count;
+  }
+
+  bool Equals(const KmerSet& other, int n_workers) const {
+    return Diff(other, n_workers) == 0;
+  }
+
   static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
   static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
@@ -173,12 +202,6 @@ KmerSet<K, KeyType> Intersection(KmerSet<K, KeyType> lhs,
                                  const KmerSet<K, KeyType>& rhs,
                                  int n_workers) {
   return lhs.Sub(Sub(lhs, rhs, n_workers), n_workers);
-}
-
-template <int K, typename KeyType>
-bool Equals(const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs,
-            int n_workers) {
-  return Sub(lhs, rhs, n_workers).Size() + Sub(rhs, lhs, n_workers).Size() == 0;
 }
 
 #endif
