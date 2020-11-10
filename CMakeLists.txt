@@ -4,9 +4,11 @@ project(research)
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native")
-set(CMAKE_CXX_FLAGS_DEBUG "-g -fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_LINKER_FLAGS_DEBUG "-fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_LINKER_FLAGS_DEBUG "-fsanitize=address")
+
+include(CTest)
 
 find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
@@ -29,19 +31,28 @@ link_libraries(
   ${Boost_LIBRARIES}
 )
 
-add_executable(search src/search.cc)
-add_executable(compact src/compact.cc)
-add_executable(compress src/compress.cc)
-add_executable(kmersetset src/kmersetset.cc)
-
-link_libraries(
-  GTest::gtest
-  GTest::gtest_main
+foreach(
+  NAME
+  search
+  compact
+  compress
+  kmersetset
 )
+  add_executable(${NAME} src/${NAME}.cc)
+endforeach()
 
-add_executable(test_kmer test/kmer.cc)
-add_executable(test_kmer_set test/kmer_set.cc)
-add_executable(test_kmer_set_compact test/kmer_set_compact.cc)
-add_executable(test_suffix_array test/suffix_array.cc)
-add_executable(test_range test/range.cc)
-add_executable(test_graph test/graph.cc)
+link_libraries(GTest::gtest_main)
+
+foreach(
+  NAME
+  kmer
+  kmer_set
+  kmer_set_compact
+  suffix_array
+  range
+  graph
+)
+  add_executable(test_${NAME} test/${NAME}.cc)
+  add_test(test_${NAME} test_${NAME})
+endforeach()
+
