@@ -7,7 +7,6 @@
 
 TEST(KmerCounter, AddAndGet) {
   const int K = 5;
-  const int n_workers = 1;
   using KeyType = uint8_t;
   using ValueType = uint8_t;
 
@@ -25,6 +24,26 @@ TEST(KmerCounter, AddAndGet) {
   ASSERT_EQ(kmer_counter.Get(kmer1), 2);
   ASSERT_EQ(kmer_counter.Get(kmer2), 2);
   ASSERT_EQ(kmer_counter.Get(kmer3), 3);
+}
+
+TEST(KmerCounter, Multiply) {
+  const int K = 5;
+  const int n_workers = 1;
+  using KeyType = uint8_t;
+  using ValueType = uint8_t;
+
+  KmerCounter<K, KeyType, ValueType> kmer_counter;
+
+  const Kmer<K> kmer1("AAAAA");
+  const Kmer<K> kmer2("CCCCC");
+
+  kmer_counter.Add(kmer1, 1);
+  kmer_counter.Add(kmer2, 2);
+
+  kmer_counter.Multiply(3, n_workers);
+
+  ASSERT_EQ(kmer_counter.Get(kmer1), 3);
+  ASSERT_EQ(kmer_counter.Get(kmer2), 6);
 }
 
 TEST(KmerCounter, ToSetAndFromSet) {

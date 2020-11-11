@@ -169,6 +169,7 @@ class KmerCounter {
   KmerCounter& Add(const Kmer<K>& kmer, ValueType count) {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], count);
+    return *this;
   }
 
   KmerCounter& Add(const KmerCounter& other, int n_workers) {
@@ -176,6 +177,18 @@ class KmerCounter {
         [&](const Bucket& other_bucket, int bucket_id) {
           for (const auto& [key, value] : other_bucket) {
             buckets_[bucket_id][key] += value;
+          }
+        },
+        n_workers);
+
+    return *this;
+  }
+
+  KmerCounter& Multiply(ValueType v, int n_workers) {
+    ForEachBucket(
+        [&](const Bucket& bucket, int bucket_id) {
+          for (const auto& [key, value] : bucket) {
+            buckets_[bucket_id][key] = value * v;
           }
         },
         n_workers);
