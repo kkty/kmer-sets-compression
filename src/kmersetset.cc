@@ -114,35 +114,10 @@ int main(int argc, char** argv) {
 
   spdlog::info("kmer_sets_size = {}", kmer_sets_size);
 
-  const auto cost_estimate_function =
+  const auto cost_function =
       [canonical = absl::GetFlag(FLAGS_canonical)](
           const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs,
           int n_workers) { return lhs.Diff(rhs, n_workers); };
-
-  const auto cost_function = [canonical = absl::GetFlag(FLAGS_canonical)](
-                                 const KmerSet<K, KeyType>& lhs,
-                                 const KmerSet<K, KeyType>& rhs,
-                                 int n_workers) {
-    int64_t cost = 0;
-
-    if (canonical) {
-      for (const std::string& unitig :
-           GetUnitigsCanonical(Sub(lhs, rhs, n_workers), n_workers))
-        cost += unitig.length();
-      for (const std::string& unitig :
-           GetUnitigsCanonical(Sub(rhs, lhs, n_workers), n_workers))
-        cost += unitig.length();
-    } else {
-      for (const std::string& unitig :
-           GetUnitigs(Sub(lhs, rhs, n_workers), n_workers))
-        cost += unitig.length();
-      for (const std::string& unitig :
-           GetUnitigs(Sub(rhs, lhs, n_workers), n_workers))
-        cost += unitig.length();
-    }
-
-    return cost;
-  };
 
   {
     int64_t total_cost = 0;
@@ -155,17 +130,10 @@ int main(int argc, char** argv) {
     spdlog::info("total_cost = {}", total_cost);
   }
 
-  for (int i = 0; i < n_datasets; i++) {
-    int64_t cost_estimate =
-        cost_estimate_function(KmerSet<K, KeyType>(), kmer_sets[i], n_workers);
-    spdlog::info("i = {}, cost_estimate = {}", i, cost_estimate);
-  }
-
   spdlog::info("constructing kmer_set_set");
 
-  KmerSetSet<K, KeyType, decltype(cost_estimate_function)> kmer_set_set(
-      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_estimate_function,
-      n_workers);
+  KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
+      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
