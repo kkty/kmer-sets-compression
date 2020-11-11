@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -15,6 +16,19 @@
 #include "kmer.h"
 #include "kmer_set.h"
 #include "range.h"
+
+// Adds two numerical values. If the result exceeds the max value for the type,
+// the latter is returned.
+template <typename T>
+T AddWithMax(T x, T y) {
+  T max = std::numeric_limits<T>::max();
+
+  if (std::is_floating_point<T>::value) {
+    return std::min((double)max, (double)x + y);
+  } else {
+    return std::min((int64_t)max, (int64_t)x + y);
+  }
+}
 
 template <int K, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
@@ -73,7 +87,7 @@ class KmerCounter {
               const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
 
-              buf[bucket][key] += 1;
+              buf[bucket][key] = AddWithMax<ValueType>(buf[bucket][key], 1);
             }
           }
         }
@@ -92,7 +106,7 @@ class KmerCounter {
 
               bucket.reserve(bucket.size() + buf[i].size());
               for (const auto& [key, count] : buf[i]) {
-                bucket[key] += count;
+                bucket[key] = AddWithMax(bucket[key], count);
               }
 
               mu.unlock();
