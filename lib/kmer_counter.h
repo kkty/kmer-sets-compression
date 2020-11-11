@@ -73,8 +73,7 @@ class KmerCounter {
               const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
 
-              if (buf[bucket][key] != std::numeric_limits<ValueType>::max())
-                buf[bucket][key] += 1;
+              buf[bucket][key] += 1;
             }
           }
         }
@@ -93,9 +92,7 @@ class KmerCounter {
 
               bucket.reserve(bucket.size() + buf[i].size());
               for (const auto& [key, count] : buf[i]) {
-                bucket[key] =
-                    std::max((uint64_t)bucket[key] + count,
-                             (uint64_t)std::numeric_limits<ValueType>::max());
+                bucket[key] += count;
               }
 
               mu.unlock();
@@ -146,6 +143,18 @@ class KmerCounter {
         n_workers);
 
     return {set, (int64_t)cutoff_count};
+  }
+
+  KmerCounter& Add(const KmerCounter& other, int n_workers) {
+    other.ForEachBucket(
+        [&](const Bucket& other_bucket, int bucket_id) {
+          for (const auto& [key, value] : other_bucket) {
+            buckets_[bucket_id][key] += value;
+          }
+        },
+        n_workers);
+
+    return *this;
   }
 
  private:
