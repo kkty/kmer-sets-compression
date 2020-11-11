@@ -185,6 +185,14 @@ class KmerSet {
 
   template <typename F>
   void ForEachBucket(F f, int n_workers) const {
+    if (n_workers == 1) {
+      for (int i = 0; i < kBucketsNum; i++) {
+        f(buckets_[i], i);
+      }
+
+      return;
+    }
+
     std::vector<std::thread> threads;
 
     for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
