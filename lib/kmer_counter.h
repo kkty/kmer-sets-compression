@@ -159,6 +159,18 @@ class KmerCounter {
     return {set, (int64_t)cutoff_count};
   }
 
+  ValueType Get(const Kmer<K>& kmer) const {
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    auto it = buckets_[bucket].find(key);
+    if (it == buckets_[bucket].end()) return 0;
+    return it->second;
+  }
+
+  KmerCounter& Add(const Kmer<K>& kmer, ValueType count) {
+    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], count);
+  }
+
   KmerCounter& Add(const KmerCounter& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
@@ -169,6 +181,22 @@ class KmerCounter {
         n_workers);
 
     return *this;
+  }
+
+  static KmerCounter FromSet(const KmerSet<K, KeyType>& kmer_set,
+                             int n_workers) {
+    KmerCounter kmer_counter;
+
+    kmer_set.ForEachBucket(
+        [&](const typename KmerSet<K, KeyType>::Bucket& bucket, int bucket_id) {
+          kmer_counter.buckets_[bucket_id].reserve(bucket.size());
+          for (const KeyType& key : bucket) {
+            kmer_counter.buckets_[bucket_id][key] = 1;
+          }
+        },
+        n_workers);
+
+    return kmer_counter;
   }
 
  private:
