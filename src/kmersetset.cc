@@ -25,7 +25,6 @@ ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
-ABSL_FLAG(bool, fastcost, false, "use fast cost calculation");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 
@@ -115,17 +114,18 @@ int main(int argc, char** argv) {
 
   spdlog::info("kmer_sets_size = {}", kmer_sets_size);
 
-  const auto cost_function = [fastcost = absl::GetFlag(FLAGS_fastcost),
-                              canonical = absl::GetFlag(FLAGS_canonical)](
+  const auto cost_estimate_function =
+      [canonical = absl::GetFlag(FLAGS_canonical)](
+          const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs,
+          int n_workers) { return lhs.Diff(rhs, n_workers); };
+
+  const auto cost_function = [canonical = absl::GetFlag(FLAGS_canonical)](
                                  const KmerSet<K, KeyType>& lhs,
                                  const KmerSet<K, KeyType>& rhs,
                                  int n_workers) {
     int64_t cost = 0;
 
-    if (fastcost) {
-      cost += Sub(lhs, rhs, n_workers).Size();
-      cost += Sub(rhs, lhs, n_workers).Size();
-    } else if (canonical) {
+    if (canonical) {
       for (const std::string& unitig :
            GetUnitigsCanonical(Sub(lhs, rhs, n_workers), n_workers))
         cost += unitig.length();
@@ -155,15 +155,25 @@ int main(int argc, char** argv) {
     spdlog::info("total_cost = {}", total_cost);
   }
 
+  for (int i = 0; i < n_datasets; i++) {
+    int64_t cost_estimate =
+        cost_estimate_function(KmerSet<K, KeyType>(), kmer_sets[i], n_workers);
+    spdlog::info("i = {}, cost_estimate = {}", i, cost_estimate);
+  }
+
   spdlog::info("constructing kmer_set_set");
 
-  KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
+  KmerSetSet<K, KeyType, decltype(cost_estimate_function)> kmer_set_set(
+      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_estimate_function,
+      n_workers);
   spdlog::info("constructed kmer_set_set");
 
   spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
   spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
   spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
+
+  spdlog::info("kmer_set_set.Cost(cost_function) = {}",
+               kmer_set_set.Cost(cost_function, n_workers));
 
   // Make sure that we can re-construct original k-mer sets.
 

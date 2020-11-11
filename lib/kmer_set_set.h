@@ -21,6 +21,7 @@
 template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSet {
  public:
+  // Not to have a recursive structure, set "recursion_limit" to 0.
   KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
              CostFunctionType cost_function, int n_workers)
       : n_(kmer_sets.size()) {
@@ -153,6 +154,29 @@ class KmerSetSet {
     return std::get<KmerSetSet*>(diffs_)->Cost();
   }
 
+  // Uses another cost function to get the cost of the entire structure.
+  // For each internal kmer set, cost_function(empty_kmer_set, kmer_set,
+  // n_workers) is calculated and their sum is returned.
+  template <typename F>
+  int64_t Cost(F cost_function, int n_workers) const {
+    if (!IsTerminal()) {
+      return std::get<KmerSetSet*>(diffs_)->Cost(cost_function, n_workers);
+    }
+
+    int64_t cost = 0;
+
+    std::vector<KmerSet<K, KeyType>> diffs =
+        std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
+
+    for (const KmerSet<K, KeyType>& diff : diffs) {
+      cost += cost_function(KmerSet<K, KeyType>(), diff, n_workers);
+    }
+
+    return cost;
+  }
+
+  // Returns the level of recursion.
+  // If it is not a recursive structure, 0 is returned.
   int Depth() const {
     int depth = 0;
 
