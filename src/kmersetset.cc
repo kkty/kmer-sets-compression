@@ -27,6 +27,7 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
+ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -48,6 +49,7 @@ int main(int argc, char** argv) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
 
+  // 15 * 2 - 16 = 14 bits will be used to select a bucket.
   const int K = 15;
   using KeyType = uint16_t;
 
@@ -140,15 +142,12 @@ int main(int argc, char** argv) {
   spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
   spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
 
-  spdlog::info("kmer_set_set.Cost(cost_function) = {}",
-               kmer_set_set.Cost(cost_function, n_workers));
-
-  // Make sure that we can re-construct original k-mer sets.
-
-  for (int i = 0; i < n_datasets; i++) {
-    spdlog::info(
-        "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
-        kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
+  if (absl::GetFlag(FLAGS_check)) {
+    for (int i = 0; i < n_datasets; i++) {
+      spdlog::info(
+          "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
+          kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
+    }
   }
 
   return 0;
