@@ -166,7 +166,7 @@ class KmerSet {
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
   template <typename F>
-  void ForEachBucket(F&& f, int n_workers) const {
+  void ForEachBucket(F f, int n_workers) const {
     std::vector<std::thread> threads;
 
     for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
