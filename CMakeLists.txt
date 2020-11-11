@@ -51,6 +51,7 @@ foreach(
   suffix_array
   range
   graph
+  neighbor_joining
 )
   add_executable(test_${NAME} test/${NAME}.cc)
   add_test(test_${NAME} test_${NAME})
