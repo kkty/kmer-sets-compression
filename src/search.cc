@@ -22,6 +22,9 @@
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(int, seed, 0, "seed for rand()");
+ABSL_FLAG(int, cutoff, 1, "cut off threshold");
+ABSL_FLAG(int, n, 1, "number of iterations");
 
 template <int K>
 struct BFSResult {
@@ -203,20 +206,20 @@ int main(int argc, char** argv) {
     spdlog::set_level(spdlog::level::debug);
   }
 
-  std::srand(std::time(nullptr));
+  std::srand(absl::GetFlag(FLAGS_seed));
   std::ios_base::sync_with_stdio(false);
 
-  const int K = 31;
+  const int K = 15;
   const int n_workers = absl::GetFlag(FLAGS_workers);
-  using KeyType = uint32_t;
+  using KeyType = uint16_t;
 
   spdlog::info("constructing kmer_counter");
 
   KmerCounter<K, KeyType> kmer_counter;
 
   {
-    const absl::Status status =
-        kmer_counter.FromFASTQ(std::cin, absl::GetFlag(FLAGS_canonical), n_workers);
+    const absl::Status status = kmer_counter.FromFASTQ(
+        std::cin, absl::GetFlag(FLAGS_canonical), n_workers);
 
     if (!status.ok()) {
       spdlog::error("failed to parse FASTQ file");
@@ -229,69 +232,73 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set");
 
-  const auto [kmer_set, cut_off_count] = kmer_counter.Set(2, n_workers);
+  const auto [kmer_set, cutoff_count] =
+      kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
 
   spdlog::info("constructed kmer_set");
-  spdlog::info("cut_off_count = {}", cut_off_count);
+  spdlog::info("cutoff_count = {}", cutoff_count);
 
-  const auto start = kmer_set.Sample();
+  for (int i = 0; i < absl::GetFlag(FLAGS_n); i++) {
+    const auto start = kmer_set.Sample();
 
-  spdlog::info("searching: start = {}", start.String());
+    spdlog::info("searching: start = {}", start.String());
 
-  const BFSResult bfs_result = BFS(kmer_set, start, 1000);
+    const BFSResult bfs_result = BFS(kmer_set, start, 1000);
 
-  spdlog::info("searched: start = {}", start.String());
-  spdlog::info("reached_nodes = {}", bfs_result.reached_nodes);
-  spdlog::info("max_distance = {}", bfs_result.max_distance);
-  spdlog::info("avg_distance = {:.1f}", bfs_result.avg_distance);
+    spdlog::info("searched: start = {}", start.String());
+    spdlog::info("reached_nodes = {}", bfs_result.reached_nodes);
+    spdlog::info("max_distance = {}", bfs_result.max_distance);
+    spdlog::info("avg_distance = {:.1f}", bfs_result.avg_distance);
 
-  std::map<int, int> distance_count;
-
-  for (const auto& p : bfs_result.distances) {
-    distance_count[p.second] += 1;
-    spdlog::debug("distances[{}] = {}", p.first.String(), p.second);
-  }
-
-  // distance_count_sum[i] = distance_count[0] + ... + distance_count[i];
-  std::map<int, int> distance_count_sum;
-
-  {
-    int sum = 0;
-
-    for (const auto& p : distance_count) {
-      sum += p.second;
-      distance_count_sum[p.first] = sum;
-    }
-  }
-
-  const Kmer<K> goal = [&] {
-    std::vector<Kmer<K>> nodes;
+    std::map<int, int> distance_count;
 
     for (const auto& p : bfs_result.distances) {
-      nodes.push_back(p.first);
+      distance_count[p.second] += 1;
+      spdlog::debug("distances[{}] = {}", p.first.String(), p.second);
     }
 
-    return nodes[rand() % nodes.size()];
-  }();
+    // distance_count_sum[i] = distance_count[0] + ... + distance_count[i];
+    std::map<int, int> distance_count_sum;
 
-  spdlog::info("goal = {}", goal.String());
-  spdlog::info("distances[{}] = {}", goal.String(),
-               bfs_result.distances.find(goal)->second);
-  spdlog::info("distance_count_sum[{}] = {}",
-               bfs_result.distances.find(goal)->second,
-               distance_count_sum[bfs_result.distances.find(goal)->second]);
-  spdlog::info("starting A* search from {} to {}", start.String(),
-               goal.String());
+    {
+      int sum = 0;
 
-  const auto a_star_search_result =
-      AStarSearch<K, KeyType, 5>(kmer_set, start, goal);
+      for (const auto& p : distance_count) {
+        sum += p.second;
+        distance_count_sum[p.first] = sum;
+      }
+    }
 
-  if (!a_star_search_result) {
-    spdlog::error("A* search failed");
-  } else {
-    spdlog::info("finished A* search from {} to {}", start.String(),
+    // Randomly selects the goal which was found in the BFS.
+    const Kmer<K> goal = [&] {
+      std::vector<Kmer<K>> nodes;
+
+      for (const auto& p : bfs_result.distances) {
+        nodes.push_back(p.first);
+      }
+
+      return nodes[rand() % nodes.size()];
+    }();
+
+    spdlog::info("goal = {}", goal.String());
+    spdlog::info("distances[{}] = {}", goal.String(),
+                 bfs_result.distances.find(goal)->second);
+    spdlog::info("distance_count_sum[{}] = {}",
+                 bfs_result.distances.find(goal)->second,
+                 distance_count_sum[bfs_result.distances.find(goal)->second]);
+    spdlog::info("starting A* search from {} to {}", start.String(),
                  goal.String());
-    spdlog::info("visited_nodes = {}", (*a_star_search_result).visited_nodes);
-    spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
+
+    const auto a_star_search_result =
+        AStarSearch<K, KeyType, 5>(kmer_set, start, goal);
+
+    if (!a_star_search_result) {
+      spdlog::error("A* search failed");
+    } else {
+      spdlog::info("finished A* search from {} to {}", start.String(),
+                   goal.String());
+      spdlog::info("visited_nodes = {}", (*a_star_search_result).visited_nodes);
+      spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
+    }
   }
 }
