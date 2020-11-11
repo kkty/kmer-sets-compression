@@ -46,6 +46,7 @@ link_libraries(GTest::gtest_main)
 foreach(
   NAME
   kmer
+  kmer_counter
   kmer_set
   kmer_set_compact
   suffix_array
