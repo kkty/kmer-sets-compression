@@ -151,6 +151,24 @@ class KmerSet {
     return count;
   }
 
+  // Estimates the difference between two sets just by using one bucket.
+  int64_t DiffEstimate(const KmerSet& other) const {
+    int64_t count = 0;
+
+    const Bucket& bucket = buckets_[0];
+    const Bucket& other_bucket = other.buckets_[0];
+
+    for (const KeyType& key : bucket) {
+      if (other_bucket.find(key) == other_bucket.end()) count += 1;
+    }
+
+    for (const KeyType& key : other_bucket) {
+      if (bucket.find(key) == bucket.end()) count += 1;
+    }
+
+    return count * kBucketsNum;
+  }
+
   bool Equals(const KmerSet& other, int n_workers) const {
     return Diff(other, n_workers) == 0;
   }
