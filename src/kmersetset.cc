@@ -17,6 +17,7 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
+ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for FASTQ files");
@@ -89,15 +90,19 @@ int main(int argc, char** argv) {
     kmer_sets[i] = std::move(kmer_set);
   }
 
-  int64_t kmer_sets_size = 0;
-
   for (int i = 0; i < n_datasets; i++) {
     int64_t kmer_set_size = kmer_sets[i].Size();
     spdlog::info("i = {}, kmer_set_size = {}", i, kmer_set_size);
-    kmer_sets_size += kmer_set_size;
   }
 
-  spdlog::info("kmer_sets_size = {}", kmer_sets_size);
+  if (absl::GetFlag(FLAGS_similarity)) {
+    for (int i = 0; i < n_datasets; i++) {
+      for (int j = i + 1; j < n_datasets; j++) {
+        double similarity = kmer_sets[i].Similarity(kmer_sets[j], n_workers);
+        spdlog::info("i = {}, j = {}, similarity = {}", i, j, similarity);
+      }
+    }
+  }
 
   const auto cost_function =
       [canonical = absl::GetFlag(FLAGS_canonical)](
