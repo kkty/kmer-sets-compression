@@ -36,6 +36,14 @@ struct Range {
     return ranges;
   }
 
+  // Range(...).ForEach([&](int i) { ... });
+  template <typename F>
+  void ForEach(F f) const {
+    for (int64_t i = begin; i < end; i++) {
+      f(i);
+    }
+  }
+
   const int64_t begin;
   const int64_t end;
 };

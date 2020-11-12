@@ -17,3 +17,9 @@ TEST(Range, Split) {
     }
   }
 }
+
+TEST(Range, ForEach) {
+  int sum = 0;
+  Range(0, 10).ForEach([&](int i) { sum += i; });
+  ASSERT_EQ(sum, 45);
+}
