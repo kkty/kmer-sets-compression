@@ -125,7 +125,8 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, KeyType>, int64_t> Set(int cutoff, int n_workers) const {
+  std::pair<KmerSet<K, KeyType>, int64_t> ToSet(ValueType cutoff,
+                                              int n_workers) const {
     KmerSet<K, KeyType> set;
     std::mutex mu;
 

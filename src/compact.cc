@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     spdlog::info("constructing kmer_set");
 
     const auto [kmer_set, cutoff_count] =
-        kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
+        kmer_counter.ToSet(absl::GetFlag(FLAGS_cutoff), n_workers);
 
     spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
 

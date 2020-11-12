@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
   KmerSet<K, KeyType> kmer_set;
   int64_t cutoff_count;
   std::tie(kmer_set, cutoff_count) =
-      kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
+      kmer_counter.ToSet(absl::GetFlag(FLAGS_cutoff), n_workers);
 
   spdlog::info("constructed kmer_set");
   spdlog::info("cutoff_count = {}", cutoff_count);

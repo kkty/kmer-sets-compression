@@ -61,7 +61,7 @@ TEST(KmerCounter, ToSetAndFromSet) {
 
   KmerSet<K, KeyType> kmer_set;
   int cutoff;
-  std::tie(kmer_set, cutoff) = kmer_counter.Set(3, n_workers);
+  std::tie(kmer_set, cutoff) = kmer_counter.ToSet(3, n_workers);
 
   ASSERT_EQ(cutoff, 2);
   ASSERT_EQ(kmer_set.Size(), 2);
