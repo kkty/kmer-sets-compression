@@ -112,23 +112,43 @@ class KmerSetSet {
       } else {
         KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
 
-        kmer_set
-            .Add(
-                diffs->Get(
-                    diff_table_.find(path[i])->second.find(path[i + 1])->second,
-                    n_workers),
-                n_workers)
-            .Sub(
-                diffs->Get(
-                    diff_table_.find(path[i + 1])->second.find(path[i])->second,
-                    n_workers),
-                n_workers);
+        KmerSet<K, KeyType> add;
+        KmerSet<K, KeyType> sub;
+
+        const auto calculate_add = [&](int n_workers) {
+          add = diffs->Get(
+              diff_table_.find(path[i])->second.find(path[i + 1])->second,
+              n_workers);
+        };
+
+        const auto calculate_sub = [&](int n_workers) {
+          sub = diffs->Get(
+              diff_table_.find(path[i + 1])->second.find(path[i])->second,
+              n_workers);
+        };
+
+        if (n_workers == 1) {
+          calculate_add(1);
+          calculate_sub(1);
+        } else {
+          std::vector<std::thread> threads;
+
+          threads.emplace_back([&] { calculate_add(n_workers / 2); });
+
+          threads.emplace_back(
+              [&] { calculate_sub(n_workers - n_workers / 2); });
+
+          for (std::thread& thread : threads) thread.join();
+        }
+
+        kmer_set.Add(add, n_workers).Sub(sub, n_workers);
       }
     }
 
     return kmer_set;
   }
 
+  // Returns the number of k-mers stored internally.
   int64_t Size() const {
     int64_t size = 0;
 
