@@ -26,6 +26,7 @@ ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
+ABSL_FLAG(bool, nj, false, "use neighbor joining algorithm");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -120,21 +121,39 @@ int main(int argc, char** argv) {
     spdlog::info("total_cost = {}", total_cost);
   }
 
-  spdlog::info("constructing kmer_set_set");
+  if (absl::GetFlag(FLAGS_nj)) {
+    spdlog::info("constructing kmer_set_set_nj");
 
-  KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-      kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
-  spdlog::info("constructed kmer_set_set");
+    KmerSetSetNJ<K, KeyType, decltype(cost_function)> kmer_set_set_nj(
+        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
+    spdlog::info("constructed kmer_set_set_nj");
 
-  spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
-  spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
-  spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
+    spdlog::info("kmer_set_set_nj.Cost() = {}", kmer_set_set_nj.Cost());
 
-  if (absl::GetFlag(FLAGS_check)) {
-    for (int i = 0; i < n_datasets; i++) {
-      spdlog::info(
-          "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
-          kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
+    if (absl::GetFlag(FLAGS_check)) {
+      for (int i = 0; i < n_datasets; i++) {
+        spdlog::info(
+            "kmer_sets[{}].Equals(kmer_set_set_nj.Get({})) = {}", i, i,
+            kmer_sets[i].Equals(kmer_set_set_nj.Get(i, n_workers), n_workers));
+      }
+    }
+  } else {
+    spdlog::info("constructing kmer_set_set");
+
+    KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
+        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
+    spdlog::info("constructed kmer_set_set");
+
+    spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
+    spdlog::info("kmer_set_set.Depth() = {}", kmer_set_set.Depth());
+    spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
+
+    if (absl::GetFlag(FLAGS_check)) {
+      for (int i = 0; i < n_datasets; i++) {
+        spdlog::info(
+            "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
+            kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
+      }
     }
   }
 
