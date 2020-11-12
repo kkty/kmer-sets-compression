@@ -32,19 +32,24 @@ TEST(NeighborJoining, Execute) {
 
   const Result<DistanceType> result = Execute<DistanceType>(distances, 5);
 
-  ASSERT_EQ(result.parent.find(0)->second, 5);
-  ASSERT_EQ(result.parent.find(1)->second, 5);
-  ASSERT_EQ(result.parent.find(2)->second, 6);
-  ASSERT_EQ(result.parent.find(3)->second, 7);
-  ASSERT_EQ(result.parent.find(4)->second, 7);
-  ASSERT_EQ(result.parent.find(5)->second, 6);
-  ASSERT_EQ(result.parent.find(6)->second, 7);
+  ASSERT_EQ(result.Neighbors(0), std::vector<int>{5});
+  ASSERT_EQ(result.Neighbors(1), std::vector<int>{5});
+  ASSERT_EQ(result.Neighbors(2), std::vector<int>{6});
+  ASSERT_EQ(result.Neighbors(3), std::vector<int>{7});
+  ASSERT_EQ(result.Neighbors(4), std::vector<int>{7});
+  ASSERT_EQ(result.Neighbors(5), (std::vector<int>{0, 1, 6}));
+  ASSERT_EQ(result.Neighbors(6), (std::vector<int>{2, 5, 7}));
+  ASSERT_EQ(result.Neighbors(7), (std::vector<int>{3, 4, 6}));
 
-  ASSERT_DOUBLE_EQ(result.distances.Get(0, 5), 2);
-  ASSERT_DOUBLE_EQ(result.distances.Get(1, 5), 3);
-  ASSERT_DOUBLE_EQ(result.distances.Get(2, 6), 4);
-  ASSERT_DOUBLE_EQ(result.distances.Get(3, 7), 2);
-  ASSERT_DOUBLE_EQ(result.distances.Get(4, 7), 1);
-  ASSERT_DOUBLE_EQ(result.distances.Get(5, 6), 3);
-  ASSERT_DOUBLE_EQ(result.distances.Get(6, 7), 2);
+  // Distances between adjacent nodes.
+  ASSERT_DOUBLE_EQ(result.Distance(0, 5), 2);
+  ASSERT_DOUBLE_EQ(result.Distance(1, 5), 3);
+  ASSERT_DOUBLE_EQ(result.Distance(2, 6), 4);
+  ASSERT_DOUBLE_EQ(result.Distance(3, 7), 2);
+  ASSERT_DOUBLE_EQ(result.Distance(4, 7), 1);
+  ASSERT_DOUBLE_EQ(result.Distance(5, 6), 3);
+  ASSERT_DOUBLE_EQ(result.Distance(6, 7), 2);
+
+  // Distances between non-adjacent nodes.
+  ASSERT_DOUBLE_EQ(result.Distance(1, 3), 10);
 }

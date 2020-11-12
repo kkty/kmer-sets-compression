@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <queue>
 #include <tuple>
 #include <vector>
 
@@ -44,6 +45,8 @@ class SymmetricMatrix {
   absl::flat_hash_map<std::pair<int, int>, ValueType> values_;
 };
 
+// For each i, j in active, the distance between i and j should be
+// defined.
 template <typename DistanceType>
 SymmetricMatrix<DistanceType> GetQ(
     const SymmetricMatrix<DistanceType>& distances, std::vector<int>& active) {
@@ -74,26 +77,88 @@ SymmetricMatrix<DistanceType> GetQ(
   return q;
 }
 
+// Tree structure obtained by neighbor joining.
 template <typename DistanceType>
-struct Result {
-  int root;
-  absl::flat_hash_map<int, int> parent;
-  absl::flat_hash_map<int, std::vector<int>> children;
-  SymmetricMatrix<DistanceType> distances;
+class Result {
+ public:
+  Result(absl::flat_hash_map<int, std::vector<int>> adjacency_list,
+         SymmetricMatrix<DistanceType> distances)
+      : adjacency_list_(std::move(adjacency_list)),
+        distances_(std::move(distances)) {}
+
+  // Returns a list of nodes.
+  std::vector<int> Nodes() const {
+    std::vector<int> nodes;
+    for (auto it = adjacency_list_.cbegin(); it != adjacency_list_.cend();
+         it++) {
+      nodes.push_back(it->first);
+    }
+    return nodes;
+  }
+
+  // Returns the neighbors of "node".
+  std::vector<int> Neighbors(int node) const {
+    std::vector<int> neighbors = adjacency_list_.find(node)->second;
+    std::sort(neighbors.begin(), neighbors.end());
+    return neighbors;
+  }
+
+  // Returns the distances to each node from "root".
+  absl::flat_hash_map<int, DistanceType> Distances(int root) const {
+    absl::flat_hash_map<int, DistanceType> distances;
+
+    std::queue<int> queue;
+    queue.push(root);
+    distances[root] = 0;
+
+    while (!queue.empty()) {
+      int node = queue.front();
+      queue.pop();
+
+      for (int to : adjacency_list_.find(node)->second) {
+        if (distances.find(to) == distances.end()) {
+          distances[to] = distances[node] + distances_.Get(node, to);
+          queue.push(to);
+        }
+      }
+    }
+
+    return distances;
+  }
+
+  // Returns the distance from "from" to "to".
+  DistanceType Distance(int from, int to) const { return Distances(from)[to]; }
+
+  // Returns the all-pair distances.
+  SymmetricMatrix<DistanceType> AllDistances() const {
+    SymmetricMatrix<DistanceType> all_distances;
+
+    for (int root : Nodes()) {
+      absl::flat_hash_map<int, DistanceType> distances = Distances(root);
+      for (auto it = distances.cbegin(); it != distances.cend(); it++) {
+        all_distances.Set(root, it->first, it->second);
+      }
+    }
+
+    return all_distances;
+  }
+
+ private:
+  absl::flat_hash_map<int, std::vector<int>> adjacency_list_;
+  SymmetricMatrix<DistanceType> distances_;
 };
 
 // Executes the neighbor joining algorithm.
 // For details, please refer to https://en.wikipedia.org/wiki/Neighbor_joining.
 //
 // n is the number of initial nodes. For 0 <= i, j < n, the distances between
-// i and j should be set in "distances".
+// i and j should be defined.
 template <typename DistanceType>
 Result<DistanceType> Execute(SymmetricMatrix<DistanceType> distances, int n) {
-  absl::flat_hash_map<int, int> parent;
-  absl::flat_hash_map<int, std::vector<int>> children;
+  absl::flat_hash_map<int, std::vector<int>> adjacency_list;
 
   if (n == 1) {
-    return {0, parent, children, distances};
+    return {adjacency_list, distances};
   }
 
   std::vector<int> active;
@@ -105,8 +170,10 @@ Result<DistanceType> Execute(SymmetricMatrix<DistanceType> distances, int n) {
     int f, g;
     std::tie(std::ignore, f, g) = q.Min();
     int u = n++;
-    parent[f] = parent[g] = u;
-    children[u] = std::vector<int>{f, g};
+    adjacency_list[f].push_back(u);
+    adjacency_list[g].push_back(u);
+    adjacency_list[u].push_back(f);
+    adjacency_list[u].push_back(g);
 
     // Joins "f" and "g" and creates "u".
 
@@ -145,12 +212,10 @@ Result<DistanceType> Execute(SymmetricMatrix<DistanceType> distances, int n) {
 
   assert(active.size() == 2);
 
-  // Whichever can be the root. Here, the one with larger index will be the
-  // root.
-  parent[active[0]] = active[1];
-  children[active[1]] = std::vector<int>{active[0]};
+  adjacency_list[active[0]].push_back(active[1]);
+  adjacency_list[active[1]].push_back(active[0]);
 
-  return {active[1], parent, children, distances};
+  return {adjacency_list, distances};
 }
 
 }  // namespace neighbor_joining
