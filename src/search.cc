@@ -232,7 +232,9 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set");
 
-  const auto [kmer_set, cutoff_count] =
+  KmerSet<K, KeyType> kmer_set;
+  int64_t cutoff_count;
+  std::tie(kmer_set, cutoff_count) =
       kmer_counter.Set(absl::GetFlag(FLAGS_cutoff), n_workers);
 
   spdlog::info("constructed kmer_set");
@@ -243,7 +245,7 @@ int main(int argc, char** argv) {
 
     spdlog::info("searching: start = {}", start.String());
 
-    const BFSResult bfs_result = BFS(kmer_set, start, 1000);
+    const BFSResult bfs_result = BFS(kmer_set, start, 3000);
 
     spdlog::info("searched: start = {}", start.String());
     spdlog::info("reached_nodes = {}", bfs_result.reached_nodes);
@@ -283,22 +285,39 @@ int main(int argc, char** argv) {
     spdlog::info("goal = {}", goal.String());
     spdlog::info("distances[{}] = {}", goal.String(),
                  bfs_result.distances.find(goal)->second);
+    spdlog::info(
+        "distance_count_sum[{}] = {}",
+        bfs_result.distances.find(goal)->second - 1,
+        distance_count_sum[bfs_result.distances.find(goal)->second - 1]);
     spdlog::info("distance_count_sum[{}] = {}",
                  bfs_result.distances.find(goal)->second,
                  distance_count_sum[bfs_result.distances.find(goal)->second]);
-    spdlog::info("starting A* search from {} to {}", start.String(),
-                 goal.String());
 
-    const auto a_star_search_result =
-        AStarSearch<K, KeyType, 5>(kmer_set, start, goal);
+    for (int L = 1; L <= 9; L++) {
+      spdlog::info("starting A* search from {} to {}: L = {}", start.String(),
+                   goal.String(), L);
 
-    if (!a_star_search_result) {
-      spdlog::error("A* search failed");
-    } else {
-      spdlog::info("finished A* search from {} to {}", start.String(),
-                   goal.String());
-      spdlog::info("visited_nodes = {}", (*a_star_search_result).visited_nodes);
-      spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
+      const auto a_star_search_result = [&] {
+        if (L == 1) return AStarSearch<K, KeyType, 1>(kmer_set, start, goal);
+        if (L == 2) return AStarSearch<K, KeyType, 2>(kmer_set, start, goal);
+        if (L == 3) return AStarSearch<K, KeyType, 3>(kmer_set, start, goal);
+        if (L == 4) return AStarSearch<K, KeyType, 4>(kmer_set, start, goal);
+        if (L == 5) return AStarSearch<K, KeyType, 5>(kmer_set, start, goal);
+        if (L == 6) return AStarSearch<K, KeyType, 6>(kmer_set, start, goal);
+        if (L == 7) return AStarSearch<K, KeyType, 7>(kmer_set, start, goal);
+        if (L == 8) return AStarSearch<K, KeyType, 8>(kmer_set, start, goal);
+        return AStarSearch<K, KeyType, 9>(kmer_set, start, goal);
+      }();
+
+      if (!a_star_search_result) {
+        spdlog::error("A* search failed");
+      } else {
+        spdlog::info("finished A* search from {} to {}", start.String(),
+                     goal.String());
+        spdlog::info("visited_nodes = {}",
+                     (*a_star_search_result).visited_nodes);
+        spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
+      }
     }
   }
 }
