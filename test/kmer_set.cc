@@ -114,4 +114,10 @@ TEST(KmetSet, EqualsAndDiff) {
 
   ASSERT_EQ(kmer_set1.Diff(kmer_set3, 1), 3);
   ASSERT_EQ(kmer_set3.Diff(kmer_set1, 1), 3);
+
+  ASSERT_EQ(kmer_set1.Common(kmer_set3, 1), 1);
+  ASSERT_EQ(kmer_set3.Common(kmer_set1, 1), 1);
+
+  ASSERT_DOUBLE_EQ(kmer_set1.Similarity(kmer_set3, 1), 0.25);
+  ASSERT_DOUBLE_EQ(kmer_set3.Similarity(kmer_set1, 1), 0.25);
 }

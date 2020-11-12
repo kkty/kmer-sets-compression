@@ -126,6 +126,7 @@ class KmerSet {
     return *this;
   }
 
+  // Returns the number of elements which is in one but not in the other.
   int64_t Diff(const KmerSet& other, int n_workers) const {
     std::atomic_int64_t count = 0;
 
@@ -149,6 +150,30 @@ class KmerSet {
         n_workers);
 
     return count;
+  }
+
+  // Returns the number of common elements.
+  int64_t Common(const KmerSet& other, int n_workers) const {
+    std::atomic_int64_t count = 0;
+
+    other.ForEachBucket(
+        [&](const Bucket& other_bucket, int bucket_id) {
+          for (const KeyType& key : other_bucket) {
+            if (buckets_[bucket_id].find(key) != buckets_[bucket_id].end())
+              count += 1;
+          }
+        },
+        n_workers);
+
+    return count;
+  }
+
+  // Returns the Jaccard similarity.
+  double Similarity(const KmerSet& other, int n_workers) const {
+    int64_t diff = Diff(other, n_workers);
+    int64_t common = Common(other, n_workers);
+
+    return (double)common / (diff + common);
   }
 
   // Estimates the difference between two sets just by using one bucket.
