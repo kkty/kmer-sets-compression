@@ -25,9 +25,9 @@ T AddWithMax(T x, T y) {
   T max = std::numeric_limits<T>::max();
 
   if (std::is_floating_point<T>::value) {
-    return std::min((double)max, (double)x + y);
+    return std::min((double)max, (double)x + (double)y);
   } else {
-    return std::min((int64_t)max, (int64_t)x + y);
+    return std::min((int64_t)max, (int64_t)x + (int64_t)y);
   }
 }
 
@@ -36,9 +36,9 @@ T MultiplyWithMax(T x, T y) {
   T max = std::numeric_limits<T>::max();
 
   if (std::is_floating_point<T>::value) {
-    return std::min((double)max, (double)x * y);
+    return std::min((double)max, (double)x * (double)y);
   } else {
-    return std::min((int64_t)max, (int64_t)x * y);
+    return std::min((int64_t)max, (int64_t)x * (int64_t)y);
   }
 }
 
