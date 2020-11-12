@@ -99,7 +99,7 @@ class KmerCounter {
       threads.emplace_back([&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
-        for (int64_t i = range.begin; i < range.end; i++) {
+        range.ForEach([&](int64_t i) {
           const std::string& read = reads[i];
           std::vector<std::string> fragments = absl::StrSplit(read, "N");
 
@@ -113,7 +113,7 @@ class KmerCounter {
               buf[bucket][key] = AddWithMax<ValueType>(buf[bucket][key], 1);
             }
           }
-        }
+        });
 
         std::vector<bool> done(kBucketsNum);
         int done_count = 0;
@@ -262,10 +262,10 @@ class KmerCounter {
 
     for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        for (int i = range.begin; i < range.end; i++) {
+        range.ForEach([&](int64_t i) {
           const Bucket& bucket = buckets_[i];
           f(bucket, i);
-        }
+        });
       });
     }
 

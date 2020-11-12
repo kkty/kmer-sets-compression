@@ -222,10 +222,10 @@ class KmerSet {
 
     for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        for (int i = range.begin; i < range.end; i++) {
+        range.ForEach([&](int i) {
           const Bucket& bucket = buckets_[i];
           f(bucket, i);
-        }
+        });
       });
     }
 

@@ -232,7 +232,7 @@ class KmerSetSet {
 
     for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        for (int i = range.begin; i < range.end; i++) {
+        range.ForEach([&](int i) {
           std::pair<int, int> pair = pairs[i];
 
           int64_t cost =
@@ -241,7 +241,7 @@ class KmerSetSet {
           std::lock_guard lck(mu);
 
           g.AddEdge(pair.first, pair.second, cost);
-        }
+        });
       });
     }
 

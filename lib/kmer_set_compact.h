@@ -144,26 +144,25 @@ std::vector<std::string> GetUnitigsCanonical(
   std::mutex mu_unitigs;
   std::mutex mu_visited;
 
-  for (const Range& range : Range(0, terminal_kmers.size())
-                                .Split(std::thread::hardware_concurrency())) {
+  for (const Range& range : Range(0, terminal_kmers.size()).Split(n_workers)) {
     threads.emplace_back([&, range] {
       std::vector<std::string> buf_unitigs;
       absl::flat_hash_set<Kmer<K>> buf_visited;
 
-      for (int i = range.begin; i < range.end; i++) {
+      range.ForEach([&](int i) {
         const Kmer<K> terminal_kmer = terminal_kmers[i];
 
         std::vector<Kmer<K>> path = find_path(terminal_kmer, false);
 
         // Not to process the same path for multiple times.
-        if (path[0] < path[path.size() - 1]) continue;
+        if (path[0] < path[path.size() - 1]) return;
 
         for (const Kmer<K>& kmer : path) buf_visited.insert(kmer);
 
         for (const std::string& unitig : get_unitigs(path)) {
           buf_unitigs.push_back(unitig);
         }
-      }
+      });
 
       std::vector<std::thread> threads;
 
@@ -306,7 +305,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
       std::vector<std::string> buf_unitigs;
       KmerSet<K, KeyType> buf_visited;
 
-      for (int64_t i = range.begin; i < range.end; i++) {
+      range.ForEach([&](int64_t i) {
         const Kmer<K>& start_kmer = start_kmers[i];
         std::vector<Kmer<K>> path;
 
@@ -319,7 +318,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
         }
 
         buf_unitigs.push_back(GetUnitigFromKmers(path));
-      }
+      });
 
       std::vector<std::thread> threads;
 
@@ -366,6 +365,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
   return unitigs;
 }
 
+// KmerSetSetCompact holds a set of k-mers in less space.
 template <int K>
 class KmerSetCompact {
  public:
@@ -441,7 +441,7 @@ class KmerSetCompact {
       threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
-        for (int64_t i = range.begin; i < range.end; i++) {
+        range.ForEach([&](int64_t i) {
           const int64_t begin = boundary_[i];
           const int64_t end = (i == (int64_t)boundary_.size() - 1)
                                   ? sa_.String().length()
@@ -450,7 +450,7 @@ class KmerSetCompact {
             const Kmer<K> kmer{sa_.String().substr(begin + j, K)};
             if (pred(kmer)) buf.push_back(canonical_ ? kmer.Canonical() : kmer);
           }
-        }
+        });
 
         std::lock_guard _{mu};
         kmers.reserve(kmers.size() + buf.size());
