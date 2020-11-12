@@ -283,14 +283,36 @@ class KmerSetSetNJ {
     kmer_sets.push_back(KmerSet<K, KeyType>());
 
     neighbor_joining::SymmetricMatrix<float> all_distances;
-    for (int i = 0; i < n_ + 1; i++) {
-      for (int j = i; j < n_ + 1; j++) {
-        if (i == j)
-          all_distances.Set(i, j, 0);
-        else
-          all_distances.Set(
-              i, j, cost_function(kmer_sets[i], kmer_sets[j], n_workers));
+
+    {
+      std::vector<std::pair<int, int>> pairs;
+
+      for (int i = 0; i < n_ + 1; i++) {
+        for (int j = i; j < n_ + 1; j++) {
+          pairs.emplace_back(i, j);
+        }
       }
+
+      std::vector<std::thread> threads;
+      std::mutex mu;
+
+      for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
+        threads.emplace_back([&] {
+          range.ForEach([&](int i) {
+            const std::pair<int, int>& pair = pairs[i];
+
+            int64_t cost = pair.first == pair.second
+                               ? 0
+                               : cost_function(kmer_sets[pair.first],
+                                               kmer_sets[pair.second], 1);
+
+            std::lock_guard _{mu};
+            all_distances.Set(pair.first, pair.second, cost);
+          });
+        });
+      }
+
+      for (std::thread& thread : threads) thread.join();
     }
 
     const neighbor_joining::Result<float> result =
@@ -306,12 +328,18 @@ class KmerSetSetNJ {
 
         float denominator = 0;
 
+        float distance_avg = 0;
+        for (const auto& p : result.Distances(node)) {
+          distance_avg += p.second;
+        }
+        distance_avg /= result.Nodes().size();
+
         for (const auto& [another_node, distance] : result.Distances(node)) {
           if (another_node <= n_) {
             KmerCounter<K, KeyType, float> another_kmer_counter =
                 KmerCounter<K, KeyType, float>::FromSet(kmer_sets[another_node],
                                                         n_workers);
-            float factor = 1.0 / distance;
+            float factor = std::pow(distance_avg / distance, 2);
             another_kmer_counter.Multiply(factor, n_workers);
             denominator += factor;
             kmer_counter.Add(another_kmer_counter, n_workers);
