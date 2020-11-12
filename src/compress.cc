@@ -8,10 +8,7 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "absl/status/status.h"
-#include "boost/iostreams/filter/bzip2.hpp"
-#include "boost/iostreams/filtering_stream.hpp"
-#include "boost/process.hpp"
+#include "absl/status/statusor.h"
 #include "graph.h"
 #include "kmer.h"
 #include "kmer_counter.h"
@@ -59,37 +56,23 @@ int main(int argc, char** argv) {
 
     spdlog::info("constructing kmer_counter for {}", file);
 
-    KmerCounter<K, KeyType> kmer_counter;
-
-    {
+    const KmerCounter<K, KeyType> kmer_counter = [&] {
       const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+      const bool canonical = absl::GetFlag(FLAGS_canonical);
 
-      if (decompressor != "") {
-        boost::process::ipstream ipstream;
-        boost::process::child child(decompressor + ' ' + file,
-                                    boost::process::std_out > ipstream);
+      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+          decompressor != ""
+              ? KmerCounter<K, KeyType>::FromFASTQ(file, decompressor,
+                                                   canonical, n_workers)
+              : KmerCounter<K, KeyType>::FromFASTQ(file, canonical, n_workers);
 
-        const absl::Status status = kmer_counter.FromFASTQ(
-            ipstream, absl::GetFlag(FLAGS_canonical), n_workers);
-
-        child.wait();
-
-        if (!status.ok()) {
-          spdlog::error("failed to parse FASTQ file");
-          std::exit(1);
-        }
-      } else {
-        std::ifstream is{file};
-
-        const absl::Status status = kmer_counter.FromFASTQ(
-            is, absl::GetFlag(FLAGS_canonical), n_workers);
-
-        if (!status.ok()) {
-          spdlog::error("failed to parse FASTQ file");
-          std::exit(1);
-        }
+      if (!status_or.ok()) {
+        spdlog::error("failed to parse FASTQ file: {}",
+                      status_or.status().ToString());
       }
-    }
+
+      return *status_or;
+    }();
 
     spdlog::info("constructed kmer_counter for {}", file);
     spdlog::info("constructing kmer_set for {}", file);
@@ -118,9 +101,9 @@ int main(int argc, char** argv) {
 
     // Returns the size after compaction.
     const auto get_size = [&](const KmerSet<K, KeyType>& s) {
-      const std::vector<std::string> unitigs = absl::GetFlag(FLAGS_canonical)
-                                                   ? GetUnitigsCanonical(s, n_workers)
-                                                   : GetUnitigs(s, n_workers);
+      const std::vector<std::string> unitigs =
+          absl::GetFlag(FLAGS_canonical) ? GetUnitigsCanonical(s, n_workers)
+                                         : GetUnitigs(s, n_workers);
       int64_t size = 0;
       for (const std::string& unitig : unitigs) size += unitig.size();
       return size;

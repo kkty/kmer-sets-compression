@@ -11,8 +11,9 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_split.h"
+#include "io.h"
 #include "kmer.h"
 #include "kmer_set.h"
 #include "range.h"
@@ -30,6 +31,17 @@ T AddWithMax(T x, T y) {
   }
 }
 
+template <typename T>
+T MultiplyWithMax(T x, T y) {
+  T max = std::numeric_limits<T>::max();
+
+  if (std::is_floating_point<T>::value) {
+    return std::min((double)max, (double)x * y);
+  } else {
+    return std::min((int64_t)max, (int64_t)x * y);
+  }
+}
+
 template <int K, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
  public:
@@ -44,41 +56,52 @@ class KmerCounter {
     return sum;
   }
 
-  absl::Status FromFASTQ(std::istream& is, bool canonical, int n_workers) {
-    std::vector<std::string> lines;
+  static absl::StatusOr<KmerCounter> FromFASTQ(std::istream& is, bool canonical,
+                                               int n_workers) {
+    return FromFASTQ(ReadLines(is), canonical, n_workers);
+  }
 
-    {
-      const absl::Status error =
-          absl::UnknownError("failed to parse FASTQ file");
+  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
+                                               bool canonical, int n_workers) {
+    return FromFASTQ(ReadLines(file_name), canonical, n_workers);
+  }
 
-      std::string s;
+  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
+                                               const std::string& decompressor,
+                                               bool canonical, int n_workers) {
+    return FromFASTQ(ReadLines(file_name, decompressor), canonical, n_workers);
+  }
 
-      while (true) {
-        // EOF
-        if (!std::getline(is, s)) break;
+  static absl::StatusOr<KmerCounter> FromFASTQ(std::vector<std::string> lines,
+                                               bool canonical, int n_workers) {
+    KmerCounter kmer_counter;
 
-        if (s.length() == 0 || s[0] != '@') return error;
+    if (lines.size() % 4 != 0)
+      return absl::UnknownError("there should be 4 * N lines");
 
-        if (!std::getline(is, s)) return error;
+    std::vector<std::string> reads;
+    reads.reserve(lines.size() / 4);
 
-        lines.push_back(s);
-
-        if (!std::getline(is, s)) return error;
-        if (!std::getline(is, s)) return error;
-      }
+    for (size_t i = 0; i < lines.size(); i++) {
+      if (i % 4 == 0 && lines[i][0] != '@')
+        return absl::UnknownError("the line should start with '@'");
+      if (i % 4 == 1) reads.push_back(lines[i]);
     }
+
+    // Clear up "lines".
+    std::vector<std::string>().swap(lines);
 
     std::vector<std::mutex> buckets_mutexes(kBucketsNum);
 
     std::vector<std::thread> threads;
 
-    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
+    for (const Range& range : Range(0, reads.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
         for (int64_t i = range.begin; i < range.end; i++) {
-          const auto& line = lines[i];
-          std::vector<std::string> fragments = absl::StrSplit(line, "N");
+          const std::string& read = reads[i];
+          std::vector<std::string> fragments = absl::StrSplit(read, "N");
 
           for (const auto& fragment : fragments) {
             for (size_t i = 0; i + K <= fragment.length(); i++) {
@@ -102,7 +125,7 @@ class KmerCounter {
             auto& mu = buckets_mutexes[i];
 
             if (mu.try_lock()) {
-              auto& bucket = buckets_[i];
+              auto& bucket = kmer_counter.buckets_[i];
 
               bucket.reserve(bucket.size() + buf[i].size());
               for (const auto& [key, count] : buf[i]) {
@@ -120,13 +143,13 @@ class KmerCounter {
 
     for (std::thread& thread : threads) thread.join();
 
-    return absl::OkStatus();
+    return kmer_counter;
   }
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
   std::pair<KmerSet<K, KeyType>, int64_t> ToSet(ValueType cutoff,
-                                              int n_workers) const {
+                                                int n_workers) const {
     KmerSet<K, KeyType> set;
     std::mutex mu;
 
@@ -177,7 +200,8 @@ class KmerCounter {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
           for (const auto& [key, value] : other_bucket) {
-            buckets_[bucket_id][key] += value;
+            buckets_[bucket_id][key] =
+                AddWithMax(buckets_[bucket_id][key], value);
           }
         },
         n_workers);
@@ -189,7 +213,7 @@ class KmerCounter {
     ForEachBucket(
         [&](const Bucket& bucket, int bucket_id) {
           for (const auto& [key, value] : bucket) {
-            buckets_[bucket_id][key] = value * v;
+            buckets_[bucket_id][key] = MultiplyWithMax(value, v);
           }
         },
         n_workers);

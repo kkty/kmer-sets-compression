@@ -13,7 +13,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "kmer.h"
 #include "kmer_counter.h"
 #include "kmer_set.h"
@@ -215,17 +215,19 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_counter");
 
-  KmerCounter<K, KeyType> kmer_counter;
+  const KmerCounter<K, KeyType> kmer_counter = [&] {
+    const bool canonical = absl::GetFlag(FLAGS_canonical);
 
-  {
-    const absl::Status status = kmer_counter.FromFASTQ(
-        std::cin, absl::GetFlag(FLAGS_canonical), n_workers);
+    absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+        KmerCounter<K, KeyType>::FromFASTQ(std::cin, canonical, n_workers);
 
-    if (!status.ok()) {
-      spdlog::error("failed to parse FASTQ file");
-      std::exit(1);
+    if (!status_or.ok()) {
+      spdlog::error("failed to parse FASTQ file: {}",
+                    status_or.status().ToString());
     }
-  }
+
+    return *status_or;
+  }();
 
   spdlog::info("constructed kmer_counter");
   spdlog::info("kmer_counter.Size() = {}", kmer_counter.Size());

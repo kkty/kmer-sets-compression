@@ -28,6 +28,7 @@ link_libraries(
   absl::flags
   absl::flags_parse
   absl::status
+  absl::statusor
   ${Boost_LIBRARIES}
 )
 
