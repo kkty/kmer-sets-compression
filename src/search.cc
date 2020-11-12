@@ -209,9 +209,9 @@ int main(int argc, char** argv) {
   std::srand(absl::GetFlag(FLAGS_seed));
   std::ios_base::sync_with_stdio(false);
 
-  const int K = 15;
+  const int K = 21;
   const int n_workers = absl::GetFlag(FLAGS_workers);
-  using KeyType = uint16_t;
+  using KeyType = uint32_t;
 
   spdlog::info("constructing kmer_counter");
 
