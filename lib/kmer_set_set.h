@@ -297,7 +297,7 @@ class KmerSetSetNJ {
       std::mutex mu;
 
       for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
-        threads.emplace_back([&] {
+        threads.emplace_back([&, range] {
           range.ForEach([&](int i) {
             const std::pair<int, int>& pair = pairs[i];
 
