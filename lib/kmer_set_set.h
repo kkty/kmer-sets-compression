@@ -563,7 +563,7 @@ class KmerSetSetMM {
         parents_[i] = -1;
         diff_table_[-1][i] = diffs.size();
         diffs.push_back(kmer_sets[i]);
-      } else if (i < mates[i]) {
+      } else if (i < (int)mates[i]) {
         int parent = next_parent_id++;
 
         parents_[i] = parent;
