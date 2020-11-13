@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "boost/graph/adjacency_list.hpp"
+#include "boost/graph/maximum_weighted_matching.hpp"
 #include "graph.h"
 #include "kmer.h"
 #include "kmer_set.h"
@@ -503,6 +505,169 @@ class KmerSetSetNJ {
 
   // If diff_table_[i][j] is -1, it means that there is no addition from i to j.
   absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
+};
+
+// KmerSetMM is similar to KmerSetSet, but it uses maximum weighted matching.
+template <int K, typename KeyType, typename CostFunctionType>
+class KmerSetSetMM {
+ public:
+  KmerSetSetMM(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
+               int recursion_limit, CostFunctionType cost_function,
+               int n_workers)
+      : n_(kmer_sets.size()) {
+    using EdgeProperty = boost::property<boost::edge_weight_t, int>;
+    using Graph =
+        boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS,
+                              boost::no_property, EdgeProperty>;
+
+    Graph g(n_);
+
+    // Adds edges.
+    {
+      std::vector<std::pair<int, int>> pairs;
+
+      for (int i = 0; i < n_; i++) {
+        for (int j = i + 1; j < n_; j++) {
+          pairs.emplace_back(i, j);
+        }
+      }
+
+      std::vector<std::thread> threads;
+      std::mutex mu;
+
+      for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          range.ForEach([&](int i) {
+            const std::pair<int, int> pair = pairs[i];
+            int64_t weight =
+                kmer_sets[pair.first].Common(kmer_sets[pair.second], 1);
+            mu.lock();
+            boost::add_edge(pair.first, pair.second, EdgeProperty(weight), g);
+            mu.unlock();
+          });
+        });
+      }
+
+      for (std::thread& thread : threads) thread.join();
+    }
+
+    std::vector<boost::graph_traits<Graph>::vertex_descriptor> mates(n_);
+    boost::maximum_weighted_matching(g, &mates[0]);
+
+    int next_parent_id = n_;
+
+    std::vector<KmerSet<K, KeyType>> diffs;
+
+    for (int i = 0; i < n_; i++) {
+      if (mates[i] == boost::graph_traits<Graph>::null_vertex()) {
+        parents_[i] = -1;
+        diff_table_[-1][i] = diffs.size();
+        diffs.push_back(kmer_sets[i]);
+      } else if (i < mates[i]) {
+        int parent = next_parent_id++;
+
+        parents_[i] = parent;
+        parents_[mates[i]] = parent;
+
+        // -1 is an empty set.
+        parents_[parent] = -1;
+
+        diff_table_[parent][i] = diffs.size();
+        diffs.push_back(Sub(kmer_sets[i], kmer_sets[mates[i]], n_workers));
+
+        diff_table_[parent][mates[i]] = diffs.size();
+        diffs.push_back(Sub(kmer_sets[mates[i]], kmer_sets[i], n_workers));
+
+        diff_table_[-1][parent] = diffs.size();
+        diffs.push_back(
+            Intersection(kmer_sets[i], kmer_sets[mates[i]], n_workers));
+      }
+    }
+
+    // Calculates cost.
+    {
+      std::atomic_int64_t cost = 0;
+      std::vector<std::thread> threads;
+
+      for (const Range& range : Range(0, diffs.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          range.ForEach([&](int i) {
+            const KmerSet<K, KeyType>& diff = diffs[i];
+            cost += cost_function(KmerSet<K, KeyType>(), diff, n_workers);
+          });
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+
+      cost_ = cost;
+    }
+
+    spdlog::debug("cost_ = {}", cost_);
+
+    if (recursion_limit == 0) {
+      diffs_ = diffs;
+    } else {
+      diffs_ = new KmerSetSetMM(diffs, recursion_limit - 1, cost_function,
+                                n_workers);
+    }
+  }
+
+  // Returns the number of k-mers stored internally.
+  int64_t Size() const {
+    if (IsTerminal()) {
+      int64_t sum = 0;
+      for (const KmerSet<K, KeyType>& kmer_set :
+           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)) {
+        sum += kmer_set.Size();
+      }
+      return sum;
+    } else {
+      return std::get<KmerSetSetMM*>(diffs_)->Size();
+    }
+  }
+
+  int64_t Cost() const {
+    if (IsTerminal()) return cost_;
+    return std::get<KmerSetSetMM*>(diffs_)->Cost();
+  }
+
+  KmerSet<K, KeyType> Get(int i, int n_workers) const {
+    const auto get_diff = [&](int from, int to) {
+      int pos = diff_table_.find(from)->second.find(to)->second;
+
+      if (IsTerminal()) {
+        return std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)[pos];
+      } else {
+        return std::get<KmerSetSetMM*>(diffs_)->Get(pos, n_workers);
+      }
+    };
+
+    int parent = parents_.find(i)->second;
+
+    if (parent == -1) {
+      return get_diff(-1, i);
+    }
+
+    return Add(get_diff(-1, parent), get_diff(parent, i), n_workers);
+  }
+
+ private:
+  bool IsTerminal() const {
+    return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
+  }
+
+  int n_;
+
+  int cost_ = 0;
+
+  // If parents_[i] == -1, the parent of i is an empty set.
+  absl::flat_hash_map<int, int> parents_;
+
+  // If diffs_ is a vector, diffs_[diff_table[i][j]] is a diff set from i to j.
+  absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
+
+  std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSetMM*> diffs_;
 };
 
 #endif
