@@ -3,20 +3,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <optional>
 #include <thread>
-#include <mutex>
 #include <tuple>
 #include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "boost/graph/adjacency_list.hpp"
-#include "boost/graph/maximum_weighted_matching.hpp"
 #include "graph.h"
 #include "kmer.h"
 #include "kmer_set.h"
 #include "kmer_set_compact.h"
+#include "lemon/list_graph.h"
+#include "lemon/matching.h"
 #include "neighbor_joining.h"
 #include "range.h"
 #include "spdlog/spdlog.h"
@@ -486,12 +486,19 @@ class KmerSetSetMM {
                int recursion_limit, CostFunctionType cost_function,
                int n_workers)
       : n_(kmer_sets.size()) {
-    using EdgeProperty = boost::property<boost::edge_weight_t, int>;
-    using Graph =
-        boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS,
-                              boost::no_property, EdgeProperty>;
+    using Graph = lemon::ListGraph;
 
-    Graph g(n_);
+    Graph g;
+
+    std::vector<Graph::Node> nodes(n_);
+    Graph::NodeMap<int> ids(g);
+    for (int i = 0; i < n_; i++) {
+      Graph::Node node = g.addNode();
+      ids[node] = i;
+      nodes[i] = node;
+    }
+
+    Graph::EdgeMap<int> weights(g);
 
     // Adds edges.
     {
@@ -513,45 +520,53 @@ class KmerSetSetMM {
             int64_t weight =
                 kmer_sets[pair.first].Common(kmer_sets[pair.second], 1);
             mu.lock();
-            boost::add_edge(pair.first, pair.second, EdgeProperty(weight), g);
+            Graph::Edge edge = g.addEdge(nodes[pair.first], nodes[pair.second]);
+            weights[edge] = weight;
             mu.unlock();
           });
         });
       }
 
-      for (std::thread& thread : threads) thread.join();
+      for (std::thread& t : threads) t.join();
     }
 
-    std::vector<boost::graph_traits<Graph>::vertex_descriptor> mates(n_);
-    boost::maximum_weighted_matching(g, &mates[0]);
+    lemon::MaxWeightedMatching<Graph, Graph::EdgeMap<int>> matching(g, weights);
+
+    matching.run();
 
     int next_parent_id = n_;
 
     std::vector<KmerSet<K, KeyType>> diffs;
 
     for (int i = 0; i < n_; i++) {
-      if (mates[i] == boost::graph_traits<Graph>::null_vertex()) {
+      lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+
+      if (mate == lemon::INVALID) {
         parents_[i] = -1;
         diff_table_[-1][i] = diffs.size();
         diffs.push_back(kmer_sets[i]);
-      } else if (i < (int)mates[i]) {
-        int parent = next_parent_id++;
+      } else {
+        int mate_i = ids[mate];
 
-        parents_[i] = parent;
-        parents_[mates[i]] = parent;
+        if (i < mate_i) {
+          int parent = next_parent_id++;
 
-        // -1 is an empty set.
-        parents_[parent] = -1;
+          parents_[i] = parent;
+          parents_[mate_i] = parent;
 
-        diff_table_[parent][i] = diffs.size();
-        diffs.push_back(Sub(kmer_sets[i], kmer_sets[mates[i]], n_workers));
+          // -1 is an empty set.
+          parents_[parent] = -1;
 
-        diff_table_[parent][mates[i]] = diffs.size();
-        diffs.push_back(Sub(kmer_sets[mates[i]], kmer_sets[i], n_workers));
+          diff_table_[parent][i] = diffs.size();
+          diffs.push_back(Sub(kmer_sets[i], kmer_sets[mate_i], n_workers));
 
-        diff_table_[-1][parent] = diffs.size();
-        diffs.push_back(
-            Intersection(kmer_sets[i], kmer_sets[mates[i]], n_workers));
+          diff_table_[parent][mate_i] = diffs.size();
+          diffs.push_back(Sub(kmer_sets[mate_i], kmer_sets[i], n_workers));
+
+          diff_table_[-1][parent] = diffs.size();
+          diffs.push_back(
+              Intersection(kmer_sets[i], kmer_sets[mate_i], n_workers));
+        }
       }
     }
 

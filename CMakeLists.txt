@@ -15,8 +15,9 @@ find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(mimalloc REQUIRED)
+find_package(lemon REQUIRED)
 
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${LEMON_INCLUDE_DIRS})
 include_directories(lib)
 
 link_libraries(
@@ -30,6 +31,7 @@ link_libraries(
   absl::status
   absl::statusor
   ${Boost_LIBRARIES}
+  ${LEMON_LIBRARIES}
 )
 
 foreach(
