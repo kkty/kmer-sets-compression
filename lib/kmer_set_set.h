@@ -5,6 +5,8 @@
 #include <cmath>
 #include <optional>
 #include <thread>
+#include <mutex>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -49,35 +51,11 @@ class KmerSetSet {
       diffs.push_back(Sub(kmer_sets[i], kmer_sets[parent], n_workers));
     }
 
-    bool use_recursion;
-
     if (recursion_limit == 0) {
-      use_recursion = false;
+      diffs_ = std::move(diffs);
     } else {
-      bool improve_by_recursion;
-
-      {
-        diffs.push_back(KmerSet<K, KeyType>());
-
-        // The same MST can be constructed twice.
-        // This is for the sake of simplicity of implementation.
-        improve_by_recursion =
-            ConstructMST(diffs, diffs.size() - 1, cost_function, n_workers)
-                .first < cost_;
-
-        diffs.pop_back();
-      }
-
-      spdlog::debug("improve_by_recursion = {}", improve_by_recursion);
-
-      use_recursion = improve_by_recursion;
-    }
-
-    if (use_recursion) {
       diffs_ = new KmerSetSet(std::move(diffs), recursion_limit - 1,
                               cost_function, n_workers);
-    } else {
-      diffs_ = diffs;
     }
   }
 
@@ -99,6 +77,7 @@ class KmerSetSet {
 
     KmerSet<K, KeyType> kmer_set;
 
+    // Traverses the path and reconstructs the set.
     for (size_t i = 0; i < path.size() - 1; i++) {
       if (IsTerminal()) {
         std::vector<KmerSet<K, KeyType>> diffs =
@@ -142,7 +121,7 @@ class KmerSetSet {
           threads.emplace_back(
               [&] { calculate_sub(n_workers - n_workers / 2); });
 
-          for (std::thread& thread : threads) thread.join();
+          for (std::thread& t : threads) t.join();
         }
 
         kmer_set.Add(add, n_workers).Sub(sub, n_workers);
@@ -154,21 +133,16 @@ class KmerSetSet {
 
   // Returns the number of k-mers stored internally.
   int64_t Size() const {
-    int64_t size = 0;
-
-    if (IsTerminal()) {
-      std::vector<KmerSet<K, KeyType>> diffs =
-          std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
-
-      for (const auto& diff : diffs) {
-        size += diff.Size();
-      }
-    } else {
-      KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
-
-      return diffs->Size();
+    if (!IsTerminal()) {
+      return std::get<KmerSetSet*>(diffs_)->Size();
     }
 
+    int64_t size = 0;
+
+    for (const KmerSet<K, KeyType>& diff :
+         std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)) {
+      size += diff.Size();
+    }
     return size;
   }
 
@@ -199,22 +173,8 @@ class KmerSetSet {
     return cost;
   }
 
-  // Returns the level of recursion.
-  // If it is not a recursive structure, 0 is returned.
-  int Depth() const {
-    int depth = 0;
-
-    const KmerSetSet* current = this;
-
-    while (!current->IsTerminal()) {
-      current = std::get<KmerSetSet*>(current->diffs_);
-      depth += 1;
-    }
-
-    return depth;
-  }
-
  private:
+  // Returns true if it is the end of recursion.
   bool IsTerminal() const {
     return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
   }
@@ -222,34 +182,38 @@ class KmerSetSet {
   static std::pair<int64_t, Tree> ConstructMST(
       const std::vector<KmerSet<K, KeyType>>& kmer_sets, int root,
       CostFunctionType cost_function, int n_workers) {
-    std::vector<std::pair<int, int>> pairs;
-
-    for (size_t i = 0; i < kmer_sets.size(); i++) {
-      for (size_t j = i + 1; j < kmer_sets.size(); j++) {
-        pairs.emplace_back(i, j);
-      }
-    }
-
     BidirectionalGraph g;
-    std::vector<std::thread> threads;
-    std::mutex mu;
 
-    for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        range.ForEach([&](int i) {
-          std::pair<int, int> pair = pairs[i];
+    // Adds edges.
+    {
+      std::vector<std::pair<int, int>> pairs;
 
-          int64_t cost =
-              cost_function(kmer_sets[pair.first], kmer_sets[pair.second], 1);
+      for (size_t i = 0; i < kmer_sets.size(); i++) {
+        for (size_t j = i + 1; j < kmer_sets.size(); j++) {
+          pairs.emplace_back(i, j);
+        }
+      }
 
-          std::lock_guard lck(mu);
+      std::vector<std::thread> threads;
+      std::mutex mu;
 
-          g.AddEdge(pair.first, pair.second, cost);
+      for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          range.ForEach([&](int i) {
+            std::pair<int, int> pair = pairs[i];
+
+            int64_t cost =
+                cost_function(kmer_sets[pair.first], kmer_sets[pair.second], 1);
+
+            std::lock_guard _{mu};
+
+            g.AddEdge(pair.first, pair.second, cost);
+          });
         });
-      });
-    }
+      }
 
-    for (std::thread& thread : threads) thread.join();
+      for (std::thread& t : threads) t.join();
+    }
 
     return g.MST(root);
   }
@@ -276,7 +240,7 @@ class KmerSetSetNJ {
  public:
   KmerSetSetNJ(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
                CostFunctionType cost_function, int n_workers)
-      : n_(kmer_sets.size()), cost_(0) {
+      : n_(kmer_sets.size()) {
     for (int i = 0; i < n_; i++) {
       spdlog::debug("kmer_sets[{}].Size() = {}", i, kmer_sets[i].Size());
     }
@@ -408,18 +372,24 @@ class KmerSetSetNJ {
     spdlog::debug("cost_ = {}", cost_);
 
     if (recursion_limit == 0) {
-      diffs_ = diffs;
+      diffs_ = std::move(diffs);
     } else {
-      diffs_ = new KmerSetSetNJ(diffs, recursion_limit - 1, cost_function,
-                                n_workers);
+      diffs_ = new KmerSetSetNJ(std::move(diffs), recursion_limit - 1,
+                                cost_function, n_workers);
     }
+  }
+
+  ~KmerSetSetNJ() {
+    if (!IsTerminal()) delete std::get<KmerSetSetNJ*>(diffs_);
   }
 
   int64_t Cost() const {
     if (IsTerminal()) return cost_;
+
     return std::get<KmerSetSetNJ*>(diffs_)->Cost();
   }
 
+  // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
     std::vector<int> path;
 
@@ -490,13 +460,14 @@ class KmerSetSetNJ {
   }
 
  private:
+  // Returns true if it is the end of recursion.
   bool IsTerminal() const {
     return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
   }
 
   int n_;
 
-  int64_t cost_;
+  int64_t cost_ = 0;
 
   // parent_[i] is the parent of i.
   absl::flat_hash_map<int, int> parent_;
@@ -606,11 +577,15 @@ class KmerSetSetMM {
     spdlog::debug("cost_ = {}", cost_);
 
     if (recursion_limit == 0) {
-      diffs_ = diffs;
+      diffs_ = std::move(diffs);
     } else {
-      diffs_ = new KmerSetSetMM(diffs, recursion_limit - 1, cost_function,
-                                n_workers);
+      diffs_ = new KmerSetSetMM(std::move(diffs), recursion_limit - 1,
+                                cost_function, n_workers);
     }
+  }
+
+  ~KmerSetSetMM() {
+    if (!IsTerminal()) delete std::get<KmerSetSetMM*>(diffs_);
   }
 
   // Returns the number of k-mers stored internally.
@@ -632,7 +607,9 @@ class KmerSetSetMM {
     return std::get<KmerSetSetMM*>(diffs_)->Cost();
   }
 
+  // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
+    // Returns the diff from "from" to "to".
     const auto get_diff = [&](int from, int to) {
       int pos = diff_table_.find(from)->second.find(to)->second;
 
@@ -653,13 +630,14 @@ class KmerSetSetMM {
   }
 
  private:
+  // Returns true if it is the end of recursion.
   bool IsTerminal() const {
     return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
   }
 
   int n_;
 
-  int cost_ = 0;
+  int64_t cost_ = 0;
 
   // If parents_[i] == -1, the parent of i is an empty set.
   absl::flat_hash_map<int, int> parents_;
