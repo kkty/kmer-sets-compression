@@ -18,6 +18,11 @@ jobs:
           CC: gcc-10
           CXX: g++-10
       - run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS_RELEASE='-O3 -march=native' -DCMAKE_INSTALL_PREFIX=/tmp/usr/local && make -j && make install
+        working-directory: extern/lemon
+        env:
+          CC: gcc-10
+          CXX: g++-10
+      - run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS_RELEASE='-O3 -march=native' -DCMAKE_INSTALL_PREFIX=/tmp/usr/local && make -j && make install
         working-directory: extern/spdlog
         env:
           CC: gcc-10
