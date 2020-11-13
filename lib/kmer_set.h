@@ -1,14 +1,12 @@
 #ifndef KMER_SET_H_
 #define KMER_SET_H_
 
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "absl/strings/str_split.h"
 #include "kmer.h"
 #include "range.h"
 
@@ -42,16 +40,19 @@ class KmerSet {
     return sum;
   }
 
+  // Adds a single kmer.
   void Add(const Kmer<K>& kmer) {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     buckets_[bucket].insert(key);
   }
 
+  // Removes a single kmer.
   void Remove(const Kmer<K>& kmer) {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     buckets_[bucket].erase(key);
   }
 
+  // Returns true if the kmer is contained in the set.
   bool Contains(const Kmer<K>& kmer) const {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     return buckets_[bucket].find(key) != buckets_[bucket].end();
@@ -72,7 +73,7 @@ class KmerSet {
 
   // Finds all the k-mers that match the condition.
   template <typename Pred>
-  std::vector<Kmer<K>> Find(Pred&& pred, int n_workers) const {
+  std::vector<Kmer<K>> Find(Pred pred, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
@@ -102,6 +103,7 @@ class KmerSet {
     return Find([&](const Kmer<K>&) { return true; }, n_workers);
   }
 
+  // Adds kmers that exist in "other".
   KmerSet& Add(const KmerSet& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
@@ -114,6 +116,7 @@ class KmerSet {
     return *this;
   }
 
+  // Removes kmers that exist in "other".
   KmerSet& Sub(const KmerSet& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
@@ -126,7 +129,8 @@ class KmerSet {
     return *this;
   }
 
-  // Returns the number of elements which is in one but not in the other.
+  // Returns the number of kmers which is in only one of the
+  // two sets.
   int64_t Diff(const KmerSet& other, int n_workers) const {
     std::atomic_int64_t count = 0;
 
@@ -152,7 +156,7 @@ class KmerSet {
     return count;
   }
 
-  // Returns the number of common elements.
+  // Returns the number of kmers that is in the both of two sets.
   int64_t Common(const KmerSet& other, int n_workers) const {
     std::atomic_int64_t count = 0;
 
@@ -168,7 +172,7 @@ class KmerSet {
     return count;
   }
 
-  // Returns the Jaccard similarity.
+  // Returns the Jaccard similarity of two sets.
   double Similarity(const KmerSet& other, int n_workers) const {
     int64_t diff = Diff(other, n_workers);
     int64_t common = Common(other, n_workers);
@@ -176,24 +180,28 @@ class KmerSet {
     return (double)common / (diff + common);
   }
 
-  // Estimates the difference between two sets just by using one bucket.
-  int64_t DiffEstimate(const KmerSet& other) const {
+  // Estimates the difference between two sets using some buckets.
+  // n_buckets should be no more than kBucketsNum.
+  int64_t DiffEstimate(const KmerSet& other, int n_buckets) const {
     int64_t count = 0;
 
-    const Bucket& bucket = buckets_[0];
-    const Bucket& other_bucket = other.buckets_[0];
+    for (int i = 0; i < n_buckets; i++) {
+      const Bucket& bucket = buckets_[i];
+      const Bucket& other_bucket = other.buckets_[i];
 
-    for (const KeyType& key : bucket) {
-      if (other_bucket.find(key) == other_bucket.end()) count += 1;
+      for (const KeyType& key : bucket) {
+        if (other_bucket.find(key) == other_bucket.end()) count += 1;
+      }
+
+      for (const KeyType& key : other_bucket) {
+        if (bucket.find(key) == bucket.end()) count += 1;
+      }
     }
 
-    for (const KeyType& key : other_bucket) {
-      if (bucket.find(key) == bucket.end()) count += 1;
-    }
-
-    return count * kBucketsNum;
+    return count * kBucketsNum / n_buckets;
   }
 
+  // Returns true if two sets are the same.
   bool Equals(const KmerSet& other, int n_workers) const {
     return Diff(other, n_workers) == 0;
   }
@@ -208,6 +216,11 @@ class KmerSet {
 
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
+  // Execute a function for each bucket.
+  //
+  // Example:
+  //   ForEachBucket([&](const Bucket& bucket, int bucket_id) { ... },
+  //   n_workers);
   template <typename F>
   void ForEachBucket(F f, int n_workers) const {
     if (n_workers == 1) {
@@ -229,7 +242,7 @@ class KmerSet {
       });
     }
 
-    for (auto& thread : threads) thread.join();
+    for (std::thread& t : threads) t.join();
   }
 
   template <int, typename, typename>
