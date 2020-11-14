@@ -564,7 +564,7 @@ class KmerSetSetMM {
 
             boost::asio::post(pool, [&, i, mate_i, parent] {
               KmerSet<K, KeyType> sub =
-                  Sub(kmer_sets[i], kmer_sets[mate_i], n_workers);
+                  Sub(kmer_sets[i], kmer_sets[mate_i], 1);
 
               std::lock_guard lck(mu);
               diff_table_[parent][i] = diffs.size();
@@ -573,7 +573,7 @@ class KmerSetSetMM {
 
             boost::asio::post(pool, [&, i, mate_i, parent] {
               KmerSet<K, KeyType> sub =
-                  Sub(kmer_sets[mate_i], kmer_sets[i], n_workers);
+                  Sub(kmer_sets[mate_i], kmer_sets[i], 1);
 
               std::lock_guard lck(mu);
               diff_table_[parent][mate_i] = diffs.size();
@@ -582,7 +582,7 @@ class KmerSetSetMM {
 
             boost::asio::post(pool, [&, i, mate_i, parent] {
               KmerSet<K, KeyType> intersection =
-                  Intersection(kmer_sets[i], kmer_sets[mate_i], n_workers);
+                  Intersection(kmer_sets[i], kmer_sets[mate_i], 1);
 
               std::lock_guard lck(mu);
               diff_table_[-1][parent] = diffs.size();
