@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
   } else if (absl::GetFlag(FLAGS_amm)) {
     spdlog::info("constructing kmer_set_set_amm");
 
-    KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_amm(
+    KmerSetSetAMM<K, KeyType, decltype(cost_function)> kmer_set_set_amm(
         kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
 
     spdlog::info("constructed kmer_set_set_amm");
