@@ -13,6 +13,8 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_split.h"
+#include "boost/asio/post.hpp"
+#include "boost/asio/thread_pool.hpp"
 #include "io.h"
 #include "kmer.h"
 #include "kmer_set.h"
@@ -258,18 +260,13 @@ class KmerCounter {
       return;
     }
 
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
 
-    for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        range.ForEach([&](int64_t i) {
-          const Bucket& bucket = buckets_[i];
-          f(bucket, i);
-        });
-      });
+    for (int i = 0; i < kBucketsNum; i++) {
+      boost::asio::post(pool, [&, i] { f(buckets_[i], i); });
     }
 
-    for (auto& thread : threads) thread.join();
+    pool.join();
   }
 };
 

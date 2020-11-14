@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "boost/asio/post.hpp"
+#include "boost/asio/thread_pool.hpp"
 #include "kmer.h"
 #include "range.h"
 
@@ -231,18 +233,13 @@ class KmerSet {
       return;
     }
 
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
 
-    for (const Range& range : Range(0, kBucketsNum).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        range.ForEach([&](int i) {
-          const Bucket& bucket = buckets_[i];
-          f(bucket, i);
-        });
-      });
+    for (int i = 0; i < kBucketsNum; i++) {
+      boost::asio::post(pool, [&, i] { f(buckets_[i], i); });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   template <int, typename, typename>
