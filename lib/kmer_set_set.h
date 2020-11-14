@@ -497,7 +497,7 @@ class KmerSetSetMM {
       nodes[i] = node;
     }
 
-    Graph::EdgeMap<int> weights(g);
+    Graph::EdgeMap<int64_t> weights(g);
 
     // Adds edges.
     {
@@ -529,7 +529,8 @@ class KmerSetSetMM {
       for (std::thread& t : threads) t.join();
     }
 
-    lemon::MaxWeightedMatching<Graph, Graph::EdgeMap<int>> matching(g, weights);
+    lemon::MaxWeightedMatching<Graph, Graph::EdgeMap<int64_t>> matching(
+        g, weights);
 
     matching.run();
 
