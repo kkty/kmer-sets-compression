@@ -13,7 +13,7 @@ include(CTest)
 find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(mimalloc REQUIRED)
 find_package(LEMON REQUIRED)
 

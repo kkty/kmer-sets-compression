@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "boost/asio/post.hpp"
+#include "boost/asio/thread_pool.hpp"
 #include "graph.h"
 #include "kmer.h"
 #include "kmer_set.h"
@@ -499,34 +501,24 @@ class KmerSetSetMM {
 
     Graph::EdgeMap<int64_t> weights(g);
 
-    // Adds edges.
+    // Adds edges and sets their weights.
     {
-      std::vector<std::pair<int, int>> pairs;
+      boost::asio::thread_pool pool(n_workers);
+      std::mutex mu;
 
       for (int i = 0; i < n_; i++) {
         for (int j = i + 1; j < n_; j++) {
-          pairs.emplace_back(i, j);
+          boost::asio::post(pool, [&, i, j] {
+            int64_t weight = kmer_sets[i].Common(kmer_sets[j], 1);
+
+            std::lock_guard lck(mu);
+            Graph::Edge edge = g.addEdge(nodes[i], nodes[j]);
+            weights[edge] = weight;
+          });
         }
       }
 
-      std::vector<std::thread> threads;
-      std::mutex mu;
-
-      for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          range.ForEach([&](int i) {
-            const std::pair<int, int> pair = pairs[i];
-            int64_t weight =
-                kmer_sets[pair.first].Common(kmer_sets[pair.second], 1);
-            mu.lock();
-            Graph::Edge edge = g.addEdge(nodes[pair.first], nodes[pair.second]);
-            weights[edge] = weight;
-            mu.unlock();
-          });
-        });
-      }
-
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     lemon::MaxWeightedMatching<Graph, Graph::EdgeMap<int64_t>> matching(
@@ -534,40 +526,73 @@ class KmerSetSetMM {
 
     matching.run();
 
-    int next_parent_id = n_;
-
     std::vector<KmerSet<K, KeyType>> diffs;
 
-    for (int i = 0; i < n_; i++) {
-      lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+    // Calculates parents, diffs, and diff_table_.
+    // parents are calculated in the main thread, and the others are calculated
+    // in sub threads.
+    {
+      int next_parent_id = n_;
 
-      if (mate == lemon::INVALID) {
-        parents_[i] = -1;
-        diff_table_[-1][i] = diffs.size();
-        diffs.push_back(kmer_sets[i]);
-      } else {
-        int mate_i = ids[mate];
+      std::mutex mu;
+      boost::asio::thread_pool pool(n_workers);
 
-        if (i < mate_i) {
-          int parent = next_parent_id++;
+      for (int i = 0; i < n_; i++) {
+        lemon::ListGraph::Node mate = matching.mate(nodes[i]);
 
-          parents_[i] = parent;
-          parents_[mate_i] = parent;
+        if (mate == lemon::INVALID) {
+          parents_[i] = -1;
 
-          // -1 is an empty set.
-          parents_[parent] = -1;
+          boost::asio::post(pool, [&, i] {
+            KmerSet<K, KeyType> kmer_set = kmer_sets[i];
 
-          diff_table_[parent][i] = diffs.size();
-          diffs.push_back(Sub(kmer_sets[i], kmer_sets[mate_i], n_workers));
+            std::lock_guard lck(mu);
+            diff_table_[-1][i] = diffs.size();
+            diffs.push_back(std::move(kmer_set));
+          });
+        } else {
+          int mate_i = ids[mate];
 
-          diff_table_[parent][mate_i] = diffs.size();
-          diffs.push_back(Sub(kmer_sets[mate_i], kmer_sets[i], n_workers));
+          if (i < mate_i) {
+            int parent = next_parent_id++;
 
-          diff_table_[-1][parent] = diffs.size();
-          diffs.push_back(
-              Intersection(kmer_sets[i], kmer_sets[mate_i], n_workers));
+            parents_[i] = parent;
+            parents_[mate_i] = parent;
+
+            // -1 is an empty set.
+            parents_[parent] = -1;
+
+            boost::asio::post(pool, [&, i, mate_i, parent] {
+              KmerSet<K, KeyType> sub =
+                  Sub(kmer_sets[i], kmer_sets[mate_i], n_workers);
+
+              std::lock_guard lck(mu);
+              diff_table_[parent][i] = diffs.size();
+              diffs.push_back(std::move(sub));
+            });
+
+            boost::asio::post(pool, [&, i, mate_i, parent] {
+              KmerSet<K, KeyType> sub =
+                  Sub(kmer_sets[mate_i], kmer_sets[i], n_workers);
+
+              std::lock_guard lck(mu);
+              diff_table_[parent][mate_i] = diffs.size();
+              diffs.push_back(std::move(sub));
+            });
+
+            boost::asio::post(pool, [&, i, mate_i, parent] {
+              KmerSet<K, KeyType> intersection =
+                  Intersection(kmer_sets[i], kmer_sets[mate_i], n_workers);
+
+              std::lock_guard lck(mu);
+              diff_table_[-1][parent] = diffs.size();
+              diffs.push_back(std::move(intersection));
+            });
+          }
         }
       }
+
+      pool.join();
     }
 
     // kmer_sets is no longer needed.
@@ -576,18 +601,16 @@ class KmerSetSetMM {
     // Calculates cost.
     {
       std::atomic_int64_t cost = 0;
-      std::vector<std::thread> threads;
 
-      for (const Range& range : Range(0, diffs.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          range.ForEach([&](int i) {
-            const KmerSet<K, KeyType>& diff = diffs[i];
-            cost += cost_function(KmerSet<K, KeyType>(), diff, n_workers);
-          });
+      boost::asio::thread_pool pool(n_workers);
+
+      for (size_t i = 0; i < diffs.size(); i++) {
+        boost::asio::post(pool, [&, i] {
+          cost += cost_function(KmerSet<K, KeyType>(), diffs[i], 1);
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
 
       cost_ = cost;
     }
