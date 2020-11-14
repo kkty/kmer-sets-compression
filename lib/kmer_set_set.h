@@ -482,9 +482,8 @@ class KmerSetSetNJ {
 template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSetMM {
  public:
-  KmerSetSetMM(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
-               int recursion_limit, CostFunctionType cost_function,
-               int n_workers)
+  KmerSetSetMM(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
+               CostFunctionType cost_function, int n_workers)
       : n_(kmer_sets.size()) {
     using Graph = lemon::ListGraph;
 
@@ -569,6 +568,9 @@ class KmerSetSetMM {
         }
       }
     }
+
+    // kmer_sets is no longer needed.
+    std::vector<KmerSet<K, KeyType>>().swap(kmer_sets);
 
     // Calculates cost.
     {
