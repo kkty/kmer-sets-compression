@@ -5,6 +5,7 @@
 #include <cmath>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <thread>
 #include <tuple>
 #include <variant>
@@ -687,6 +688,206 @@ class KmerSetSetMM {
   absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
 
   std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSetMM*> diffs_;
+};
+
+// KmerSetAMM is similar to KmerSetSetMM, but it uses approximate algorithm.
+template <int K, typename KeyType, typename CostFunctionType>
+class KmerSetSetAMM {
+ public:
+  KmerSetSetAMM(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
+                CostFunctionType cost_function, int n_workers)
+      : n_(kmer_sets.size()) {
+    std::priority_queue<std::tuple<int64_t, int, int>> edges;
+
+    // Adds edges.
+    {
+      boost::asio::thread_pool pool(n_workers);
+      std::mutex mu;
+
+      for (int i = 0; i < n_; i++) {
+        for (int j = i + 1; j < n_; j++) {
+          boost::asio::post(pool, [&, i, j] {
+            int64_t weight = kmer_sets[i].Common(kmer_sets[j], 1);
+
+            std::lock_guard lck(mu);
+            edges.emplace(weight, i, j);
+          });
+        }
+      }
+
+      pool.join();
+    }
+
+    absl::flat_hash_map<int, int> mates;
+
+    while (!edges.empty()) {
+      int i, j;
+      std::tie(std::ignore, i, j) = edges.top();
+      edges.pop();
+
+      if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
+        mates[i] = j;
+        mates[j] = i;
+      }
+    }
+
+    std::vector<KmerSet<K, KeyType>> diffs;
+
+    // Calculates parents, diffs, and diff_table_.
+    // parents are calculated in the main thread, and the others are calculated
+    // in sub threads.
+    {
+      int next_parent_id = n_;
+
+      std::mutex mu;
+      boost::asio::thread_pool pool(n_workers);
+
+      for (int i = 0; i < n_; i++) {
+        if (mates.find(i) == mates.end()) {
+          parents_[i] = -1;
+
+          boost::asio::post(pool, [&, i] {
+            KmerSet<K, KeyType> kmer_set = kmer_sets[i];
+
+            std::lock_guard lck(mu);
+            diff_table_[-1][i] = diffs.size();
+            diffs.push_back(std::move(kmer_set));
+          });
+        } else {
+          int mate = mates[i];
+
+          if (i < mate) {
+            int parent = next_parent_id++;
+
+            parents_[i] = parent;
+            parents_[mate] = parent;
+
+            // -1 is an empty set.
+            parents_[parent] = -1;
+
+            boost::asio::post(pool, [&, i, mate, parent] {
+              KmerSet<K, KeyType> sub = Sub(kmer_sets[i], kmer_sets[mate], 1);
+
+              std::lock_guard lck(mu);
+              diff_table_[parent][i] = diffs.size();
+              diffs.push_back(std::move(sub));
+            });
+
+            boost::asio::post(pool, [&, i, mate, parent] {
+              KmerSet<K, KeyType> sub = Sub(kmer_sets[mate], kmer_sets[i], 1);
+
+              std::lock_guard lck(mu);
+              diff_table_[parent][mate] = diffs.size();
+              diffs.push_back(std::move(sub));
+            });
+
+            boost::asio::post(pool, [&, i, mate, parent] {
+              KmerSet<K, KeyType> intersection =
+                  Intersection(kmer_sets[i], kmer_sets[mate], 1);
+
+              std::lock_guard lck(mu);
+              diff_table_[-1][parent] = diffs.size();
+              diffs.push_back(std::move(intersection));
+            });
+          }
+        }
+      }
+
+      pool.join();
+    }
+
+    // kmer_sets is no longer needed.
+    std::vector<KmerSet<K, KeyType>>().swap(kmer_sets);
+
+    // Calculates cost.
+    {
+      std::atomic_int64_t cost = 0;
+
+      boost::asio::thread_pool pool(n_workers);
+
+      for (size_t i = 0; i < diffs.size(); i++) {
+        boost::asio::post(pool, [&, i] {
+          cost += cost_function(KmerSet<K, KeyType>(), diffs[i], 1);
+        });
+      }
+
+      pool.join();
+
+      cost_ = cost;
+    }
+
+    spdlog::debug("cost_ = {}", cost_);
+
+    if (recursion_limit == 0) {
+      diffs_ = std::move(diffs);
+    } else {
+      diffs_ = new KmerSetSetAMM(std::move(diffs), recursion_limit - 1,
+                                 cost_function, n_workers);
+    }
+  }
+
+  ~KmerSetSetAMM() {
+    if (!IsTerminal()) delete std::get<KmerSetSetAMM*>(diffs_);
+  }
+
+  // Returns the number of k-mers stored internally.
+  int64_t Size() const {
+    if (IsTerminal()) {
+      int64_t sum = 0;
+      for (const KmerSet<K, KeyType>& kmer_set :
+           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)) {
+        sum += kmer_set.Size();
+      }
+      return sum;
+    } else {
+      return std::get<KmerSetSetAMM*>(diffs_)->Size();
+    }
+  }
+
+  int64_t Cost() const {
+    if (IsTerminal()) return cost_;
+    return std::get<KmerSetSetAMM*>(diffs_)->Cost();
+  }
+
+  // Reconstructs the ith kmer set.
+  KmerSet<K, KeyType> Get(int i, int n_workers) const {
+    // Returns the diff from "from" to "to".
+    const auto get_diff = [&](int from, int to) {
+      int pos = diff_table_.find(from)->second.find(to)->second;
+
+      if (IsTerminal()) {
+        return std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)[pos];
+      } else {
+        return std::get<KmerSetSetAMM*>(diffs_)->Get(pos, n_workers);
+      }
+    };
+
+    int parent = parents_.find(i)->second;
+
+    if (parent == -1) {
+      return get_diff(-1, i);
+    }
+
+    return Add(get_diff(-1, parent), get_diff(parent, i), n_workers);
+  }
+
+ private:
+  // Returns true if it is the end of recursion.
+  bool IsTerminal() const {
+    return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
+  }
+
+  int n_;
+
+  int64_t cost_ = 0;
+
+  // If parents_[i] == -1, the parent of i is an empty set.
+  absl::flat_hash_map<int, int> parents_;
+
+  // If diffs_ is a vector, diffs_[diff_table[i][j]] is a diff set from i to j.
+  absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
+
+  std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSetAMM*> diffs_;
 };
 
 #endif
