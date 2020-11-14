@@ -524,7 +524,9 @@ class KmerSetSetMM {
     lemon::MaxWeightedMatching<Graph, Graph::EdgeMap<int64_t>> matching(
         g, weights);
 
+    spdlog::debug("calculating max weighted matching");
     matching.run();
+    spdlog::debug("calculated max weighted matching");
 
     std::vector<KmerSet<K, KeyType>> diffs;
 
@@ -563,8 +565,7 @@ class KmerSetSetMM {
             parents_[parent] = -1;
 
             boost::asio::post(pool, [&, i, mate_i, parent] {
-              KmerSet<K, KeyType> sub =
-                  Sub(kmer_sets[i], kmer_sets[mate_i], 1);
+              KmerSet<K, KeyType> sub = Sub(kmer_sets[i], kmer_sets[mate_i], 1);
 
               std::lock_guard lck(mu);
               diff_table_[parent][i] = diffs.size();
@@ -572,8 +573,7 @@ class KmerSetSetMM {
             });
 
             boost::asio::post(pool, [&, i, mate_i, parent] {
-              KmerSet<K, KeyType> sub =
-                  Sub(kmer_sets[mate_i], kmer_sets[i], 1);
+              KmerSet<K, KeyType> sub = Sub(kmer_sets[mate_i], kmer_sets[i], 1);
 
               std::lock_guard lck(mu);
               diff_table_[parent][mate_i] = diffs.size();
