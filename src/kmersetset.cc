@@ -28,8 +28,10 @@ ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
 ABSL_FLAG(bool, nj, false, "use neighbor joining algorithm");
 ABSL_FLAG(bool, mm, false, "use maximum weighted matching algorithm");
-ABSL_FLAG(bool, amm, false,
-          "use approximate maximum weighted matching algorithm");
+ABSL_FLAG(bool, approximate_matching, false,
+          "use approximate algorithm for matching");
+ABSL_FLAG(bool, approximate_weights, false,
+          "use approximate weights for the matching algorithm");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -144,7 +146,9 @@ int main(int argc, char** argv) {
     spdlog::info("constructing kmer_set_set_mm");
 
     KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_mm(
-        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
+        kmer_sets, absl::GetFlag(FLAGS_recursion),
+        absl::GetFlag(FLAGS_approximate_matching),
+        absl::GetFlag(FLAGS_approximate_weights), cost_function, n_workers);
 
     spdlog::info("constructed kmer_set_set_mm");
 
@@ -156,24 +160,6 @@ int main(int argc, char** argv) {
         spdlog::info(
             "kmer_sets[{}].Equals(kmer_set_set_mm.Get({})) = {}", i, i,
             kmer_sets[i].Equals(kmer_set_set_mm.Get(i, n_workers), n_workers));
-      }
-    }
-  } else if (absl::GetFlag(FLAGS_amm)) {
-    spdlog::info("constructing kmer_set_set_amm");
-
-    KmerSetSetAMM<K, KeyType, decltype(cost_function)> kmer_set_set_amm(
-        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
-
-    spdlog::info("constructed kmer_set_set_amm");
-
-    spdlog::info("kmer_set_set_amm.Size() = {}", kmer_set_set_amm.Size());
-    spdlog::info("kmer_set_set_amm.Cost() = {}", kmer_set_set_amm.Cost());
-
-    if (absl::GetFlag(FLAGS_check)) {
-      for (int i = 0; i < n_datasets; i++) {
-        spdlog::info(
-            "kmer_sets[{}].Equals(kmer_set_set_amm.Get({})) = {}", i, i,
-            kmer_sets[i].Equals(kmer_set_set_amm.Get(i, n_workers), n_workers));
       }
     }
   } else {

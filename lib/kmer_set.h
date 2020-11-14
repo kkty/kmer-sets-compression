@@ -180,8 +180,7 @@ class KmerSet {
 
     for (int i = 0; i < n_buckets; i++) {
       for (const KeyType& key : other.buckets_[i]) {
-        if (buckets_[bucket_id].find(key) != buckets_[bucket_id].end())
-          count += 1;
+        if (buckets_[i].find(key) != buckets_[i].end()) count += 1;
       }
     }
 
@@ -191,7 +190,8 @@ class KmerSet {
   // Approximates the number of common kmers by using some buckets.
   // If "n_buckets_factor" is 0.3, 30% of buckets are used.
   int64_t CommonEstimate(const KmerSet& other, double n_buckets_factor) const {
-    return CommonEstimate(other, kBucketsNum * n_buckets_factor);
+    return CommonEstimate(other,
+                          static_cast<int>(kBucketsNum * n_buckets_factor));
   }
 
   // Returns the Jaccard similarity of two sets.
