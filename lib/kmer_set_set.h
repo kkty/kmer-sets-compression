@@ -558,7 +558,10 @@ class KmerSetSetMM {
         for (int i = 0; i < n; i++) {
           for (int j = i + 1; j < n; j++) {
             boost::asio::post(pool, [&, i, j] {
-              int64_t weight = kmer_sets[i].Common(kmer_sets[j], 1);
+              int64_t weight =
+                  approximate_weights
+                      ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
+                      : kmer_sets[i].Common(kmer_sets[j], 1);
 
               std::lock_guard lck(mu);
               lemon::ListGraph::Edge edge = g.addEdge(nodes[i], nodes[j]);
