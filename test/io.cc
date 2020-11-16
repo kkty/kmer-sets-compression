@@ -31,7 +31,7 @@ TEST(io, WriteAndReadCompressed) {
   const std::string file_name = "/tmp/data";
   const std::vector<std::string> lines = GetTestData();
 
-  WriteLines(file_name, "gzip", lines);
+  WriteLines(file_name, "gzip -c", lines);
 
-  ASSERT_EQ(ReadLines(file_name, "gzcat"), lines);
+  ASSERT_EQ(ReadLines(file_name, "gzip -d -c"), lines);
 }
