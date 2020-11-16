@@ -56,6 +56,7 @@ foreach(
   range
   graph
   neighbor_joining
+  io
 )
   add_executable(test_${NAME} test/${NAME}.cc)
   add_test(test_${NAME} test_${NAME})
