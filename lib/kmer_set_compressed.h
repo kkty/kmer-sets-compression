@@ -11,6 +11,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
+#include "kmer.h"
 #include "kmer_set.h"
 #include "range.h"
 #include "suffix_array.h"
@@ -33,24 +34,25 @@ class KmerSetCompressed {
     return KmerSetCompressed(std::move(unitigs), n_workers);
   }
 
-  KmerSet<K, KeyType> ToKmerSet(int n_workers) const {
-    std::vector<std::string> kmers;
+  KmerSet<K, KeyType> ToKmerSet(bool canonical, int n_workers) const {
+    std::vector<Kmer<K>> kmers;
     std::vector<std::thread> threads;
     std::mutex mu;
 
     for (const Range& range : Range(0, unitigs_.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        std::vector<std::string> buf;
+        std::vector<Kmer<K>> buf;
 
         range.ForEach([&](int i) {
           const std::string s = unitigs_[i];
           for (size_t i = 0; i < s.size() + 1 - K; i++) {
-            buf.push_back(s.substr(i, K));
+            const Kmer<K> kmer(s.substr(i, K));
+            buf.push_back(canonical ? kmer.Canonical() : kmer);
           }
         });
 
         std::lock_guard lck(mu);
-        for (std::string& s : buf) kmers.push_back(std::move(s));
+        for (Kmer<K>& kmer : buf) kmers.push_back(std::move(kmer));
       });
     }
 

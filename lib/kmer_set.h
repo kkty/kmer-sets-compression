@@ -35,7 +35,7 @@ class KmerSet {
  public:
   KmerSet() : buckets_(kBucketsNum) {}
 
-  KmerSet(const std::vector<std::string>& kmers, int n_workers)
+  KmerSet(const std::vector<Kmer<K>>& kmers, int n_workers)
       : buckets_(kBucketsNum) {
     std::vector<std::thread> threads;
     std::vector<std::mutex> mus(kBucketsNum);
@@ -45,7 +45,7 @@ class KmerSet {
         std::vector<Bucket> buf(kBucketsNum);
 
         range.ForEach([&](int64_t i) {
-          const Kmer<K> kmer(kmers[i]);
+          const Kmer<K>& kmer = kmers[i];
           const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
 
           buf[bucket].insert(key);
@@ -290,7 +290,25 @@ class KmerSet {
   // Loads kmers from a file.
   static KmerSet Load(const std::string& file_name,
                       const std::string& decompressor, int n_workers) {
-    return KmerSet(ReadLines(file_name, decompressor), n_workers);
+    std::vector<std::string> lines = ReadLines(file_name, decompressor);
+    std::vector<Kmer<K>> kmers(lines.size());
+
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        range.ForEach([&](int i) {
+          kmers[i] = Kmer<K>(lines[i]);
+
+          // lines[i] is not needed anymore.
+          std::string().swap(lines[i]);
+        });
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    return KmerSet(kmers, n_workers);
   }
 
   static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;

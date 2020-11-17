@@ -102,7 +102,7 @@ class KmerCounter {
         std::vector<Bucket> buf(kBucketsNum);
 
         range.ForEach([&](int64_t i) {
-          const std::string& read = reads[i];
+          std::string& read = reads[i];
           std::vector<std::string> fragments = absl::StrSplit(read, "N");
 
           for (const auto& fragment : fragments) {
@@ -115,6 +115,9 @@ class KmerCounter {
               buf[bucket][key] = AddWithMax<ValueType>(buf[bucket][key], 1);
             }
           }
+
+          // "read" is not needed anymore.
+          std::string().swap(read);
         });
 
         std::vector<bool> done(kBucketsNum);

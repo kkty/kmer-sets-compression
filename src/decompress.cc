@@ -11,6 +11,7 @@
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "cat", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(bool, canonical, false, "use canonical k-mers");
 
 int main(int argc, char** argv) {
   const std::string file_name = absl::ParseCommandLine(argc, argv)[1];
@@ -28,7 +29,8 @@ int main(int argc, char** argv) {
   spdlog::info("constructed kmer_set_compressed");
 
   spdlog::info("constructing kmer_set");
-  const KmerSet<K, KeyType> kmer_set = kmer_set_compressed.ToKmerSet(n_workers);
+  const KmerSet<K, KeyType> kmer_set =
+      kmer_set_compressed.ToKmerSet(absl::GetFlag(FLAGS_canonical), n_workers);
   spdlog::info("constructed kmer_set");
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
