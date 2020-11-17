@@ -31,7 +31,7 @@ class KmerSetCompressed {
       unitigs = GetUnitigs<K, KeyType>(kmer_set, n_workers);
     }
 
-    return KmerSetCompressed(std::move(unitigs), n_workers);
+    return KmerSetCompressed(std::move(unitigs));
   }
 
   KmerSet<K, KeyType> ToKmerSet(bool canonical, int n_workers) const {
@@ -68,16 +68,11 @@ class KmerSetCompressed {
 
   // Loads unitigs from a file.
   static KmerSetCompressed Load(const std::string& file_name,
-                                const std::string& decompressor,
-                                int n_workers) {
-    return KmerSetCompressed(ReadLines(file_name, decompressor), n_workers);
+                                const std::string& decompressor) {
+    return KmerSetCompressed(ReadLines(file_name, decompressor));
   }
 
-  int64_t Size() const { return size_; }
-
- private:
-  KmerSetCompressed(std::vector<std::string> unitigs, int n_workers)
-      : unitigs_(std::move(unitigs)) {
+  int64_t Size(int n_workers) const {
     std::vector<std::thread> threads;
     std::atomic_int64_t size = 0;
 
@@ -89,10 +84,12 @@ class KmerSetCompressed {
 
     for (std::thread& t : threads) t.join();
 
-    size_ = size;
-  };
+    return size;
+  }
 
-  int64_t size_ = 0;
+ private:
+  KmerSetCompressed(std::vector<std::string> unitigs)
+      : unitigs_(std::move(unitigs)){};
 
   std::vector<std::string> unitigs_;
 };

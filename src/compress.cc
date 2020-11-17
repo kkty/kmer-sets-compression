@@ -73,6 +73,9 @@ int main(int argc, char** argv) {
                                                  n_workers);
   spdlog::info("constructed kmer_set_compressed");
 
+  spdlog::info("kmer_set_compressed.Size() = {}",
+               kmer_set_compressed.Size(n_workers));
+
   std::string output_file_name;
 
   kmer_set_compressed.Dump(absl::GetFlag(FLAGS_out),

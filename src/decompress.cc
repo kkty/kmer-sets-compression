@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
   spdlog::info("constructing kmer_set_compressed");
   const KmerSetCompressed<K, KeyType> kmer_set_compressed =
       KmerSetCompressed<K, KeyType>::Load(
-          file_name, absl::GetFlag(FLAGS_decompressor), n_workers);
+          file_name, absl::GetFlag(FLAGS_decompressor));
   spdlog::info("constructed kmer_set_compressed");
 
   spdlog::info("constructing kmer_set");
