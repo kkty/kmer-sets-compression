@@ -287,6 +287,28 @@ class KmerSet {
     WriteLines(file_name, compressor, lines);
   }
 
+  size_t Hash(int n_workers) const {
+    size_t hash = 0;
+    std::mutex mu;
+
+    ForEachBucket(
+        [&](const Bucket& bucket, int bucket_id) {
+          size_t buf = 0;
+
+          for (KeyType key : bucket) {
+            const Kmer<K> kmer =
+                GetKmerFromBucketAndKey<K, KeyType>(bucket_id, key);
+            buf ^= kmer.Hash();
+          }
+
+          std::lock_guard lck(mu);
+          hash ^= buf;
+        },
+        n_workers);
+
+    return hash;
+  }
+
   // Loads kmers from a file.
   static KmerSet Load(const std::string& file_name,
                       const std::string& decompressor, int n_workers) {

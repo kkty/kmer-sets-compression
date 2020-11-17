@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructed kmer_set");
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
+  spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
   spdlog::info("constructing kmer_set_compressed");
   const KmerSetCompressed<K, KeyType> kmer_set_compressed =

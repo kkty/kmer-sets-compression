@@ -24,8 +24,8 @@ int main(int argc, char** argv) {
 
   spdlog::info("constructing kmer_set_compressed");
   const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-      KmerSetCompressed<K, KeyType>::Load(
-          file_name, absl::GetFlag(FLAGS_decompressor));
+      KmerSetCompressed<K, KeyType>::Load(file_name,
+                                          absl::GetFlag(FLAGS_decompressor));
   spdlog::info("constructed kmer_set_compressed");
 
   spdlog::info("constructing kmer_set");
@@ -34,4 +34,5 @@ int main(int argc, char** argv) {
   spdlog::info("constructed kmer_set");
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
+  spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 }
