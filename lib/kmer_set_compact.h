@@ -167,14 +167,12 @@ std::vector<std::string> GetUnitigsCanonical(
       std::vector<std::thread> threads;
 
       threads.emplace_back([&] {
-        std::lock_guard _{mu_unitigs};
-        unitigs.reserve(unitigs.size() + buf_unitigs.size());
+        std::lock_guard lck(mu_unitigs);
         for (const std::string& unitig : buf_unitigs) unitigs.push_back(unitig);
       });
 
       threads.emplace_back([&] {
-        std::lock_guard _{mu_visited};
-        visited.reserve(visited.size() + buf_visited.size());
+        std::lock_guard lck(mu_visited);
         for (const Kmer<K>& kmer : buf_visited) visited.insert(kmer);
       });
 
@@ -452,8 +450,7 @@ class KmerSetCompact {
           }
         });
 
-        std::lock_guard _{mu};
-        kmers.reserve(kmers.size() + buf.size());
+        std::lock_guard lck(mu);
         for (const Kmer<K>& kmer : buf) kmers.push_back(kmer);
       });
     }

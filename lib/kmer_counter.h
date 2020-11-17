@@ -129,7 +129,6 @@ class KmerCounter {
             if (mu.try_lock()) {
               auto& bucket = kmer_counter.buckets_[i];
 
-              bucket.reserve(bucket.size() + buf[i].size());
               for (const auto& [key, count] : buf[i]) {
                 bucket[key] = AddWithMax(bucket[key], count);
               }
@@ -172,9 +171,7 @@ class KmerCounter {
           }
 
           {
-            std::lock_guard _{mu};
-            set.buckets_[bucket_id].reserve(set.buckets_[bucket_id].size() +
-                                            buf.size());
+            std::lock_guard lck(mu);
             for (KeyType key : buf) {
               set.buckets_[bucket_id].insert(key);
             }
@@ -230,6 +227,7 @@ class KmerCounter {
     kmer_set.ForEachBucket(
         [&](const typename KmerSet<K, KeyType>::Bucket& bucket, int bucket_id) {
           kmer_counter.buckets_[bucket_id].reserve(bucket.size());
+
           for (const KeyType& key : bucket) {
             kmer_counter.buckets_[bucket_id][key] = 1;
           }
