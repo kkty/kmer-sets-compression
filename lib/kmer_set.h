@@ -35,6 +35,45 @@ class KmerSet {
  public:
   KmerSet() : buckets_(kBucketsNum) {}
 
+  KmerSet(const std::vector<std::string>& kmers, int n_workers)
+      : buckets_(kBucketsNum) {
+    std::vector<std::thread> threads;
+    std::vector<std::mutex> mus(kBucketsNum);
+
+    for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<Bucket> buf(kBucketsNum);
+
+        range.ForEach([&](int64_t i) {
+          const Kmer<K> kmer(kmers[i]);
+          const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
+          buf[bucket].insert(key);
+        });
+
+        std::vector<bool> done(kBucketsNum);
+        int done_count = 0;
+
+        while (done_count < kBucketsNum) {
+          for (int i = 0; i < kBucketsNum; i++) {
+            if (done[i]) continue;
+
+            if (mus[i].try_lock()) {
+              for (const auto& key : buf[i]) buckets_[i].insert(key);
+
+              mus[i].unlock();
+
+              done[i] = true;
+              done_count += 1;
+            }
+          }
+        }
+      });
+    }
+
+    for (auto& t : threads) t.join();
+  }
+
   int64_t Size() const {
     int64_t sum = 0;
     for (const auto& bucket : buckets_) {
@@ -251,47 +290,7 @@ class KmerSet {
   // Loads kmers from a file.
   static KmerSet Load(const std::string& file_name,
                       const std::string& decompressor, int n_workers) {
-    const std::vector<std::string> lines = ReadLines(file_name, decompressor);
-
-    std::vector<std::thread> threads;
-    KmerSet kmer_set;
-    std::vector<std::mutex> mus(kBucketsNum);
-
-    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<Bucket> buf(kBucketsNum);
-
-        range.ForEach([&](int64_t i) {
-          const Kmer<K> kmer(lines[i]);
-          const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
-
-          buf[bucket].insert(key);
-        });
-
-        std::vector<bool> done(kBucketsNum);
-        int done_count = 0;
-
-        while (done_count < kBucketsNum) {
-          for (int i = 0; i < kBucketsNum; i++) {
-            if (done[i]) continue;
-
-            if (mus[i].try_lock()) {
-              Bucket& bucket = kmer_set.buckets_[i];
-              for (const auto& key : buf[i]) bucket.insert(key);
-
-              mus[i].unlock();
-
-              done[i] = true;
-              done_count += 1;
-            }
-          }
-        }
-      });
-    }
-
-    for (auto& t : threads) t.join();
-
-    return kmer_set;
+    return KmerSet(ReadLines(file_name, decompressor), n_workers);
   }
 
   static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
