@@ -9,6 +9,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
+#include "io.h"
 #include "kmer.h"
 #include "range.h"
 
@@ -89,8 +90,7 @@ class KmerSet {
             if (pred(kmer)) buf.push_back(kmer);
           }
 
-          std::lock_guard _{mu};
-          kmers.reserve(kmers.size() + buf.size());
+          std::lock_guard lck(mu);
           for (const auto& kmer : buf) {
             kmers.push_back(kmer);
           }
@@ -226,6 +226,72 @@ class KmerSet {
   // Returns true if two sets are the same.
   bool Equals(const KmerSet& other, int n_workers) const {
     return Diff(other, n_workers) == 0;
+  }
+
+  // Dumps kmers to a file.
+  void Dump(const std::string& file_name, const std::string& compressor,
+            int n_workers) const {
+    std::vector<Kmer<K>> kmers = Find(n_workers);
+
+    std::vector<std::string> lines(kmers.size());
+
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, kmers.size()).Split(1)) {
+      threads.emplace_back([&, range] {
+        range.ForEach([&](int64_t i) { lines[i] = kmers[i].String(); });
+      });
+    }
+
+    for (auto& t : threads) t.join();
+
+    WriteLines(file_name, compressor, lines);
+  }
+
+  // Loads kmers from a file.
+  static KmerSet Load(const std::string& file_name,
+                      const std::string& decompressor, int n_workers) {
+    const std::vector<std::string> lines = ReadLines(file_name, decompressor);
+
+    std::vector<std::thread> threads;
+    KmerSet kmer_set;
+    std::vector<std::mutex> mus(kBucketsNum);
+
+    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<Bucket> buf(kBucketsNum);
+
+        range.ForEach([&](int64_t i) {
+          const Kmer<K> kmer(lines[i]);
+          const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
+          buf[bucket].insert(key);
+        });
+
+        std::vector<bool> done(kBucketsNum);
+        int done_count = 0;
+
+        while (done_count < kBucketsNum) {
+          for (int i = 0; i < kBucketsNum; i++) {
+            if (done[i]) continue;
+
+            if (mus[i].try_lock()) {
+              Bucket& bucket = kmer_set.buckets_[i];
+              for (const auto& key : buf[i]) bucket.insert(key);
+
+              mus[i].unlock();
+
+              done[i] = true;
+              done_count += 1;
+            }
+          }
+        }
+      });
+    }
+
+    for (auto& t : threads) t.join();
+
+    return kmer_set;
   }
 
   static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
