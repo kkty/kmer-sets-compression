@@ -39,6 +39,7 @@ foreach(
   search
   compact
   compress
+  decompress
   kmersetset
 )
   add_executable(${NAME} src/${NAME}.cc)
