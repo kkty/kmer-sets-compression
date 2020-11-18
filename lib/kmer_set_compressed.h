@@ -61,15 +61,26 @@ class KmerSetCompressed {
     return KmerSet<K, KeyType>(kmers, n_workers);
   }
 
-  // Dumps unitigs to a file.
+  // Dumps data to a file.
+  // Dumped data can be read by Load().
   void Dump(const std::string& file_name, const std::string& compressor) const {
     WriteLines(file_name, compressor, unitigs_);
   }
 
-  // Loads unitigs from a file.
+  // Dumps data to a vector of strings.
+  // Dumped data can be read by Load().
+  // Each string does not contain whitespaces or line breaks.
+  std::vector<std::string> Dump() const { return unitigs_; }
+
+  // Loads data from a file.
   static KmerSetCompressed Load(const std::string& file_name,
                                 const std::string& decompressor) {
     return KmerSetCompressed(ReadLines(file_name, decompressor));
+  }
+
+  // Loads data from a vector of strings.
+  static KmerSetCompressed Load(std::vector<std::string> v) {
+    return KmerSetCompressed(std::move(v));
   }
 
   int64_t Size(int n_workers) const {

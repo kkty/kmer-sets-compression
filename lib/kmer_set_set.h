@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <sstream>
 #include <thread>
 #include <tuple>
 #include <variant>
@@ -13,12 +14,16 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/random/random.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "graph.h"
+#include "io.h"
 #include "kmer.h"
 #include "kmer_set.h"
 #include "kmer_set_compact.h"
+#include "kmer_set_compressed.h"
 #include "lemon/list_graph.h"
 #include "lemon/matching.h"
 #include "neighbor_joining.h"
@@ -84,7 +89,7 @@ class KmerSetSet {
     // Traverses the path and reconstructs the set.
     for (size_t i = 0; i < path.size() - 1; i++) {
       if (IsTerminal()) {
-        std::vector<KmerSet<K, KeyType>> diffs =
+        const std::vector<KmerSet<K, KeyType>>& diffs =
             std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
         kmer_set
@@ -167,7 +172,7 @@ class KmerSetSet {
 
     int64_t cost = 0;
 
-    std::vector<KmerSet<K, KeyType>> diffs =
+    const std::vector<KmerSet<K, KeyType>>& diffs =
         std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
     for (const KmerSet<K, KeyType>& diff : diffs) {
@@ -409,7 +414,7 @@ class KmerSetSetNJ {
 
     for (size_t i = 0; i < path.size() - 1; i++) {
       if (IsTerminal()) {
-        std::vector<KmerSet<K, KeyType>> diffs =
+        const std::vector<KmerSet<K, KeyType>>& diffs =
             std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
         {
@@ -735,7 +740,193 @@ class KmerSetSetMM {
     return Add(get_diff(-1, parent), get_diff(parent, i), n_workers);
   }
 
+  // Dumps data to a vector of strings.
+  // "canonical" will be used to compress kmer sets with KmerSetCompressed.
+  std::vector<std::string> Dump(
+      bool canonical, int n_workers,
+      std::vector<std::string> v = std::vector<std::string>()) const {
+    // Dumps cost_ to a line.
+    {
+      std::stringstream ss;
+      ss << cost_;
+      v.push_back(ss.str());
+    }
+
+    // Dumps parents_ to a line.
+    // Format: "size key value key value ..."
+    {
+      std::stringstream ss;
+      ss << parents_.size();
+
+      for (const auto& p : parents_) {
+        ss << ' ' << p.first << ' ' << p.second;
+      }
+
+      v.push_back(ss.str());
+    }
+
+    // Dumps diff_table_ to a line.
+    // Format: "size key1 key2 value key1 key2 value ..."
+    {
+      std::vector<std::tuple<int, int, int>> flatten;
+      for (const auto& p1 : diff_table_) {
+        for (const auto& p2 : p1.second) {
+          flatten.emplace_back(p1.first, p2.first, p2.second);
+        }
+      }
+
+      std::stringstream ss;
+      ss << flatten.size();
+
+      for (const auto& t : flatten) {
+        ss << ' ' << std::get<0>(t) << ' ' << std::get<1>(t) << ' '
+           << std::get<2>(t);
+      }
+
+      v.push_back(ss.str());
+    }
+
+    if (IsTerminal()) {
+      // Section delimiter.
+      v.push_back("");
+
+      const std::vector<KmerSet<K, KeyType>>& diffs =
+          std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
+
+      // Dumps diffs to 1 + diffs_.size() lines.
+      // Each KmerSet is converted to KmerSetCompressed and dumped to one line.
+
+      {
+        std::stringstream ss;
+        ss << diffs.size();
+        v.push_back(ss.str());
+      }
+
+      // This will later be appended to "v".
+      std::vector<std::string> buf(diffs.size());
+
+      boost::asio::thread_pool pool(n_workers);
+
+      for (size_t i = 0; i < diffs.size(); i++) {
+        boost::asio::post(pool, [&, i] {
+          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+              KmerSetCompressed<K, KeyType>::FromKmerSet(diffs[i], canonical,
+                                                         1);
+
+          buf[i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
+        });
+      }
+
+      pool.join();
+
+      for (std::string& s : buf) v.push_back(std::move(s));
+
+      return v;
+    } else {
+      // Recursive
+      return std::get<KmerSetSetMM*>(diffs_)->Dump(canonical, n_workers,
+                                                   std::move(v));
+    }
+  }
+
+  // Dumps data to a file.
+  void Dump(const std::string& file_name, const std::string& compressor,
+            bool canonical, int n_workers) const {
+    WriteLines(file_name, compressor, Dump(canonical, n_workers));
+  }
+
+  // Loads data from a vector of strings.
+  static KmerSetSetMM* Load(const std::vector<std::string>& lines,
+                            bool canonical, int n_workers, int64_t i = 0) {
+    int64_t cost;
+    absl::flat_hash_map<int, int> parents;
+    absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table;
+
+    {
+      std::stringstream ss(lines[i]);
+      ss >> cost;
+    }
+
+    {
+      std::stringstream ss(lines[i + 1]);
+      int64_t size;
+      ss >> size;
+
+      for (int64_t i = 0; i < size; i++) {
+        int key, value;
+        ss >> key >> value;
+        parents[key] = value;
+      }
+    }
+
+    {
+      std::stringstream ss(lines[i + 2]);
+      int64_t size;
+      ss >> size;
+
+      for (int64_t i = 0; i < size; i++) {
+        int key1, key2, value;
+        ss >> key1 >> key2 >> value;
+        diff_table[key1][key2] = value;
+      }
+    }
+
+    if (lines[i + 3] == "") {
+      // The end of recursion.
+
+      int64_t size;
+      {
+        std::stringstream ss(lines[i + 4]);
+        ss >> size;
+      }
+
+      std::vector<KmerSet<K, KeyType>> diffs(size);
+
+      boost::asio::thread_pool pool(n_workers);
+
+      for (int64_t j = 0; j < size; j++) {
+        boost::asio::post(pool, [&, j] {
+          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+              KmerSetCompressed<K, KeyType>::Load(
+                  absl::StrSplit(lines[i + 5 + j], " "));
+          diffs[j] = kmer_set_compressed.ToKmerSet(canonical, 1);
+        });
+      }
+
+      pool.join();
+
+      return new KmerSetSetMM(cost, parents, diff_table, std::move(diffs));
+    } else {
+      return new KmerSetSetMM(cost, parents, diff_table,
+                              Load(lines, canonical, n_workers, i + 3));
+    }
+  }
+
+  static KmerSetSetMM* Load(const std::string& file_name,
+                            const std::string& decompressor, bool canonical,
+                            int n_workers) {
+    return Load(ReadLines(file_name, decompressor), canonical, n_workers);
+  }
+
  private:
+  KmerSetSetMM(
+      int64_t cost, absl::flat_hash_map<int, int> parents,
+      absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table,
+      std::vector<KmerSet<K, KeyType>> diffs)
+      : cost_(cost),
+        parents_(std::move(parents)),
+        diff_table_(std::move(diff_table)),
+        diffs_(std::move(diffs)) {}
+
+  KmerSetSetMM(
+      int64_t cost, absl::flat_hash_map<int, int> parents,
+      absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table,
+      KmerSetSetMM* diffs)
+      : cost_(cost),
+        parents_(std::move(parents)),
+        diff_table_(std::move(diff_table)),
+        diffs_(diffs) {}
+
   // Returns true if it is the end of recursion.
   bool IsTerminal() const {
     return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
@@ -747,8 +938,8 @@ class KmerSetSetMM {
   absl::flat_hash_map<int, int> parents_;
 
   // If diffs_ is a vector, diffs_[diff_table[i][j]] is a diff from i to j.
-  // If diffs_ is a KmerSetSetMM*, diffs_.Get(diff_table[i][j]) is a diff from i
-  // to j.
+  // If diffs_ is a KmerSetSetMM*, diffs_.Get(diff_table[i][j]) is a diff from
+  // i to j.
   absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
   std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSetMM*> diffs_;
 };

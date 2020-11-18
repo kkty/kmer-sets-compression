@@ -23,7 +23,6 @@ ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for kmers files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
-ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
@@ -128,10 +127,23 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("kmer_set_set_mm.Cost() = {}", kmer_set_set_mm.Cost());
 
     if (absl::GetFlag(FLAGS_check)) {
+      spdlog::info("dumping");
+      std::vector<std::string> dumped =
+          kmer_set_set_mm.Dump(absl::GetFlag(FLAGS_canonical), n_workers);
+      spdlog::info("dumped");
+
+      spdlog::info("loading");
+      std::unique_ptr<KmerSetSetMM<K, KeyType, decltype(cost_function)>>
+          loaded = std::unique_ptr<
+              KmerSetSetMM<K, KeyType, decltype(cost_function)>>(
+              KmerSetSetMM<K, KeyType, decltype(cost_function)>::Load(
+                  std::move(dumped), absl::GetFlag(FLAGS_canonical),
+                  n_workers));
+      spdlog::info("loaded");
+
       for (int i = 0; i < n_datasets; i++) {
-        spdlog::info(
-            "kmer_sets[{}].Equals(kmer_set_set_mm.Get({})) = {}", i, i,
-            kmer_sets[i].Equals(kmer_set_set_mm.Get(i, n_workers), n_workers));
+        spdlog::info("kmer_sets[{}].Equals(loaded->Get({})) = {}", i, i,
+                     kmer_sets[i].Equals(loaded->Get(i, n_workers), n_workers));
       }
     }
   } else {
