@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
+#include "flags.h"
 #include "kmer.h"
 #include "kmer_counter.h"
 #include "kmer_set.h"
@@ -23,14 +23,7 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
 
 int main(int argc, char** argv) {
-  std::vector<std::string> files = [&] {
-    std::vector<std::string> v;
-    for (const char* arg : absl::ParseCommandLine(argc, argv)) {
-      v.push_back(arg);
-    }
-    v.erase(v.begin());
-    return v;
-  }();
+  std::vector<std::string> files = ParseFlags(argc, argv);
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 

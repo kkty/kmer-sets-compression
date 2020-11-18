@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
+#include "flags.h"
 #include "graph.h"
 #include "kmer.h"
 #include "kmer_counter.h"
@@ -37,17 +37,7 @@ int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
 
   // List of FASTQ file names.
-  const std::vector<std::string> files = [&] {
-    std::vector<std::string> v;
-
-    for (const auto arg : absl::ParseCommandLine(argc, argv)) {
-      v.push_back(arg);
-    }
-
-    // Program name.
-    v.erase(v.begin());
-    return v;
-  }();
+  const std::vector<std::string> files = ParseFlags(argc, argv);
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
