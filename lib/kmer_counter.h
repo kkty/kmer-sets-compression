@@ -87,7 +87,11 @@ class KmerCounter {
     for (size_t i = 0; i < lines.size(); i++) {
       if (i % 4 == 0 && lines[i][0] != '@')
         return absl::UnknownError("the line should start with '@'");
-      if (i % 4 == 1) reads.push_back(lines[i]);
+
+      if (i % 4 == 1)
+        reads.push_back(std::move(lines[i]));
+      else
+        std::string().swap(lines[i]);
     }
 
     // Clear up "lines".
