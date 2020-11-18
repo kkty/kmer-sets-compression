@@ -12,7 +12,7 @@
 #include "kmer.h"
 #include "kmer_counter.h"
 #include "kmer_set.h"
-#include "kmer_set_compact.h"
+#include "kmer_set_compressed.h"
 #include "kmer_set_set.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
@@ -20,7 +20,7 @@
 ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
-          "specify decompressor for FASTQ files");
+          "specify decompressor for kmers files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
@@ -38,7 +38,7 @@ ABSL_FLAG(bool, approximate_graph, false,
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
 
-  // List of FASTQ file names.
+  // List of file names.
   const std::vector<std::string> files = ParseFlags(argc, argv);
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
@@ -56,34 +56,18 @@ int main(int argc, char** argv) {
   for (int i = 0; i < n_datasets; i++) {
     const std::string& file = files[i];
 
-    spdlog::info("constructing kmer_counter for {}", file);
+    spdlog::info("constructing kmer_set_compressed for {}", file);
+    const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+        KmerSetCompressed<K, KeyType>::Load(file,
+                                            absl::GetFlag(FLAGS_decompressor));
+    spdlog::info("constructed kmer_set_compressed for {}", file);
 
-    const KmerCounter<K, KeyType> kmer_counter = [&] {
-      const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
-      const bool canonical = absl::GetFlag(FLAGS_canonical);
-
-      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
-          decompressor != ""
-              ? KmerCounter<K, KeyType>::FromFASTQ(file, decompressor,
-                                                   canonical, n_workers)
-              : KmerCounter<K, KeyType>::FromFASTQ(file, canonical, n_workers);
-
-      if (!status_or.ok()) {
-        spdlog::error("failed to parse FASTQ file: {}",
-                      status_or.status().ToString());
-      }
-
-      return *status_or;
-    }();
-
-    spdlog::info("constructed kmer_counter for {}", file);
     spdlog::info("constructing kmer_set for {}", file);
 
-    const auto [kmer_set, cutoff_count] =
-        kmer_counter.ToSet(absl::GetFlag(FLAGS_cutoff), n_workers);
+    const KmerSet<K, KeyType> kmer_set = kmer_set_compressed.ToKmerSet(
+        absl::GetFlag(FLAGS_canonical), n_workers);
 
     spdlog::info("constructed kmer_set for {}", file);
-    spdlog::info("cutoff_count = {}", cutoff_count);
 
     kmer_sets[i] = std::move(kmer_set);
   }
@@ -102,10 +86,10 @@ int main(int argc, char** argv) {
     }
   }
 
-  const auto cost_function =
-      [canonical = absl::GetFlag(FLAGS_canonical)](
-          const KmerSet<K, KeyType>& lhs, const KmerSet<K, KeyType>& rhs,
-          int n_workers) { return lhs.Diff(rhs, n_workers); };
+  const auto cost_function = [](const KmerSet<K, KeyType>& lhs,
+                                const KmerSet<K, KeyType>& rhs, int n_workers) {
+    return lhs.Diff(rhs, n_workers);
+  };
 
   {
     int64_t total_cost = 0;
@@ -141,8 +125,7 @@ int main(int argc, char** argv) {
         kmer_sets, absl::GetFlag(FLAGS_recursion),
         absl::GetFlag(FLAGS_approximate_matching),
         absl::GetFlag(FLAGS_approximate_weights),
-        absl::GetFlag(FLAGS_approximate_graph),
-        cost_function, n_workers);
+        absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
 
     spdlog::info("constructed kmer_set_set_mm");
 
