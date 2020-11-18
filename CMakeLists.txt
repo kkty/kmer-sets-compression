@@ -38,7 +38,6 @@ link_libraries(
 foreach(
   NAME
   search
-  compact
   compress
   decompress
   kmersetset
