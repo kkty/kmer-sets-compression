@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/random/random.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "io.h"
@@ -217,9 +218,14 @@ class KmerSet {
   int64_t CommonEstimate(const KmerSet& other, int n_buckets) const {
     int64_t count = 0;
 
+    absl::InsecureBitGen bitgen;
+
     for (int i = 0; i < n_buckets; i++) {
-      for (const KeyType& key : other.buckets_[i]) {
-        if (buckets_[i].find(key) != buckets_[i].end()) count += 1;
+      int bucket_id = absl::Uniform(bitgen, 0, kBucketsNum);
+
+      for (const KeyType& key : other.buckets_[bucket_id]) {
+        if (buckets_[bucket_id].find(key) != buckets_[bucket_id].end())
+          count += 1;
       }
     }
 
@@ -246,9 +252,13 @@ class KmerSet {
   int64_t DiffEstimate(const KmerSet& other, int n_buckets) const {
     int64_t count = 0;
 
+    absl::InsecureBitGen bitgen;
+
     for (int i = 0; i < n_buckets; i++) {
-      const Bucket& bucket = buckets_[i];
-      const Bucket& other_bucket = other.buckets_[i];
+      int bucket_id = absl::Uniform(bitgen, 0, kBucketsNum);
+
+      const Bucket& bucket = buckets_[bucket_id];
+      const Bucket& other_bucket = other.buckets_[bucket_id];
 
       for (const KeyType& key : bucket) {
         if (other_bucket.find(key) == other_bucket.end()) count += 1;

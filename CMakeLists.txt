@@ -30,6 +30,7 @@ link_libraries(
   absl::flags_parse
   absl::status
   absl::statusor
+  absl::random_random
   ${Boost_LIBRARIES}
   ${LEMON_LIBRARIES}
 )
