@@ -18,11 +18,13 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
+ABSL_FLAG(std::string, type, "fastq", "input file type (fastq or ckmers)");
 ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
-          "specify decompressor for kmers files");
+          "specify decompressor for input files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
+ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
@@ -36,12 +38,72 @@ ABSL_FLAG(bool, approximate_graph, false,
           "use an approximate (sparse) graph for the matching algorithm");
 
 template <int K, typename KeyType>
+KmerSet<K, KeyType> GetKmerSetFromCompressedKmersFile(
+    const std::string& file_name, const std::string& decompressor,
+    bool canonical, int n_workers) {
+  spdlog::info("constructing kmer_set_compressed");
+
+  const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+      KmerSetCompressed<K, KeyType>::Load(file_name, decompressor);
+
+  spdlog::info("constructed kmer_set_compressed");
+
+  spdlog::info("constructing kmer_set");
+
+  const KmerSet<K, KeyType> kmer_set =
+      kmer_set_compressed.ToKmerSet(canonical, n_workers);
+
+  spdlog::info("constructed kmer_set");
+
+  return kmer_set;
+}
+
+template <int K, typename KeyType>
+KmerSet<K, KeyType> GetKmerSetFromFASTQFile(const std::string& file_name,
+                                            const std::string& decompressor,
+                                            bool canonical, int cutoff,
+                                            int n_workers) {
+  spdlog::info("constructing kmer_counter");
+
+  const KmerCounter<K, KeyType> kmer_counter = [&] {
+    absl::StatusOr<KmerCounter<K, KeyType>> statusor =
+        decompressor != "" ? KmerCounter<K, KeyType>::FromFASTQ(
+                                 file_name, decompressor, canonical, n_workers)
+                           : KmerCounter<K, KeyType>::FromFASTQ(
+                                 file_name, canonical, n_workers);
+
+    if (!statusor.ok()) {
+      spdlog::error("failed to parse FASTQ file: {}",
+                    statusor.status().ToString());
+      std::exit(1);
+    }
+
+    return *statusor;
+  }();
+
+  spdlog::info("constructed kmer_counter");
+
+  spdlog::info("constructing kmer_set");
+
+  KmerSet<K, KeyType> kmer_set;
+  int64_t cutoff_count;
+  std::tie(kmer_set, cutoff_count) = kmer_counter.ToSet(cutoff, n_workers);
+
+  spdlog::info("constructed kmer_set");
+
+  return kmer_set;
+}
+
+template <int K, typename KeyType>
 void Main(const std::vector<std::string>& files) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
+  const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+  const bool canonical = absl::GetFlag(FLAGS_canonical);
+  const int cutoff = absl::GetFlag(FLAGS_cutoff);
 
   const int n_datasets = files.size();
 
@@ -50,20 +112,15 @@ void Main(const std::vector<std::string>& files) {
   for (int i = 0; i < n_datasets; i++) {
     const std::string& file = files[i];
 
-    spdlog::info("constructing kmer_set_compressed for {}", file);
-    const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-        KmerSetCompressed<K, KeyType>::Load(file,
-                                            absl::GetFlag(FLAGS_decompressor));
-    spdlog::info("constructed kmer_set_compressed for {}", file);
+    spdlog::info("file = {}", file);
 
-    spdlog::info("constructing kmer_set for {}", file);
-
-    const KmerSet<K, KeyType> kmer_set = kmer_set_compressed.ToKmerSet(
-        absl::GetFlag(FLAGS_canonical), n_workers);
-
-    spdlog::info("constructed kmer_set for {}", file);
-
-    kmer_sets[i] = std::move(kmer_set);
+    if (absl::GetFlag(FLAGS_type) == "fastq") {
+      kmer_sets[i] = GetKmerSetFromFASTQFile<K, KeyType>(
+          file, decompressor, canonical, cutoff, n_workers);
+    } else {
+      kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
+          file, decompressor, canonical, n_workers);
+    }
   }
 
   for (int i = 0; i < n_datasets; i++) {
