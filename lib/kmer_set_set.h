@@ -819,6 +819,7 @@ class KmerSetSetMM {
 
       pool.join();
 
+      v.reserve(v.size() + buf.size());
       for (std::string& s : buf) v.push_back(std::move(s));
 
       return v;
@@ -886,9 +887,13 @@ class KmerSetSetMM {
 
       for (int64_t j = 0; j < size; j++) {
         boost::asio::post(pool, [&, j] {
+          const std::string& line = lines[i + 5 + j];
+
+          if (line.empty()) return;
+
           const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::Load(
-                  absl::StrSplit(lines[i + 5 + j], " "));
+              KmerSetCompressed<K, KeyType>::Load(absl::StrSplit(line, ' '));
+
           diffs[j] = kmer_set_compressed.ToKmerSet(canonical, 1);
         });
       }
