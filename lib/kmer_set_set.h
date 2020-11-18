@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/random/random.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "graph.h"
@@ -484,13 +485,15 @@ class KmerSetSetNJ {
 // KmerSetMM is similar to KmerSetSet, but it uses maximum weighted matching.
 // If "approximate_matching" is true, it uses an approximate matching algorithm.
 // If "approximate_weights" is true, it uses approximate weights for the
-// matching algorithm.
+// matching algorithm. If "approximate_graph" is true, it uses a aparse graph
+// for the matching algorithm.
 template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSetMM {
  public:
   KmerSetSetMM(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
                bool approximate_matching, bool approximate_weights,
-               CostFunctionType cost_function, int n_workers) {
+               bool approximate_graph, CostFunctionType cost_function,
+               int n_workers) {
     const int n = kmer_sets.size();
 
     // If mates[i] is j (and mates[j] is i), we have a match between
@@ -499,36 +502,46 @@ class KmerSetSetMM {
 
     spdlog::debug("calculating mates");
 
-    if (approximate_matching) {
-      // The first element is the weight, followed by node ids.
-      std::priority_queue<std::tuple<int64_t, int, int>> edges;
+    // The first two are for nodes, and the last one is for weights.
+    std::vector<std::tuple<int, int, int64_t>> edges;
 
-      // Adds edges.
-      {
-        boost::asio::thread_pool pool(n_workers);
-        std::mutex mu;
+    // Calculates edges. The topology is affected by "approximate_graph" and the
+    // weights are affected by "approximate_weights".
+    {
+      absl::InsecureBitGen bitgen;
+      boost::asio::thread_pool pool(n_workers);
+      std::mutex mu;
 
-        for (int i = 0; i < n; i++) {
-          for (int j = i + 1; j < n; j++) {
-            boost::asio::post(pool, [&, i, j] {
-              int64_t weight =
-                  approximate_weights
-                      ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
-                      : kmer_sets[i].Common(kmer_sets[j], 1);
+      for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+          if (approximate_graph && absl::Bernoulli(bitgen, 0.9)) continue;
 
-              std::lock_guard lck(mu);
-              edges.emplace(weight, i, j);
-            });
-          }
+          boost::asio::post(pool, [&, i, j] {
+            int64_t weight =
+                approximate_weights
+                    ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
+                    : kmer_sets[i].Common(kmer_sets[j], 1);
+
+            std::lock_guard lck(mu);
+            edges.emplace_back(i, j, weight);
+          });
         }
-
-        pool.join();
       }
 
-      while (!edges.empty()) {
+      pool.join();
+    }
+
+    if (approximate_matching) {
+      // Sorts "edges" so that the heaviest edge comes first.
+      std::sort(edges.begin(), edges.end(),
+                [](const std::tuple<int, int, int64_t>& lhs,
+                   const std::tuple<int, int, int64_t>& rhs) {
+                  return std::get<2>(lhs) > std::get<2>(rhs);
+                });
+
+      for (const std::tuple<int, int, int64_t>& edge : edges) {
         int i, j;
-        std::tie(std::ignore, i, j) = edges.top();
-        edges.pop();
+        std::tie(i, j, std::ignore) = edge;
 
         if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
           mates[i] = j;
@@ -536,6 +549,9 @@ class KmerSetSetMM {
         }
       }
     } else {
+      // Boost Graph Library was used at first here, but there seemed to be a
+      // bug. Therefore, lemon library is used.
+
       lemon::ListGraph g;
 
       std::vector<lemon::ListGraph::Node> nodes(n);  // id to node.
@@ -551,26 +567,13 @@ class KmerSetSetMM {
       lemon::ListGraph::EdgeMap<int64_t> weights(g);
 
       // Adds edges and sets their weights.
-      {
-        boost::asio::thread_pool pool(n_workers);
-        std::mutex mu;
+      for (const std::tuple<int, int, int64_t>& edge : edges) {
+        int i, j;
+        int64_t weight;
+        std::tie(i, j, weight) = edge;
 
-        for (int i = 0; i < n; i++) {
-          for (int j = i + 1; j < n; j++) {
-            boost::asio::post(pool, [&, i, j] {
-              int64_t weight =
-                  approximate_weights
-                      ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
-                      : kmer_sets[i].Common(kmer_sets[j], 1);
-
-              std::lock_guard lck(mu);
-              lemon::ListGraph::Edge edge = g.addEdge(nodes[i], nodes[j]);
-              weights[edge] = weight;
-            });
-          }
-        }
-
-        pool.join();
+        lemon::ListGraph::Edge e = g.addEdge(nodes[i], nodes[j]);
+        weights[e] = weight;
       }
 
       lemon::MaxWeightedMatching<lemon::ListGraph,
@@ -682,7 +685,8 @@ class KmerSetSetMM {
     } else {
       diffs_ = new KmerSetSetMM(std::move(diffs), recursion_limit - 1,
                                 approximate_matching, approximate_weights,
-                                std::move(cost_function), n_workers);
+                                approximate_graph, std::move(cost_function),
+                                n_workers);
     }
   }
 

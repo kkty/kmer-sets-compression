@@ -32,6 +32,8 @@ ABSL_FLAG(bool, approximate_matching, false,
           "use approximate algorithm for matching");
 ABSL_FLAG(bool, approximate_weights, false,
           "use approximate weights for the matching algorithm");
+ABSL_FLAG(bool, approximate_graph, false,
+          "use an approximate (sparse) graph for the matching algorithm");
 
 int main(int argc, char** argv) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
@@ -138,7 +140,9 @@ int main(int argc, char** argv) {
     KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_mm(
         kmer_sets, absl::GetFlag(FLAGS_recursion),
         absl::GetFlag(FLAGS_approximate_matching),
-        absl::GetFlag(FLAGS_approximate_weights), cost_function, n_workers);
+        absl::GetFlag(FLAGS_approximate_weights),
+        absl::GetFlag(FLAGS_approximate_graph),
+        cost_function, n_workers);
 
     spdlog::info("constructed kmer_set_set_mm");
 
