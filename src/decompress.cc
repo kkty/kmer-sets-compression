@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
-  const int K = 17;
+  const int K = 15;
   const int n_workers = absl::GetFlag(FLAGS_workers);
   using KeyType = uint16_t;
 
