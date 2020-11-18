@@ -17,6 +17,7 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
+ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
@@ -35,19 +36,13 @@ ABSL_FLAG(bool, approximate_weights, false,
 ABSL_FLAG(bool, approximate_graph, false,
           "use an approximate (sparse) graph for the matching algorithm");
 
-int main(int argc, char** argv) {
+template <int K, typename KeyType>
+void Main(const std::vector<std::string>& files) {
   spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
-
-  // List of file names.
-  const std::vector<std::string> files = ParseFlags(argc, argv);
 
   if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
-
-  // 15 * 2 - 16 = 14 bits will be used to select a bucket.
-  const int K = 15;
-  using KeyType = uint16_t;
 
   const int n_datasets = files.size();
 
@@ -157,6 +152,32 @@ int main(int argc, char** argv) {
       }
     }
   }
+}
 
-  return 0;
+int main(int argc, char** argv) {
+  const std::vector<std::string> files = ParseFlags(argc, argv);
+
+  const int k = absl::GetFlag(FLAGS_k);
+
+  switch (k) {
+    case 15:
+      // 15 * 2 - 16 = 14 bits are used to select buckets.
+      Main<15, uint16_t>(files);
+      break;
+    case 19:
+      // 19 * 2 - 16 = 22 bits are used to select buckets.
+      Main<19, uint16_t>(files);
+      break;
+    case 23:
+      // 23 * 2 - 32 = 14 bits are used to select buckets.
+      Main<23, uint32_t>(files);
+      break;
+    case 27:
+      // 27 * 2 - 32 = 22 bits are used to select buckets.
+      Main<27, uint32_t>(files);
+      break;
+    default:
+      spdlog::error("unsupported k value");
+      std::exit(1);
+  }
 }

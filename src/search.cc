@@ -19,6 +19,7 @@
 #include "kmer_set.h"
 #include "spdlog/spdlog.h"
 
+ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
@@ -199,9 +200,8 @@ std::optional<AStarSearchResult<K>> AStarSearch(
   return {};
 }
 
-int main(int argc, char** argv) {
-  absl::ParseCommandLine(argc, argv);
-
+template <int K, typename KeyType>
+void Main() {
   if (absl::GetFlag(FLAGS_debug)) {
     spdlog::set_level(spdlog::level::debug);
   }
@@ -209,9 +209,7 @@ int main(int argc, char** argv) {
   std::srand(absl::GetFlag(FLAGS_seed));
   std::ios_base::sync_with_stdio(false);
 
-  const int K = 21;
   const int n_workers = absl::GetFlag(FLAGS_workers);
-  using KeyType = uint32_t;
 
   spdlog::info("constructing kmer_counter");
 
@@ -321,5 +319,33 @@ int main(int argc, char** argv) {
         spdlog::info("distance = {}", (*a_star_search_result).path.size() - 1);
       }
     }
+  }
+}
+
+int main(int argc, char** argv) {
+  absl::ParseCommandLine(argc, argv);
+
+  const int k = absl::GetFlag(FLAGS_k);
+
+  switch (k) {
+    case 15:
+      // 15 * 2 - 16 = 14 bits are used to select buckets.
+      Main<15, uint16_t>();
+      break;
+    case 19:
+      // 19 * 2 - 16 = 22 bits are used to select buckets.
+      Main<19, uint16_t>();
+      break;
+    case 23:
+      // 23 * 2 - 32 = 14 bits are used to select buckets.
+      Main<23, uint32_t>();
+      break;
+    case 27:
+      // 27 * 2 - 32 = 22 bits are used to select buckets.
+      Main<27, uint32_t>();
+      break;
+    default:
+      spdlog::error("unsupported k value");
+      std::exit(1);
   }
 }
