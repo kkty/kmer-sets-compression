@@ -116,11 +116,22 @@ void Main(const std::vector<std::string>& files) {
   } else if (absl::GetFlag(FLAGS_mm)) {
     spdlog::info("constructing kmer_set_set_mm");
 
-    KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_mm(
-        kmer_sets, absl::GetFlag(FLAGS_recursion),
-        absl::GetFlag(FLAGS_approximate_matching),
-        absl::GetFlag(FLAGS_approximate_weights),
-        absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
+    KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_mm = [&] {
+      if (absl::GetFlag(FLAGS_check)) {
+        return KmerSetSetMM<K, KeyType, decltype(cost_function)>(
+            kmer_sets, absl::GetFlag(FLAGS_recursion),
+            absl::GetFlag(FLAGS_approximate_matching),
+            absl::GetFlag(FLAGS_approximate_weights),
+            absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
+      } else {
+        // We can move kmer_sets.
+        return KmerSetSetMM<K, KeyType, decltype(cost_function)>(
+            std::move(kmer_sets), absl::GetFlag(FLAGS_recursion),
+            absl::GetFlag(FLAGS_approximate_matching),
+            absl::GetFlag(FLAGS_approximate_weights),
+            absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
+      }
+    }();
 
     spdlog::info("constructed kmer_set_set_mm");
 
