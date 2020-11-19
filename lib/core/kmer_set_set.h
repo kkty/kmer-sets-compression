@@ -495,6 +495,11 @@ class KmerSetSetNJ {
 template <int K, typename KeyType, typename CostFunctionType>
 class KmerSetSetMM {
  public:
+  KmerSetSetMM(const KmerSetSetMM&) = delete;
+  KmerSetSetMM& operator=(const KmerSetSetMM&) = delete;
+  KmerSetSetMM(KmerSetSetMM&&) = default;
+  KmerSetSetMM& operator=(KmerSetSetMM&&) = default;
+
   KmerSetSetMM(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
                bool approximate_matching, bool approximate_weights,
                bool approximate_graph, CostFunctionType cost_function,
