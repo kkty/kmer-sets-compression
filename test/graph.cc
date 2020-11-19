@@ -1,4 +1,4 @@
-#include "graph.h"
+#include "core/graph.h"
 
 #include "gtest/gtest.h"
 

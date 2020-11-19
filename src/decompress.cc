@@ -3,9 +3,9 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "kmer.h"
-#include "kmer_set.h"
-#include "kmer_set_compressed.h"
+#include "core/kmer.h"
+#include "core/kmer_set.h"
+#include "core/kmer_set_compressed.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");

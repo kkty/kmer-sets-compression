@@ -15,10 +15,10 @@
 #include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "io.h"
-#include "kmer.h"
-#include "kmer_set.h"
-#include "range.h"
+#include "core/io.h"
+#include "core/kmer.h"
+#include "core/kmer_set.h"
+#include "core/range.h"
 
 // Adds two numerical values. If the result exceeds the max value for the type,
 // the latter is returned.

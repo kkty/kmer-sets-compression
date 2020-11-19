@@ -1,9 +1,9 @@
-#include "kmer_counter.h"
+#include "core/kmer_counter.h"
 
 #include <tuple>
 
 #include "gtest/gtest.h"
-#include "kmer.h"
+#include "core/kmer.h"
 
 TEST(KmerCounter, AddAndGet) {
   const int K = 5;

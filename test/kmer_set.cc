@@ -1,11 +1,11 @@
-#include "kmer_set.h"
+#include "core/kmer_set.h"
 
 #include <bitset>
 #include <tuple>
 
 #include "gtest/gtest.h"
-#include "kmer.h"
-#include "kmer_counter.h"
+#include "core/kmer.h"
+#include "core/kmer_counter.h"
 
 TEST(KmerSet, BucketAndKey) {
   const int K = 5;

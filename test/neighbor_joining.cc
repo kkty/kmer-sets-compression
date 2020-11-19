@@ -1,4 +1,4 @@
-#include "neighbor_joining.h"
+#include "core/neighbor_joining.h"
 
 #include <string>
 #include <unordered_map>

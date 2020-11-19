@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "graph.h"
+#include "core/graph.h"
 
 namespace neighbor_joining {
 

@@ -10,9 +10,9 @@
 #include "absl/random/random.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "io.h"
-#include "kmer.h"
-#include "range.h"
+#include "core/io.h"
+#include "core/kmer.h"
+#include "core/range.h"
 
 // The first N bits are used to get the bucket ID.
 template <int K, typename KeyType>

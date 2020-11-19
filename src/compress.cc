@@ -9,12 +9,12 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
-#include "graph.h"
-#include "kmer.h"
-#include "kmer_counter.h"
-#include "kmer_set.h"
-#include "kmer_set_compressed.h"
-#include "kmer_set_set.h"
+#include "core/graph.h"
+#include "core/kmer.h"
+#include "core/kmer_counter.h"
+#include "core/kmer_set.h"
+#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_set.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");

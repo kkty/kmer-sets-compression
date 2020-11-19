@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "kmer_set.h"
-#include "range.h"
+#include "core/kmer_set.h"
+#include "core/range.h"
 
 // "ACCG", "CCGT", "CGTT" -> "ACCGTT"
 template <int K>

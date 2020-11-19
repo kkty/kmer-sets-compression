@@ -1,4 +1,4 @@
-#include "kmer.h"
+#include "core/kmer.h"
 
 #include <string>
 #include <unordered_map>

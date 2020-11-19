@@ -11,11 +11,11 @@
 #include "absl/container/flat_hash_set.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "kmer.h"
-#include "kmer_set.h"
-#include "range.h"
-#include "suffix_array.h"
-#include "unitigs.h"
+#include "core/kmer.h"
+#include "core/kmer_set.h"
+#include "core/range.h"
+#include "core/suffix_array.h"
+#include "core/unitigs.h"
 
 // Represents a set of kmers with unitigs, thereby reducing space.
 template <int K, typename KeyType>

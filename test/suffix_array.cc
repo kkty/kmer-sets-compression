@@ -1,4 +1,4 @@
-#include "suffix_array.h"
+#include "core/suffix_array.h"
 
 #include <vector>
 

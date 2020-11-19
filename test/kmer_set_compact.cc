@@ -1,9 +1,9 @@
-#include "kmer_set_compact.h"
+#include "core/kmer_set_compact.h"
 
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "kmer.h"
+#include "core/kmer.h"
 
 TEST(KmerSetCompact, Contains) {
   const int K = 5;
