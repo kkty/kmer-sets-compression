@@ -7,6 +7,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/status/statusor.h"
+#include "boost/thread/thread.hpp"
+#include "boost/thread/thread_pool.hpp"
 #include "flags.h"
 #include "graph.h"
 #include "kmer.h"
@@ -109,19 +111,25 @@ void Main(const std::vector<std::string>& files) {
 
   std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
 
+  boost::asio::thread_pool pool(n_workers);
+
   for (int i = 0; i < n_datasets; i++) {
-    const std::string& file = files[i];
+    boost::asio::post(pool, [&, i] {
+      const std::string& file = files[i];
 
-    spdlog::info("file = {}", file);
+      spdlog::info("file = {}", file);
 
-    if (absl::GetFlag(FLAGS_type) == "fastq") {
-      kmer_sets[i] = GetKmerSetFromFASTQFile<K, KeyType>(
-          file, decompressor, canonical, cutoff, n_workers);
-    } else {
-      kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
-          file, decompressor, canonical, n_workers);
-    }
+      if (absl::GetFlag(FLAGS_type) == "fastq") {
+        kmer_sets[i] = GetKmerSetFromFASTQFile<K, KeyType>(
+            file, decompressor, canonical, cutoff, 1);
+      } else {
+        kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
+            file, decompressor, canonical, 1);
+      }
+    });
   }
+
+  pool.join();
 
   for (int i = 0; i < n_datasets; i++) {
     int64_t kmer_set_size = kmer_sets[i].Size();
