@@ -1,5 +1,5 @@
-#ifndef RANGE_H_
-#define RANGE_H_
+#ifndef CORE_RANGE_H_
+#define CORE_RANGE_H_
 
 #include <cstdlib>
 #include <vector>

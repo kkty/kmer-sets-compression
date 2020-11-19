@@ -1,5 +1,5 @@
-#ifndef NEIGHBOR_JOINING_H_
-#define NEIGHBOR_JOINING_H_
+#ifndef CORE_NEIGHBOR_JOINING_H_
+#define CORE_NEIGHBOR_JOINING_H_
 
 #include <algorithm>
 #include <limits>

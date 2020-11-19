@@ -1,5 +1,5 @@
-#ifndef SUFFIX_ARRAY_H_
-#define SUFFIX_ARRAY_H_
+#ifndef CORE_SUFFIX_ARRAY_H_
+#define CORE_SUFFIX_ARRAY_H_
 
 #include <algorithm>
 #include <string>

@@ -1,5 +1,5 @@
-#ifndef KMER_H_
-#define KMER_H_
+#ifndef CORE_KMER_H_
+#define CORE_KMER_H_
 
 #include <array>
 #include <bitset>

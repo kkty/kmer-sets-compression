@@ -1,5 +1,5 @@
-#ifndef GRAPH_H_
-#define GRAPH_H_
+#ifndef CORE_GRAPH_H_
+#define CORE_GRAPH_H_
 
 #include <queue>
 #include <tuple>

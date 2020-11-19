@@ -1,5 +1,5 @@
-#ifndef KMER_COUNTER_H_
-#define KMER_COUNTER_H_
+#ifndef CORE_KMER_COUNTER_H_
+#define CORE_KMER_COUNTER_H_
 
 #include <atomic>
 #include <limits>

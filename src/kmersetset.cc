@@ -7,13 +7,13 @@
 
 #include "absl/flags/flag.h"
 #include "absl/status/statusor.h"
-#include "flags.h"
 #include "core/graph.h"
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compressed.h"
 #include "core/kmer_set_set.h"
+#include "flags.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 

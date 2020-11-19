@@ -1,5 +1,5 @@
-#ifndef KMER_SET_SET_H_
-#define KMER_SET_SET_H_
+#ifndef CORE_KMER_SET_SET_H_
+#define CORE_KMER_SET_SET_H_
 
 #include <algorithm>
 #include <cmath>
@@ -24,10 +24,10 @@
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
 #include "core/kmer_set_compressed.h"
-#include "lemon/list_graph.h"
-#include "lemon/matching.h"
 #include "core/neighbor_joining.h"
 #include "core/range.h"
+#include "lemon/list_graph.h"
+#include "lemon/matching.h"
 #include "spdlog/spdlog.h"
 
 // KmerSetSet can be used to represent multiple k-mer sets in less space.

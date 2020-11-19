@@ -1,5 +1,5 @@
-#ifndef KMER_SET_H_
-#define KMER_SET_H_
+#ifndef CORE_KMER_SET_H_
+#define CORE_KMER_SET_H_
 
 #include <mutex>
 #include <string>

@@ -1,5 +1,5 @@
-#ifndef KMER_SET_COMPACT_H_
-#define KMER_SET_COMPACT_H_
+#ifndef CORE_KMER_SET_COMPACT_H_
+#define CORE_KMER_SET_COMPACT_H_
 
 #include <algorithm>
 #include <atomic>

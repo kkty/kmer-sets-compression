@@ -1,5 +1,5 @@
-#ifndef IO_H_
-#define IO_H_
+#ifndef CORE_IO_H_
+#define CORE_IO_H_
 
 #include <fstream>
 #include <istream>

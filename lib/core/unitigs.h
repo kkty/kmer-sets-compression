@@ -1,5 +1,5 @@
-#ifndef UNITIGS_H_
-#define UNITIGS_H_
+#ifndef CORE_UNITIGS_H_
+#define CORE_UNITIGS_H_
 
 #include <cassert>
 #include <mutex>
