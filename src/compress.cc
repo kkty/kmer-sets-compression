@@ -15,6 +15,7 @@
 #include "core/kmer_set.h"
 #include "core/kmer_set_compressed.h"
 #include "core/kmer_set_set.h"
+#include "log.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
@@ -30,9 +31,10 @@ ABSL_FLAG(std::string, out, "", "output file name");
 
 template <int K, typename KeyType>
 void Main() {
-  const std::string file_name = absl::GetFlag(FLAGS_in);
+  InitDefaultLogger();
+  if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
 
-  if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
+  const std::string file_name = absl::GetFlag(FLAGS_in);
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const bool canonical = absl::GetFlag(FLAGS_canonical);

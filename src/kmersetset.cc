@@ -15,7 +15,7 @@
 #include "core/kmer_set_set.h"
 #include "flags.h"
 #include "io.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
+#include "log.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
@@ -40,9 +40,9 @@ ABSL_FLAG(bool, approximate_graph, false,
 
 template <int K, typename KeyType>
 void Main(const std::vector<std::string>& files) {
-  spdlog::set_default_logger(spdlog::stderr_color_mt("default"));
+  InitDefaultLogger();
 
-  if (absl::GetFlag(FLAGS_debug)) spdlog::set_level(spdlog::level::debug);
+  if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const std::string decompressor = absl::GetFlag(FLAGS_decompressor);

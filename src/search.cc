@@ -17,6 +17,7 @@
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
+#include "log.h"
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
@@ -202,9 +203,8 @@ std::optional<AStarSearchResult<K>> AStarSearch(
 
 template <int K, typename KeyType>
 void Main() {
-  if (absl::GetFlag(FLAGS_debug)) {
-    spdlog::set_level(spdlog::level::debug);
-  }
+  InitDefaultLogger();
+  if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
 
   std::srand(absl::GetFlag(FLAGS_seed));
   std::ios_base::sync_with_stdio(false);
