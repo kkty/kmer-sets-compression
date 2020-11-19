@@ -37,6 +37,8 @@ ABSL_FLAG(bool, approximate_weights, false,
           "use approximate weights for the matching algorithm");
 ABSL_FLAG(bool, approximate_graph, false,
           "use an approximate (sparse) graph for the matching algorithm");
+ABSL_FLAG(std::string, out, "", "path to save dumped file");
+ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
 
 template <int K, typename KeyType>
 void Main(const std::vector<std::string>& files) {
@@ -137,6 +139,13 @@ void Main(const std::vector<std::string>& files) {
 
     spdlog::info("kmer_set_set_mm.Size() = {}", kmer_set_set_mm.Size());
     spdlog::info("kmer_set_set_mm.Cost() = {}", kmer_set_set_mm.Cost());
+
+    const std::string out_file = absl::GetFlag(FLAGS_out);
+
+    if (out_file != "") {
+      kmer_set_set_mm.Dump(out_file, absl::GetFlag(FLAGS_compressor), canonical,
+                           n_workers);
+    }
 
     if (absl::GetFlag(FLAGS_check)) {
       spdlog::info("dumping");
