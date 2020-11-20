@@ -183,24 +183,19 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
   return {false, 0, 0};
 }
 
-template <int K, int L>
+template <int K>
 SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
-                         const Kmer<K>& goal) {
+                         const Kmer<K>& goal, int l) {
   const std::vector<Kmer<K>>& kmers = g.kmers;
   const absl::flat_hash_map<Kmer<K>, int64_t>& ids = g.ids;
 
   // Returns the set of l-mers present in "kmer".
-  const auto get_lmers = [](const Kmer<K>& kmer) {
-    absl::flat_hash_set<Kmer<L>> lmers;
+  const auto get_lmers = [&](const Kmer<K>& kmer) {
+    absl::flat_hash_set<std::string> lmers;
+    const std::string kmer_s = kmer.String();
 
-    for (int i = 0; i < K - L + 1; i++) {
-      Kmer<L> lmer;
-
-      for (int j = 0; j < L; j++) {
-        lmer.Set(j, kmer.Get(i + j));
-      }
-
-      lmers.insert(lmer);
+    for (int i = 0; i < K - l + 1; i++) {
+      lmers.insert(kmer_s.substr(i, l));
     }
 
     return lmers;

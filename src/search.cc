@@ -48,17 +48,20 @@ void Main(const std::string& file_name) {
       spdlog::info("executed dijkstra");
       spdlog::info("found = {}, distance = {}, visited_nodes = {}",
                    result.found, result.distance, result.visited_nodes);
-      std::cout << result.distance << ' ' << result.visited_nodes << ' ';
+      std::cout << result.distance << ' ' << result.visited_nodes;
     }
 
-    {
+    for (int l = 2; l < 10; l++) {
+      spdlog::info("l = {}", l);
       spdlog::info("executing A*");
-      const SearchResult result = AStarSearch<K, 4>(kmer_graph, start, goal);
+      const SearchResult result = AStarSearch<K>(kmer_graph, start, goal, l);
       spdlog::info("executed A*");
       spdlog::info("found = {}, distance = {}, visited_nodes = {}",
                    result.found, result.distance, result.visited_nodes);
-      std::cout << result.distance << ' ' << result.visited_nodes << std::endl;
+      std::cout << ' ' << result.visited_nodes;
     }
+
+    std::cout << std::endl;
   }
 }
 

@@ -68,7 +68,7 @@ TEST(search, ConstructGraphCanonical) {
 
   {
     SearchResult result =
-        AStarSearch<K, 3>(g, Kmer<K>("AAAAAAT"), Kmer<K>("AAATCCC"));
+        AStarSearch<K>(g, Kmer<K>("AAAAAAT"), Kmer<K>("AAATCCC"), 3);
 
     ASSERT_TRUE(result.found);
     ASSERT_EQ(result.distance, 3);
