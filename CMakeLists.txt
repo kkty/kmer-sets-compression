@@ -52,8 +52,6 @@ foreach(
   kmer
   kmer_counter
   kmer_set
-  kmer_set_compact
-  suffix_array
   range
   graph
   neighbor_joining

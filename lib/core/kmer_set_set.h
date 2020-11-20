@@ -22,7 +22,6 @@
 #include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compact.h"
 #include "core/kmer_set_compressed.h"
 #include "core/neighbor_joining.h"
 #include "core/range.h"

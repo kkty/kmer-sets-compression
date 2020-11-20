@@ -14,7 +14,6 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
-#include "core/suffix_array.h"
 #include "core/unitigs.h"
 
 // Represents a set of kmers with unitigs, thereby reducing space.
