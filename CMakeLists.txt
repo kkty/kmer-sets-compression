@@ -54,7 +54,6 @@ foreach(
   kmer_set
   range
   graph
-  neighbor_joining
   io
   search
 )
