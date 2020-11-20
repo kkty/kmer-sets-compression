@@ -1,6 +1,15 @@
 #ifndef IO_H_
 #define IO_H_
 
+#include <string>
+#include <tuple>
+
+#include "absl/status/statusor.h"
+#include "core/kmer_counter.h"
+#include "core/kmer_set.h"
+#include "core/kmer_set_compressed.h"
+#include "spdlog/spdlog.h"
+
 template <int K, typename KeyType>
 KmerSet<K, KeyType> GetKmerSetFromCompressedKmersFile(
     const std::string& file_name, const std::string& decompressor,
