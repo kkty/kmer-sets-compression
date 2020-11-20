@@ -108,7 +108,6 @@ void Main(const std::vector<std::string>& files) {
 
     spdlog::info("constructed kmer_set_set_mm");
 
-    spdlog::info("kmer_set_set_mm.Size() = {}", kmer_set_set_mm.Size());
     spdlog::info("kmer_set_set_mm.Cost() = {}", kmer_set_set_mm.Cost());
 
     const std::string out_file = absl::GetFlag(FLAGS_out);
@@ -144,7 +143,6 @@ void Main(const std::vector<std::string>& files) {
         kmer_sets, absl::GetFlag(FLAGS_recursion), n_workers);
     spdlog::info("constructed kmer_set_set");
 
-    spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
     spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
 
     if (absl::GetFlag(FLAGS_check)) {

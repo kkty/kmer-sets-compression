@@ -137,21 +137,6 @@ class KmerSetSet {
     return kmer_set;
   }
 
-  // Returns the number of k-mers stored internally.
-  int64_t Size() const {
-    if (!IsTerminal()) {
-      return std::get<KmerSetSet*>(diffs_)->Size();
-    }
-
-    int64_t size = 0;
-
-    for (const KmerSet<K, KeyType>& diff :
-         std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)) {
-      size += diff.Size();
-    }
-    return size;
-  }
-
   int64_t Cost() const {
     if (IsTerminal()) return cost_;
 
@@ -242,91 +227,98 @@ class KmerSetSetMM {
 
     spdlog::debug("calculating mates");
 
-    // The first two are for nodes, and the last one is for weights.
-    std::vector<std::tuple<int, int, int64_t>> edges;
-
-    // Calculates edges. The topology is affected by "approximate_graph" and the
-    // weights are affected by "approximate_weights".
     {
-      absl::InsecureBitGen bitgen;
-      boost::asio::thread_pool pool(n_workers);
-      std::mutex mu;
+      // The first two are for nodes, and the last one is for weights.
+      std::vector<std::tuple<int, int, int64_t>> edges;
 
-      for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-          if (approximate_graph && absl::Bernoulli(bitgen, 0.9)) continue;
+      // Calculates edges. The topology is affected by "approximate_graph" and
+      // the weights are affected by "approximate_weights".
+      {
+        absl::InsecureBitGen bitgen;
+        boost::asio::thread_pool pool(n_workers);
+        std::mutex mu;
 
-          boost::asio::post(pool, [&, i, j] {
-            int64_t weight =
-                approximate_weights
-                    ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
-                    : kmer_sets[i].Common(kmer_sets[j], 1);
+        for (int i = 0; i < n; i++) {
+          for (int j = i + 1; j < n; j++) {
+            if (approximate_graph && absl::Bernoulli(bitgen, 0.9)) continue;
 
-            std::lock_guard lck(mu);
-            edges.emplace_back(i, j, weight);
-          });
+            boost::asio::post(pool, [&, i, j] {
+              int64_t weight =
+                  approximate_weights
+                      ? kmer_sets[i].CommonEstimate(kmer_sets[j], 0.1)
+                      : kmer_sets[i].Common(kmer_sets[j], 1);
+
+              std::lock_guard lck(mu);
+              edges.emplace_back(i, j, weight);
+            });
+          }
         }
+
+        pool.join();
       }
 
-      pool.join();
-    }
+      if (approximate_matching) {
+        // Executes approximate max-weighted matching.
 
-    if (approximate_matching) {
-      // Sorts "edges" so that the heaviest edge comes first.
-      std::sort(edges.begin(), edges.end(),
-                [](const std::tuple<int, int, int64_t>& lhs,
-                   const std::tuple<int, int, int64_t>& rhs) {
-                  return std::get<2>(lhs) > std::get<2>(rhs);
-                });
+        // Sorts "edges" so that the heaviest edge comes first.
+        std::sort(edges.begin(), edges.end(),
+                  [](const std::tuple<int, int, int64_t>& lhs,
+                     const std::tuple<int, int, int64_t>& rhs) {
+                    return std::get<2>(lhs) > std::get<2>(rhs);
+                  });
 
-      for (const std::tuple<int, int, int64_t>& edge : edges) {
-        int i, j;
-        std::tie(i, j, std::ignore) = edge;
+        for (const std::tuple<int, int, int64_t>& edge : edges) {
+          int i, j;
+          std::tie(i, j, std::ignore) = edge;
 
-        if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
-          mates[i] = j;
-          mates[j] = i;
+          // If i and j do not have their mates, make a match.
+          if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
+            mates[i] = j;
+            mates[j] = i;
+          }
         }
-      }
-    } else {
-      // Boost Graph Library was used at first here, but there seemed to be a
-      // bug. Therefore, lemon library is used.
+      } else {
+        // Executes exact max-weighted matching.
 
-      lemon::ListGraph g;
+        // Boost Graph Library was used at first here, but there seemed to be a
+        // bug. Therefore, lemon library is used.
 
-      std::vector<lemon::ListGraph::Node> nodes(n);  // id to node.
-      lemon::ListGraph::NodeMap<int> ids(g);         // node to id.
+        lemon::ListGraph g;
 
-      // Adds nodes.
-      for (int i = 0; i < n; i++) {
-        lemon::ListGraph::Node node = g.addNode();
-        ids[node] = i;
-        nodes[i] = node;
-      }
+        std::vector<lemon::ListGraph::Node> nodes(n);  // id to node.
+        lemon::ListGraph::NodeMap<int> ids(g);         // node to id.
 
-      lemon::ListGraph::EdgeMap<int64_t> weights(g);
+        // Adds nodes.
+        for (int i = 0; i < n; i++) {
+          lemon::ListGraph::Node node = g.addNode();
+          ids[node] = i;
+          nodes[i] = node;
+        }
 
-      // Adds edges and sets their weights.
-      for (const std::tuple<int, int, int64_t>& edge : edges) {
-        int i, j;
-        int64_t weight;
-        std::tie(i, j, weight) = edge;
+        lemon::ListGraph::EdgeMap<int64_t> weights(g);
 
-        lemon::ListGraph::Edge e = g.addEdge(nodes[i], nodes[j]);
-        weights[e] = weight;
-      }
+        // Adds edges and sets their weights.
+        for (const std::tuple<int, int, int64_t>& edge : edges) {
+          int i, j;
+          int64_t weight;
+          std::tie(i, j, weight) = edge;
 
-      lemon::MaxWeightedMatching<lemon::ListGraph,
-                                 lemon::ListGraph::EdgeMap<int64_t>>
-          matching(g, weights);
+          lemon::ListGraph::Edge e = g.addEdge(nodes[i], nodes[j]);
+          weights[e] = weight;
+        }
 
-      matching.run();
+        lemon::MaxWeightedMatching<lemon::ListGraph,
+                                   lemon::ListGraph::EdgeMap<int64_t>>
+            matching(g, weights);
 
-      for (int i = 0; i < n; i++) {
-        lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+        matching.run();
 
-        if (mate != lemon::INVALID) {
-          mates[i] = ids[mate];
+        for (int i = 0; i < n; i++) {
+          lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+
+          if (mate != lemon::INVALID) {
+            mates[i] = ids[mate];
+          }
         }
       }
     }
@@ -346,6 +338,7 @@ class KmerSetSetMM {
 
       for (int i = 0; i < n; i++) {
         if (mates.find(i) == mates.end()) {
+          // If kmer_sets[i] has no mates, sets its parent to an empty set.
           parents_[i] = -1;
 
           boost::asio::post(pool, [&, i] {
@@ -356,6 +349,8 @@ class KmerSetSetMM {
             diffs.push_back(std::move(kmer_set));
           });
         } else {
+          // If kmer_sets[i] has a mate, creates a new node by intersecting them
+          // and sets their parents to that node.
           int mate = mates[i];
 
           if (i < mate) {
@@ -431,20 +426,6 @@ class KmerSetSetMM {
     if (!IsTerminal()) delete std::get<KmerSetSetMM*>(diffs_);
   }
 
-  // Returns the number of k-mers stored internally.
-  int64_t Size() const {
-    if (IsTerminal()) {
-      int64_t sum = 0;
-      for (const KmerSet<K, KeyType>& kmer_set :
-           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_)) {
-        sum += kmer_set.Size();
-      }
-      return sum;
-    } else {
-      return std::get<KmerSetSetMM*>(diffs_)->Size();
-    }
-  }
-
   int64_t Cost() const {
     if (IsTerminal()) return cost_;
     return std::get<KmerSetSetMM*>(diffs_)->Cost();
@@ -474,17 +455,18 @@ class KmerSetSetMM {
 
   // Dumps data to a vector of strings.
   // "canonical" will be used to compress kmer sets with KmerSetCompressed.
+  // "v" is used internally to process recursions.
   std::vector<std::string> Dump(
       bool canonical, int n_workers,
       std::vector<std::string> v = std::vector<std::string>()) const {
-    // Dumps cost_ to a line.
+    // Dumps cost_ to a string.
     {
       std::stringstream ss;
       ss << cost_;
       v.push_back(ss.str());
     }
 
-    // Dumps parents_ to a line.
+    // Dumps parents_ to a string.
     // Format: "size key value key value ..."
     {
       std::stringstream ss;
@@ -497,7 +479,7 @@ class KmerSetSetMM {
       v.push_back(ss.str());
     }
 
-    // Dumps diff_table_ to a line.
+    // Dumps diff_table_ to a string.
     // Format: "size key1 key2 value key1 key2 value ..."
     {
       std::vector<std::tuple<int, int, int>> flatten;
@@ -525,8 +507,8 @@ class KmerSetSetMM {
       const std::vector<KmerSet<K, KeyType>>& diffs =
           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
-      // Dumps diffs to 1 + diffs_.size() lines.
-      // Each KmerSet is converted to KmerSetCompressed and dumped to one line.
+      // Dumps diffs to 1 + diffs_.size() strings.
+      // Each KmerSet is converted to KmerSetCompressed and dumped to a string.
 
       {
         std::stringstream ss;
@@ -534,25 +516,26 @@ class KmerSetSetMM {
         v.push_back(ss.str());
       }
 
-      // This will later be appended to "v".
-      std::vector<std::string> buf(diffs.size());
+      {
+        std::vector<std::string> buf(diffs.size());
 
-      boost::asio::thread_pool pool(n_workers);
+        boost::asio::thread_pool pool(n_workers);
 
-      for (size_t i = 0; i < diffs.size(); i++) {
-        boost::asio::post(pool, [&, i] {
-          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::FromKmerSet(diffs[i], canonical,
-                                                         1);
+        for (size_t i = 0; i < diffs.size(); i++) {
+          boost::asio::post(pool, [&, i] {
+            const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+                KmerSetCompressed<K, KeyType>::FromKmerSet(diffs[i], canonical,
+                                                           1);
 
-          buf[i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
-        });
+            buf[i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
+          });
+        }
+
+        pool.join();
+
+        v.reserve(v.size() + buf.size());
+        for (std::string& s : buf) v.push_back(std::move(s));
       }
-
-      pool.join();
-
-      v.reserve(v.size() + buf.size());
-      for (std::string& s : buf) v.push_back(std::move(s));
 
       return v;
     } else {
@@ -569,19 +552,23 @@ class KmerSetSetMM {
   }
 
   // Loads data from a vector of strings.
-  static KmerSetSetMM* Load(const std::vector<std::string>& lines,
-                            bool canonical, int n_workers, int64_t i = 0) {
+  // "i" represents the start index and is used internally to process
+  // recursions.
+  static KmerSetSetMM* Load(const std::vector<std::string>& v, bool canonical,
+                            int n_workers, int64_t i = 0) {
     int64_t cost;
     absl::flat_hash_map<int, int> parents;
     absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table;
 
+    // Loads cost.
     {
-      std::stringstream ss(lines[i]);
+      std::stringstream ss(v[i]);
       ss >> cost;
     }
 
+    // Loads parents.
     {
-      std::stringstream ss(lines[i + 1]);
+      std::stringstream ss(v[i + 1]);
       int64_t size;
       ss >> size;
 
@@ -592,8 +579,9 @@ class KmerSetSetMM {
       }
     }
 
+    // Loads diff_table.
     {
-      std::stringstream ss(lines[i + 2]);
+      std::stringstream ss(v[i + 2]);
       int64_t size;
       ss >> size;
 
@@ -604,12 +592,14 @@ class KmerSetSetMM {
       }
     }
 
-    if (lines[i + 3] == "") {
+    if (v[i + 3] == "") {
       // The end of recursion.
+
+      // Loads diffs.
 
       int64_t size;
       {
-        std::stringstream ss(lines[i + 4]);
+        std::stringstream ss(v[i + 4]);
         ss >> size;
       }
 
@@ -619,9 +609,12 @@ class KmerSetSetMM {
 
       for (int64_t j = 0; j < size; j++) {
         boost::asio::post(pool, [&, j] {
-          const std::string& line = lines[i + 5 + j];
+          const std::string& line = v[i + 5 + j];
 
-          if (line.empty()) return;
+          if (line.empty()) {
+            // diffs[j] should be an empty set.
+            return;
+          }
 
           const KmerSetCompressed<K, KeyType> kmer_set_compressed =
               KmerSetCompressed<K, KeyType>::Load(absl::StrSplit(line, ' '));
@@ -635,7 +628,7 @@ class KmerSetSetMM {
       return new KmerSetSetMM(cost, parents, diff_table, std::move(diffs));
     } else {
       return new KmerSetSetMM(cost, parents, diff_table,
-                              Load(lines, canonical, n_workers, i + 3));
+                              Load(v, canonical, n_workers, i + 3));
     }
   }
 
