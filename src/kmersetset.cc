@@ -29,7 +29,6 @@ ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
-ABSL_FLAG(bool, nj, false, "use neighbor joining algorithm");
 ABSL_FLAG(bool, mm, false, "use maximum weighted matching algorithm");
 ABSL_FLAG(bool, approximate_matching, false,
           "use approximate algorithm for matching");
@@ -69,10 +68,14 @@ void Main(const std::vector<std::string>& files) {
     }
   }
 
+  int64_t total_size = 0;
   for (int i = 0; i < n_datasets; i++) {
     int64_t kmer_set_size = kmer_sets[i].Size();
     spdlog::info("i = {}, kmer_set_size = {}", i, kmer_set_size);
+    total_size += kmer_set_size;
   }
+
+  spdlog::info("total_size = {}", total_size);
 
   if (absl::GetFlag(FLAGS_similarity)) {
     for (int i = 0; i < n_datasets; i++) {
@@ -83,55 +86,23 @@ void Main(const std::vector<std::string>& files) {
     }
   }
 
-  const auto cost_function = [](const KmerSet<K, KeyType>& lhs,
-                                const KmerSet<K, KeyType>& rhs, int n_workers) {
-    return lhs.Diff(rhs, n_workers);
-  };
-
-  {
-    int64_t total_cost = 0;
-    for (int i = 0; i < n_datasets; i++) {
-      int64_t cost =
-          cost_function(KmerSet<K, KeyType>(), kmer_sets[i], n_workers);
-      spdlog::info("i = {}, cost = {}", i, cost);
-      total_cost += cost;
-    }
-    spdlog::info("total_cost = {}", total_cost);
-  }
-
-  if (absl::GetFlag(FLAGS_nj)) {
-    spdlog::info("constructing kmer_set_set_nj");
-
-    KmerSetSetNJ<K, KeyType, decltype(cost_function)> kmer_set_set_nj(
-        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
-    spdlog::info("constructed kmer_set_set_nj");
-
-    spdlog::info("kmer_set_set_nj.Cost() = {}", kmer_set_set_nj.Cost());
-
-    if (absl::GetFlag(FLAGS_check)) {
-      for (int i = 0; i < n_datasets; i++) {
-        spdlog::info(
-            "kmer_sets[{}].Equals(kmer_set_set_nj.Get({})) = {}", i, i,
-            kmer_sets[i].Equals(kmer_set_set_nj.Get(i, n_workers), n_workers));
-      }
-    }
-  } else if (absl::GetFlag(FLAGS_mm)) {
+  if (absl::GetFlag(FLAGS_mm)) {
     spdlog::info("constructing kmer_set_set_mm");
 
-    KmerSetSetMM<K, KeyType, decltype(cost_function)> kmer_set_set_mm = [&] {
+    KmerSetSetMM<K, KeyType> kmer_set_set_mm = [&] {
       if (absl::GetFlag(FLAGS_check)) {
-        return KmerSetSetMM<K, KeyType, decltype(cost_function)>(
+        return KmerSetSetMM<K, KeyType>(
             kmer_sets, absl::GetFlag(FLAGS_recursion),
             absl::GetFlag(FLAGS_approximate_matching),
             absl::GetFlag(FLAGS_approximate_weights),
-            absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
+            absl::GetFlag(FLAGS_approximate_graph), n_workers);
       } else {
         // We can move kmer_sets.
-        return KmerSetSetMM<K, KeyType, decltype(cost_function)>(
+        return KmerSetSetMM<K, KeyType>(
             std::move(kmer_sets), absl::GetFlag(FLAGS_recursion),
             absl::GetFlag(FLAGS_approximate_matching),
             absl::GetFlag(FLAGS_approximate_weights),
-            absl::GetFlag(FLAGS_approximate_graph), cost_function, n_workers);
+            absl::GetFlag(FLAGS_approximate_graph), n_workers);
       }
     }();
 
@@ -154,12 +125,11 @@ void Main(const std::vector<std::string>& files) {
       spdlog::info("dumped");
 
       spdlog::info("loading");
-      std::unique_ptr<KmerSetSetMM<K, KeyType, decltype(cost_function)>>
-          loaded = std::unique_ptr<
-              KmerSetSetMM<K, KeyType, decltype(cost_function)>>(
-              KmerSetSetMM<K, KeyType, decltype(cost_function)>::Load(
-                  std::move(dumped), absl::GetFlag(FLAGS_canonical),
-                  n_workers));
+      std::unique_ptr<KmerSetSetMM<K, KeyType>> loaded =
+          std::unique_ptr<KmerSetSetMM<K, KeyType>>(
+              KmerSetSetMM<K, KeyType>::Load(std::move(dumped),
+                                             absl::GetFlag(FLAGS_canonical),
+                                             n_workers));
       spdlog::info("loaded");
 
       for (int i = 0; i < n_datasets; i++) {
@@ -170,8 +140,8 @@ void Main(const std::vector<std::string>& files) {
   } else {
     spdlog::info("constructing kmer_set_set");
 
-    KmerSetSet<K, KeyType, decltype(cost_function)> kmer_set_set(
-        kmer_sets, absl::GetFlag(FLAGS_recursion), cost_function, n_workers);
+    KmerSetSet<K, KeyType> kmer_set_set(
+        kmer_sets, absl::GetFlag(FLAGS_recursion), n_workers);
     spdlog::info("constructed kmer_set_set");
 
     spdlog::info("kmer_set_set.Size() = {}", kmer_set_set.Size());
