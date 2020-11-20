@@ -58,6 +58,7 @@ foreach(
   graph
   neighbor_joining
   io
+  search
 )
   add_executable(test_${NAME} test/${NAME}.cc)
   add_test(test_${NAME} test_${NAME})
