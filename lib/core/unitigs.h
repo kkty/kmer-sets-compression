@@ -23,6 +23,7 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   return s;
 }
 
+// Constructs unitigs from a kmer set where canonical kmers are stored.
 template <int K, typename KeyType>
 std::vector<std::string> GetUnitigsCanonical(
     const KmerSet<K, KeyType>& kmer_set, int n_workers) {
@@ -143,83 +144,96 @@ std::vector<std::string> GetUnitigsCanonical(
   std::vector<std::string> unitigs;
   absl::flat_hash_set<Kmer<K>> visited;
 
-  std::vector<std::thread> threads;
-  std::mutex mu_unitigs;
-  std::mutex mu_visited;
+  // For each kmer in terminal_kmers, finds the unitig from it.
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu_unitigs;
+    std::mutex mu_visited;
 
-  for (const Range& range : Range(0, terminal_kmers.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
-      std::vector<std::string> buf_unitigs;
-      absl::flat_hash_set<Kmer<K>> buf_visited;
+    for (const Range& range :
+         Range(0, terminal_kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf_unitigs;
+        absl::flat_hash_set<Kmer<K>> buf_visited;
 
-      range.ForEach([&](int i) {
-        const Kmer<K> terminal_kmer = terminal_kmers[i];
+        range.ForEach([&](int i) {
+          const Kmer<K> terminal_kmer = terminal_kmers[i];
 
-        std::vector<Kmer<K>> path = find_path(terminal_kmer, false);
+          std::vector<Kmer<K>> path = find_path(terminal_kmer, false);
 
-        // Not to process the same path for multiple times.
-        if (path[0] < path[path.size() - 1]) return;
+          // Not to process the same path for multiple times.
+          if (path[0] < path[path.size() - 1]) return;
 
-        for (const Kmer<K>& kmer : path) buf_visited.insert(kmer);
+          for (const Kmer<K>& kmer : path) buf_visited.insert(kmer);
 
-        for (const std::string& unitig : get_unitigs(path)) {
-          buf_unitigs.push_back(unitig);
-        }
+          for (const std::string& unitig : get_unitigs(path)) {
+            buf_unitigs.push_back(unitig);
+          }
+        });
+
+        // 3 * n_workers threads are created in total, but no more than
+        // n_workers threads are active at any point in time.
+
+        std::vector<std::thread> threads;
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_unitigs);
+          for (std::string& unitig : buf_unitigs)
+            unitigs.push_back(std::move(unitig));
+        });
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_visited);
+          for (const Kmer<K>& kmer : buf_visited) visited.insert(kmer);
+        });
+
+        for (std::thread& t : threads) t.join();
       });
+    }
 
-      std::vector<std::thread> threads;
-
-      threads.emplace_back([&] {
-        std::lock_guard lck(mu_unitigs);
-        for (const std::string& unitig : buf_unitigs) unitigs.push_back(unitig);
-      });
-
-      threads.emplace_back([&] {
-        std::lock_guard lck(mu_visited);
-        for (const Kmer<K>& kmer : buf_visited) visited.insert(kmer);
-      });
-
-      for (std::thread& thread : threads) thread.join();
-    });
+    for (std::thread& t : threads) t.join();
   }
 
-  for (std::thread& t : threads) t.join();
-
-  // Consider non-branching loops.
+  // Considers non-branching loops.
   // This is hard to parallelize.
+  {
+    const std::vector<Kmer<K>> nodes_in_non_branching_loop = kmer_set.Find(
+        [&](const Kmer<K>& kmer) {
+          return get_neighbors(kmer).size() == 2 &&
+                 visited.find(kmer) == visited.end();
+        },
+        n_workers);
 
-  const std::vector<Kmer<K>> nodes_in_non_branching_loop = kmer_set.Find(
-      [&](const Kmer<K>& kmer) {
-        return get_neighbors(kmer).size() == 2 &&
-               visited.find(kmer) == visited.end();
-      },
-      n_workers);
+    for (const Kmer<K>& kmer : nodes_in_non_branching_loop) {
+      if (visited.find(kmer) != visited.end()) continue;
 
-  for (const Kmer<K>& kmer : nodes_in_non_branching_loop) {
-    if (visited.find(kmer) != visited.end()) continue;
+      std::vector<Kmer<K>> path = find_path(kmer, true);
 
-    std::vector<Kmer<K>> path = find_path(kmer, true);
+      for (const Kmer<K>& kmer : path) {
+        visited.insert(kmer);
+      }
 
-    for (const Kmer<K>& kmer : path) {
-      visited.insert(kmer);
-    }
-
-    for (const std::string& unitig : get_unitigs(path)) {
-      unitigs.push_back(unitig);
+      for (const std::string& unitig : get_unitigs(path)) {
+        unitigs.push_back(unitig);
+      }
     }
   }
 
-  const std::vector<Kmer<K>> branching_kmers = kmer_set.Find(
-      [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; },
-      n_workers);
+  // Kmers with branches are themselves treated as unitigs.
+  {
+    const std::vector<Kmer<K>> branching_kmers = kmer_set.Find(
+        [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; },
+        n_workers);
 
-  for (const Kmer<K>& kmer : branching_kmers) {
-    unitigs.push_back(kmer.String());
+    for (const Kmer<K>& kmer : branching_kmers) {
+      unitigs.push_back(kmer.String());
+    }
   }
 
   return unitigs;
 }
 
+// Constructs unitigs from a kmer set.
 template <int K, typename KeyType>
 std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
                                     int n_workers) {
@@ -243,6 +257,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
     return v;
   };
 
+  // Kmers where a unitig starts.
   const auto start_kmers = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
         const auto prevs = get_prevs(kmer);
@@ -265,6 +280,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
       },
       n_workers);
 
+  // Kmers where a unitig ends.
   const auto end_kmers = [&] {
     const auto v = kmer_set.Find(
         [&](const Kmer<K>& kmer) {
@@ -296,51 +312,58 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
   std::vector<std::string> unitigs;
   KmerSet<K, KeyType> visited;
 
-  std::mutex mu_unitigs;
-  std::mutex mu_visited;
+  // For each kmer in start_kmers, finds the unitig from it.
+  {
+    std::mutex mu_unitigs;
+    std::mutex mu_visited;
 
-  std::vector<std::thread> threads;
+    std::vector<std::thread> threads;
 
-  for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
-      std::vector<std::string> buf_unitigs;
-      KmerSet<K, KeyType> buf_visited;
+    for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf_unitigs;
+        KmerSet<K, KeyType> buf_visited;
 
-      range.ForEach([&](int64_t i) {
-        const Kmer<K>& start_kmer = start_kmers[i];
-        std::vector<Kmer<K>> path;
+        range.ForEach([&](int64_t i) {
+          const Kmer<K>& start_kmer = start_kmers[i];
+          std::vector<Kmer<K>> path;
 
-        Kmer<K> current = start_kmer;
-        while (true) {
-          buf_visited.Add(current);
-          path.push_back(current);
-          if (end_kmers.find(current) != end_kmers.end()) break;
-          current = get_nexts(current)[0];
-        }
+          Kmer<K> current = start_kmer;
+          while (true) {
+            buf_visited.Add(current);
+            path.push_back(current);
+            if (end_kmers.find(current) != end_kmers.end()) break;
+            current = get_nexts(current)[0];
+          }
 
-        buf_unitigs.push_back(GetUnitigFromKmers(path));
+          buf_unitigs.push_back(GetUnitigFromKmers(path));
+        });
+
+        // 3 * n_workers threads are created in total, but no more than
+        // n_workers threads are active at any point in time.
+
+        std::vector<std::thread> threads;
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_visited);
+          visited.Add(buf_visited, 1);
+        });
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_unitigs);
+
+          for (std::string& unitig : buf_unitigs)
+            unitigs.push_back(std::move(unitig));
+        });
+
+        for (std::thread& t : threads) t.join();
       });
+    }
 
-      std::vector<std::thread> threads;
-
-      threads.emplace_back([&] {
-        std::lock_guard _{mu_visited};
-        visited.Add(buf_visited, n_workers);
-      });
-
-      threads.emplace_back([&] {
-        std::lock_guard _{mu_unitigs};
-        unitigs.reserve(unitigs.size() + buf_unitigs.size());
-        for (const auto& unitig : buf_unitigs) unitigs.push_back(unitig);
-      });
-
-      for (std::thread& thread : threads) thread.join();
-    });
+    for (std::thread& t : threads) t.join();
   }
 
-  for (std::thread& thread : threads) thread.join();
-
-  // Consider loops where every node has 1 incoming edge and 1 outgoing edge.
+  // Considers loops where every node has 1 incoming edge and 1 outgoing edge.
   {
     const std::vector<Kmer<K>> not_visited = kmer_set.Find(
         [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); },

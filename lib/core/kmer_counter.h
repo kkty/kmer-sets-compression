@@ -33,6 +33,8 @@ T AddWithMax(T x, T y) {
   }
 }
 
+// Multiplies two numerical values. If the result exceeds the max value for the
+// type, the latter is returned.
 template <typename T>
 T MultiplyWithMax(T x, T y) {
   T max = std::numeric_limits<T>::max();
@@ -44,6 +46,7 @@ T MultiplyWithMax(T x, T y) {
   }
 }
 
+// KmerCounter can be used to count kmers.
 template <int K, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
  public:
@@ -58,11 +61,6 @@ class KmerCounter {
     return sum;
   }
 
-  static absl::StatusOr<KmerCounter> FromFASTQ(std::istream& is, bool canonical,
-                                               int n_workers) {
-    return FromFASTQ(ReadLines(is), canonical, n_workers);
-  }
-
   static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
                                                bool canonical, int n_workers) {
     return FromFASTQ(ReadLines(file_name), canonical, n_workers);
@@ -74,6 +72,9 @@ class KmerCounter {
     return FromFASTQ(ReadLines(file_name, decompressor), canonical, n_workers);
   }
 
+  // Counts kmers in a FASTQ file.
+  // If "canonical" is true, canonical kmers are counted. E.g., "GGC" will be
+  // counted as "GCC".
   static absl::StatusOr<KmerCounter> FromFASTQ(std::vector<std::string> lines,
                                                bool canonical, int n_workers) {
     KmerCounter kmer_counter;
@@ -245,7 +246,6 @@ class KmerCounter {
   }
 
  private:
-  static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
   static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
   using Bucket = absl::flat_hash_map<KeyType, ValueType>;

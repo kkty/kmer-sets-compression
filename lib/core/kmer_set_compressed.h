@@ -20,6 +20,8 @@
 template <int K, typename KeyType>
 class KmerSetCompressed {
  public:
+  // Constructs KmerSetCompressed from a kmer set. If the kmer set is for
+  // storing canonical kmers, "canonical" should be true.
   static KmerSetCompressed FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
                                        bool canonical, int n_workers) {
     std::vector<std::string> unitigs;
@@ -33,6 +35,8 @@ class KmerSetCompressed {
     return KmerSetCompressed(std::move(unitigs));
   }
 
+  // Constructs a KmerSet.
+  // If we are considering canonical kmers, "canonical" should be true.
   KmerSet<K, KeyType> ToKmerSet(bool canonical, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::vector<std::thread> threads;
@@ -82,6 +86,7 @@ class KmerSetCompressed {
     return KmerSetCompressed(std::move(v));
   }
 
+  // Returns the total length of stored strings.
   int64_t Size(int n_workers) const {
     std::vector<std::thread> threads;
     std::atomic_int64_t size = 0;

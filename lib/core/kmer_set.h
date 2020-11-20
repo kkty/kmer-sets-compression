@@ -25,9 +25,9 @@ std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
 }
 
 template <int K, typename KeyType>
-Kmer<K> GetKmerFromBucketAndKey(int bucketID, KeyType key) {
+Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
   const int key_bits = sizeof(KeyType) * 8;
-  std::bitset<K * 2> bits{((uint64_t)bucketID << key_bits) + (uint64_t)key};
+  std::bitset<K * 2> bits{((uint64_t)bucket_id << key_bits) + (uint64_t)key};
   return Kmer<K>{bits};
 }
 
@@ -101,22 +101,9 @@ class KmerSet {
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
 
-  // Fetches one k-mer randomly.
-  Kmer<K> Sample() const {
-    const int bucket = rand() % kBucketsNum;
-    const int64_t n = rand() % buckets_[bucket].size();
-
-    auto it = buckets_[bucket].begin();
-    for (int64_t i = 0; i < n; i++) it++;
-
-    const auto key = *it;
-
-    return GetKmerFromBucketAndKey<K, KeyType>(bucket, key);
-  }
-
   // Finds all the k-mers that match the condition.
-  template <typename Pred>
-  std::vector<Kmer<K>> Find(Pred pred, int n_workers) const {
+  template <typename PredType>
+  std::vector<Kmer<K>> Find(PredType pred, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
@@ -343,7 +330,6 @@ class KmerSet {
     return KmerSet(kmers, n_workers);
   }
 
-  static constexpr int kBucketsNumFactor = 2 * K - sizeof(KeyType) * 8;
   static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
  private:

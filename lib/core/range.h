@@ -9,6 +9,8 @@ struct Range {
 
   int64_t Size() const { return end - begin; }
 
+  // Splits the range to n distinct ranges. If n is smaller than Size(), some
+  // resulting ranges have a size of zero.
   std::vector<Range> Split(int64_t n) const {
     const int small_chunk_size = Size() / n;
     const int large_chunk_size = small_chunk_size + 1;
@@ -36,7 +38,8 @@ struct Range {
     return ranges;
   }
 
-  // Range(...).ForEach([&](int i) { ... });
+  // Executes a function for each integer in the range.
+  // Range(...).ForEach([&](int64_t i) { ... });
   template <typename F>
   void ForEach(F f) const {
     for (int64_t i = begin; i < end; i++) {
