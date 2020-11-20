@@ -36,6 +36,8 @@ ABSL_FLAG(bool, approximate_weights, false,
           "use approximate weights for the matching algorithm");
 ABSL_FLAG(bool, approximate_graph, false,
           "use an approximate (sparse) graph for the matching algorithm");
+ABSL_FLAG(bool, partial_matching, false,
+          "make mates partially in the matching algorithm");
 ABSL_FLAG(std::string, out, "", "path to save dumped file");
 ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
 
@@ -95,14 +97,16 @@ void Main(const std::vector<std::string>& files) {
             kmer_sets, absl::GetFlag(FLAGS_recursion),
             absl::GetFlag(FLAGS_approximate_matching),
             absl::GetFlag(FLAGS_approximate_weights),
-            absl::GetFlag(FLAGS_approximate_graph), n_workers);
+            absl::GetFlag(FLAGS_approximate_graph),
+            absl::GetFlag(FLAGS_partial_matching), n_workers);
       } else {
         // We can move kmer_sets.
         return KmerSetSetMM<K, KeyType>(
             std::move(kmer_sets), absl::GetFlag(FLAGS_recursion),
             absl::GetFlag(FLAGS_approximate_matching),
             absl::GetFlag(FLAGS_approximate_weights),
-            absl::GetFlag(FLAGS_approximate_graph), n_workers);
+            absl::GetFlag(FLAGS_approximate_graph),
+            absl::GetFlag(FLAGS_partial_matching), n_workers);
       }
     }();
 

@@ -205,8 +205,13 @@ class KmerSetSet {
 // KmerSetMM is similar to KmerSetSet, but it uses maximum weighted matching.
 // If "approximate_matching" is true, it uses an approximate matching algorithm.
 // If "approximate_weights" is true, it uses approximate weights for the
-// matching algorithm. If "approximate_graph" is true, it uses a aparse graph
-// for the matching algorithm.
+// matching algorithm.
+// If "approximate_graph" is true, it uses a aparse graph for the matching
+// algorithm, cutting half of edges.
+// If "partial_matching" is true, only half of the nodes are matched. For
+// partial matching, the heaviest edges are selected.
+// The same operation can be repeated multiple times, resulting in a recursive
+// structure. "recursion_limit" can be used to configure how deep it goes.
 template <int K, typename KeyType>
 class KmerSetSetMM {
  public:
@@ -217,7 +222,7 @@ class KmerSetSetMM {
 
   KmerSetSetMM(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
                bool approximate_matching, bool approximate_weights,
-               bool approximate_graph, int n_workers) {
+               bool approximate_graph, bool partial_matching, int n_workers) {
     const int n = kmer_sets.size();
 
     // If mates[i] is j (and mates[j] is i), we have a match between
@@ -239,7 +244,7 @@ class KmerSetSetMM {
 
         for (int i = 0; i < n; i++) {
           for (int j = i + 1; j < n; j++) {
-            if (approximate_graph && absl::Bernoulli(bitgen, 0.9)) continue;
+            if (approximate_graph && absl::Bernoulli(bitgen, 0.5)) continue;
 
             boost::asio::post(pool, [&, i, j] {
               int64_t weight =
@@ -274,6 +279,8 @@ class KmerSetSetMM {
           if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
             mates[i] = j;
             mates[j] = i;
+
+            if (partial_matching && (int)mates.size() * 2 >= n) break;
           }
         }
       } else {
@@ -312,11 +319,51 @@ class KmerSetSetMM {
 
         matching.run();
 
-        for (int i = 0; i < n; i++) {
-          lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+        if (partial_matching) {
+          // The last element is for weights.
+          std::vector<std::tuple<int, int, int64_t>> mates_candidates;
 
-          if (mate != lemon::INVALID) {
-            mates[i] = ids[mate];
+          {
+            // edges_m[i][j] is the weight from i to j.
+            absl::flat_hash_map<int, absl::flat_hash_map<int, int64_t>> edges_m;
+
+            for (const std::tuple<int, int, int64_t>& t : edges) {
+              edges_m[std::get<0>(t)][std::get<1>(t)] = std::get<2>(t);
+            }
+
+            for (int i = 0; i < n; i++) {
+              lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+
+              if (mate != lemon::INVALID && i < ids[mate]) {
+                mates_candidates.emplace_back(i, ids[mate],
+                                              edges_m[i][ids[mate]]);
+              }
+            }
+          }
+
+          // Sorts so that the heaviest one comes first.
+          std::sort(mates_candidates.begin(), mates_candidates.end(),
+                    [](const std::tuple<int, int, int64_t>& lhs,
+                       const std::tuple<int, int, int64_t>& rhs) {
+                      return std::get<2>(lhs) > std::get<2>(rhs);
+                    });
+
+          for (size_t i = 0; i < mates_candidates.size(); i++) {
+            int j, k;
+            std::tie(j, k, std::ignore) = mates_candidates[i];
+
+            mates[j] = k;
+            mates[k] = j;
+
+            if (partial_matching && (int)mates.size() * 2 >= n) break;
+          }
+        } else {
+          for (int i = 0; i < n; i++) {
+            lemon::ListGraph::Node mate = matching.mate(nodes[i]);
+
+            if (mate != lemon::INVALID) {
+              mates[i] = ids[mate];
+            }
           }
         }
       }
@@ -327,8 +374,8 @@ class KmerSetSetMM {
     std::vector<KmerSet<K, KeyType>> diffs;
 
     // Calculates parents, diffs, and diff_table_.
-    // parents are calculated in the main thread, and the others are calculated
-    // in sub threads.
+    // parents are calculated in the main thread, and the others are
+    // calculated in sub threads.
     {
       int next_parent_id = n;
 
@@ -348,8 +395,8 @@ class KmerSetSetMM {
             diffs.push_back(std::move(kmer_set));
           });
         } else {
-          // If kmer_sets[i] has a mate, creates a new node by intersecting them
-          // and sets their parents to that node.
+          // If kmer_sets[i] has a mate, creates a new node by intersecting
+          // them and sets their parents to that node.
           int mate = mates[i];
 
           if (i < mate) {
@@ -417,7 +464,7 @@ class KmerSetSetMM {
     } else {
       diffs_ = new KmerSetSetMM(std::move(diffs), recursion_limit - 1,
                                 approximate_matching, approximate_weights,
-                                approximate_graph, n_workers);
+                                approximate_graph, partial_matching, n_workers);
     }
   }
 
@@ -507,7 +554,8 @@ class KmerSetSetMM {
           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
       // Dumps diffs to 1 + diffs_.size() strings.
-      // Each KmerSet is converted to KmerSetCompressed and dumped to a string.
+      // Each KmerSet is converted to KmerSetCompressed and dumped to a
+      // string.
 
       {
         std::stringstream ss;
