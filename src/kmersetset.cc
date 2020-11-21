@@ -7,6 +7,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/status/statusor.h"
+#include "boost/asio/post.hpp"
+#include "boost/asio/thread_pool.hpp"
 #include "core/graph.h"
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
@@ -27,6 +29,7 @@ ABSL_FLAG(std::string, decompressor, "",
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
 ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
 ABSL_FLAG(bool, mm, false, "use maximum weighted matching algorithm");
@@ -56,7 +59,7 @@ void Main(const std::vector<std::string>& files) {
 
   std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
 
-  for (int i = 0; i < n_datasets; i++) {
+  const auto read_file = [&](int i, int n_workers) {
     const std::string& file = files[i];
 
     spdlog::info("file = {}", file);
@@ -67,6 +70,20 @@ void Main(const std::vector<std::string>& files) {
     } else {
       kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
           file, decompressor, canonical, n_workers);
+    }
+  };
+
+  if (absl::GetFlag(FLAGS_parallel_input)) {
+    boost::asio::thread_pool pool(n_workers);
+
+    for (int i = 0; i < n_datasets; i++) {
+      boost::asio::post(pool, [&, i] { read_file(i, 1); });
+    }
+
+    pool.join();
+  } else {
+    for (int i = 0; i < n_datasets; i++) {
+      read_file(i, n_workers);
     }
   }
 
