@@ -208,10 +208,11 @@ class KmerSetSet {
 // matching algorithm.
 // If "approximate_graph" is true, it uses a aparse graph for the matching
 // algorithm, cutting half of edges.
-// If "partial_matching" is true, only half of the nodes are matched. For
-// partial matching, the heaviest edges are selected.
-// The same operation can be repeated multiple times, resulting in a recursive
-// structure. "recursion_limit" can be used to configure how deep it goes.
+// If "partial_matching" is true, only half of the nodes are matched. The larger
+// ones are selected.
+// The same operation can be repeated multiple times,
+// resulting in a recursive structure. "recursion_limit" can be used to
+// configure how deep it goes.
 template <int K, typename KeyType>
 class KmerSetSetMM {
  public:
@@ -232,6 +233,26 @@ class KmerSetSetMM {
     spdlog::debug("calculating mates");
 
     {
+      // "partial_matching" affects what kmer sets (nodes) to consider.
+      absl::flat_hash_set<int> nodes;
+
+      if (partial_matching) {
+        // Considers the larger kmer sets only.
+
+        std::vector<int> v;
+        for (int i = 0; i < n; i++) v.push_back(i);
+
+        std::sort(v.begin(), v.end(), [&](int lhs, int rhs) {
+          return kmer_sets[lhs].Size() > kmer_sets[rhs].Size();
+        });
+
+        for (int i = 0; i < n / 2; i++) nodes.insert(v[i]);
+      } else {
+        // Considers all the kmer sets.
+
+        for (int i = 0; i < n; i++) nodes.insert(i);
+      }
+
       // The first two are for nodes, and the last one is for weights.
       std::vector<std::tuple<int, int, int64_t>> edges;
 
@@ -242,8 +263,11 @@ class KmerSetSetMM {
         boost::asio::thread_pool pool(n_workers);
         std::mutex mu;
 
-        for (int i = 0; i < n; i++) {
-          for (int j = i + 1; j < n; j++) {
+        for (int i : nodes) {
+          for (int j : nodes) {
+            // Mekes sure i < j.
+            if (i >= j) continue;
+
             if (approximate_graph && absl::Bernoulli(bitgen, 0.5)) continue;
 
             boost::asio::post(pool, [&, i, j] {
@@ -279,8 +303,6 @@ class KmerSetSetMM {
           if (mates.find(i) == mates.end() && mates.find(j) == mates.end()) {
             mates[i] = j;
             mates[j] = i;
-
-            if (partial_matching && (int)mates.size() * 2 >= n) break;
           }
         }
       } else {
@@ -319,51 +341,11 @@ class KmerSetSetMM {
 
         matching.run();
 
-        if (partial_matching) {
-          // The last element is for weights.
-          std::vector<std::tuple<int, int, int64_t>> mates_candidates;
+        for (int i = 0; i < n; i++) {
+          lemon::ListGraph::Node mate = matching.mate(nodes[i]);
 
-          {
-            // edges_m[i][j] is the weight from i to j.
-            absl::flat_hash_map<int, absl::flat_hash_map<int, int64_t>> edges_m;
-
-            for (const std::tuple<int, int, int64_t>& t : edges) {
-              edges_m[std::get<0>(t)][std::get<1>(t)] = std::get<2>(t);
-            }
-
-            for (int i = 0; i < n; i++) {
-              lemon::ListGraph::Node mate = matching.mate(nodes[i]);
-
-              if (mate != lemon::INVALID && i < ids[mate]) {
-                mates_candidates.emplace_back(i, ids[mate],
-                                              edges_m[i][ids[mate]]);
-              }
-            }
-          }
-
-          // Sorts so that the heaviest one comes first.
-          std::sort(mates_candidates.begin(), mates_candidates.end(),
-                    [](const std::tuple<int, int, int64_t>& lhs,
-                       const std::tuple<int, int, int64_t>& rhs) {
-                      return std::get<2>(lhs) > std::get<2>(rhs);
-                    });
-
-          for (size_t i = 0; i < mates_candidates.size(); i++) {
-            int j, k;
-            std::tie(j, k, std::ignore) = mates_candidates[i];
-
-            mates[j] = k;
-            mates[k] = j;
-
-            if (partial_matching && (int)mates.size() * 2 >= n) break;
-          }
-        } else {
-          for (int i = 0; i < n; i++) {
-            lemon::ListGraph::Node mate = matching.mate(nodes[i]);
-
-            if (mate != lemon::INVALID) {
-              mates[i] = ids[mate];
-            }
+          if (mate != lemon::INVALID) {
+            mates[i] = ids[mate];
           }
         }
       }
