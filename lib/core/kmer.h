@@ -5,6 +5,8 @@
 #include <bitset>
 #include <string>
 
+#include "absl/random/random.h"
+
 template <int K>
 class Kmer {
  public:
@@ -108,6 +110,31 @@ class Kmer {
  private:
   std::bitset<K * 2> bits_;
 };
+
+template <int K>
+Kmer<K> GetRandomKmer() {
+  absl::InsecureBitGen bitgen;
+  Kmer<K> kmer;
+
+  for (int i = 0; i < K; i++) {
+    switch (absl::Uniform(bitgen, 0, 4)) {
+      case 0:
+        kmer.Set(i, 'A');
+        break;
+      case 1:
+        kmer.Set(i, 'G');
+        break;
+      case 2:
+        kmer.Set(i, 'C');
+        break;
+      case 3:
+        kmer.Set(i, 'T');
+        break;
+    }
+  }
+
+  return kmer;
+}
 
 template <int K>
 bool operator==(const Kmer<K>& lhs, const Kmer<K>& rhs) {
