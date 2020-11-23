@@ -16,178 +16,266 @@ template <int K>
 std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   std::string s;
   s.reserve(K + kmers.size() - 1);
+
   s += kmers[0].String();
+
   for (int64_t i = 1; i < (int64_t)kmers.size(); i++) {
+    assert(kmers[i - 1].String().substr(1, K - 1) ==
+           kmers[i].String().substr(0, K - 1));
+
     s += kmers[i].String()[K - 1];
   }
+
   return s;
 }
 
-// Constructs unitigs from a kmer set where canonical kmers are stored.
+// Constructs unitigs from a set of canonical kmers.
 template <int K, typename KeyType>
 std::vector<std::string> GetUnitigsCanonical(
     const KmerSet<K, KeyType>& kmer_set, int n_workers) {
-  // Consider a bi-directional graph.
+  // If the second element is true, the edge connects the same side of two kmers.
+  using Neighbor = std::pair<Kmer<K>, bool>;
 
-  // Returns neighboring k-mers. Complements are considered.
-  const auto get_neighbors = [&](const Kmer<K>& kmer) {
-    absl::flat_hash_set<Kmer<K>> neighbors;
+  // Lists neighbors of the right side of "kmer".
+  const auto GetNeighborsRight = [&](const Kmer<K>& kmer) {
+    std::vector<Neighbor> neighbors;
 
     for (const Kmer<K>& next : kmer.Nexts()) {
-      const Kmer<K> next_canonical = next.Canonical();
-      if (kmer != next_canonical && kmer_set.Contains(next_canonical))
-        neighbors.insert(next_canonical);
-    }
+      if (kmer != next && kmer_set.Contains(next)) {
+        neighbors.emplace_back(next, false);
+      }
 
-    for (const Kmer<K>& prev : kmer.Prevs()) {
-      const Kmer<K> prev_canonical = prev.Canonical();
-      if (kmer != prev_canonical && kmer_set.Contains(prev_canonical))
-        neighbors.insert(prev_canonical);
+      const Kmer<K> next_complement = next.Complement();
+
+      if (kmer != next_complement && kmer_set.Contains(next_complement)) {
+        neighbors.emplace_back(next_complement, true);
+      }
     }
 
     return neighbors;
   };
 
-  // Terminal nodes of simple paths.
-  // Every node in a simple path has degree of 0, 1, or 2.
-  const std::vector<Kmer<K>> terminal_kmers = kmer_set.Find(
+  // Lists neighbors of the left side of "kmer".
+  const auto GetNeighborsLeft = [&](const Kmer<K>& kmer) {
+    std::vector<Neighbor> neighbors;
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (kmer != prev && kmer_set.Contains(prev)) {
+        neighbors.emplace_back(prev, false);
+      }
+
+      const Kmer<K> prev_complement = prev.Complement();
+
+      if (kmer != prev_complement && kmer_set.Contains(prev_complement)) {
+        neighbors.emplace_back(prev_complement, true);
+      }
+    }
+
+    return neighbors;
+  };
+
+  // Returns true if the kmer has no mates on the left side.
+  const auto IsTerminalLeft = [&](const Kmer<K>& kmer) {
+    const std::vector<Neighbor> neighbors = GetNeighborsLeft(kmer);
+
+    if (neighbors.size() != 1) return true;
+
+    Kmer<K> neighbor;
+    bool is_same_side;
+
+    std::tie(neighbor, is_same_side) = neighbors.front();
+
+    if (is_same_side) {
+      if (GetNeighborsLeft(neighbor).size() != 1) return true;
+    } else {
+      if (GetNeighborsRight(neighbor).size() != 1) return true;
+    }
+
+    return false;
+  };
+
+  // Returns true if the kmer has no mates on the right side.
+  const auto IsTerminalRight = [&](const Kmer<K>& kmer) {
+    const std::vector<Neighbor> neighbors = GetNeighborsRight(kmer);
+
+    if (neighbors.size() != 1) return true;
+
+    Kmer<K> neighbor;
+    bool is_same_side;
+
+    std::tie(neighbor, is_same_side) = neighbors.front();
+
+    if (is_same_side) {
+      if (GetNeighborsRight(neighbor).size() != 1) return true;
+    } else {
+      if (GetNeighborsLeft(neighbor).size() != 1) return true;
+    }
+
+    return false;
+  };
+
+  // kmers that has no mates on the left side, but has a mate on the right side.
+  const std::vector<Kmer<K>> terminals_left = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
-        const auto neighbors = get_neighbors(kmer);
-
-        if (neighbors.size() >= 3) return false;
-        if (neighbors.size() <= 1) return true;
-
-        // Here, neighbors.size() is 2.
-
-        for (const Kmer<K>& neighbor : neighbors)
-          if (get_neighbors(neighbor).size() >= 3) return true;
-
-        return false;
+        return IsTerminalLeft(kmer) && !IsTerminalRight(kmer);
       },
       n_workers);
 
-  // If "circular" is false, finds a simple path from "start".
-  // "start" should be one of "terminal_kmers" in this case.
-  // If "circular" is true, finds a path in a non-branching loop.
-  // "start" should belong to a non-branching loop in this case.
-  const auto find_path = [&](const Kmer<K>& start, bool circular) {
+  // kmers that has no mates on the right side, but has a mate on the left side.
+  const std::vector<Kmer<K>> terminals_right = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
+        return !IsTerminalLeft(kmer) && IsTerminalRight(kmer);
+      },
+      n_workers);
+
+  // kmers that has no mates on the both sides.
+  const std::vector<Kmer<K>> terminals_both = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
+        return IsTerminalLeft(kmer) && IsTerminalRight(kmer);
+      },
+      n_workers);
+
+  // If "is_right_side" is true, finds a path from the right side of "start".
+  // If "is_right_side" is false, finds a path from the left side of "start".
+  const auto FindPath = [&](Kmer<K> start, bool is_right_side) {
+    Kmer<K> current = start;
     std::vector<Kmer<K>> path;
 
-    Kmer<K> current = start;
-
     while (true) {
-      path.push_back(current);
+      path.push_back(is_right_side ? current : current.Complement());
 
-      std::vector<Kmer<K>> unvisited_neighbors;
-
-      for (const Kmer<K>& neighbor : get_neighbors(current)) {
-        if (get_neighbors(neighbor).size() <= 2 &&
-            std::find(path.begin(), path.end(), neighbor) == path.end())
-          unvisited_neighbors.push_back(neighbor);
-      }
-
-      if (!circular) {
-        assert(unvisited_neighbors.size() <= 1);
+      if (is_right_side) {
+        if (IsTerminalRight(current)) break;
       } else {
-        circular = false;
+        if (IsTerminalLeft(current)) break;
       }
 
-      if (unvisited_neighbors.size() == 0) break;
+      std::vector<Neighbor> neighbors = is_right_side
+                                            ? GetNeighborsRight(current)
+                                            : GetNeighborsLeft(current);
 
-      const Kmer<K> unvisited_neighbor = unvisited_neighbors[0];
+      assert(neighbors.size() == 1);
 
-      current = unvisited_neighbor;
+      bool is_same_side;
+
+      std::tie(current, is_same_side) = neighbors.front();
+
+      if (is_same_side) is_right_side = !is_right_side;
     }
 
     return path;
   };
 
-  // Finds unitigs in a path.
-  // As k-mers in a path can either be used as it is or as its complement,
-  // a path can be split into multiple segments, leading to multiple unitigs.
-  const auto get_unitigs = [](const std::vector<Kmer<K>>& path) {
-    // Returns true if the (K-1)-suffix of "lhs" is equal to the (K-1)-prefix of
-    // "rhs".
-    const auto is_joinable = [](const Kmer<K>& lhs, const Kmer<K>& rhs) {
-      for (int i = 0; i < K - 1; i++) {
-        if (lhs.Get(i + 1) != rhs.Get(i)) return false;
-      }
-
-      return true;
-    };
-
-    // Splits the path into multiple paths each of which can be made into a
-    // unitig by using "GetUnitigFromKmers()".
-    std::vector<std::vector<Kmer<K>>> joinable_paths;
-
-    for (const Kmer<K>& kmer : path) {
-      if (joinable_paths.size() &&
-          is_joinable(joinable_paths.back().back(), kmer)) {
-        joinable_paths.back().push_back(kmer);
-      } else if (joinable_paths.size() &&
-                 is_joinable(joinable_paths.back().back(), kmer.Complement())) {
-        joinable_paths.back().push_back(kmer.Complement());
-      } else {
-        joinable_paths.push_back(std::vector<Kmer<K>>{kmer});
-      }
-    }
-
-    std::vector<std::string> unitigs;
-
-    for (const std::vector<Kmer<K>>& path : joinable_paths) {
-      unitigs.push_back(GetUnitigFromKmers(path));
-    }
-
-    return unitigs;
-  };
-
   std::vector<std::string> unitigs;
   absl::flat_hash_set<Kmer<K>> visited;
 
-  // For each kmer in terminal_kmers, finds the unitig from it.
+  const auto MoveFromBuffer = [&](std::mutex& mu_unitigs,
+                                  std::mutex& mu_visited,
+                                  std::vector<std::string>& buf_unitigs,
+                                  std::vector<Kmer<K>>& buf_visited) {
+    bool done_unitigs = false;
+    bool done_visited = false;
+
+    while (!done_unitigs || !done_visited) {
+      if (!done_unitigs && mu_unitigs.try_lock()) {
+        for (std::string& unitig : buf_unitigs) {
+          unitigs.push_back(std::move(unitig));
+        }
+
+        mu_unitigs.unlock();
+        done_unitigs = true;
+      }
+
+      if (!done_visited && mu_visited.try_lock()) {
+        for (const Kmer<K>& kmer : buf_visited) {
+          visited.insert(kmer);
+        }
+
+        mu_visited.unlock();
+        done_visited = true;
+      }
+    }
+  };
+
+  // Processes kmers in terminals_both.
   {
     std::vector<std::thread> threads;
     std::mutex mu_unitigs;
     std::mutex mu_visited;
 
     for (const Range& range :
-         Range(0, terminal_kmers.size()).Split(n_workers)) {
+         Range(0, terminals_both.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<std::string> buf_unitigs;
-        absl::flat_hash_set<Kmer<K>> buf_visited;
+        std::vector<Kmer<K>> buf_visited;
 
-        range.ForEach([&](int i) {
-          const Kmer<K> terminal_kmer = terminal_kmers[i];
-
-          std::vector<Kmer<K>> path = find_path(terminal_kmer, false);
-
-          // Not to process the same path for multiple times.
-          if (path[0] < path[path.size() - 1]) return;
-
-          for (const Kmer<K>& kmer : path) buf_visited.insert(kmer);
-
-          for (const std::string& unitig : get_unitigs(path)) {
-            buf_unitigs.push_back(unitig);
-          }
+        range.ForEach([&](int64_t i) {
+          const Kmer<K>& kmer = terminals_both[i];
+          buf_unitigs.push_back(kmer.String());
+          buf_visited.push_back(kmer);
         });
 
-        // 3 * n_workers threads are created in total, but no more than
-        // n_workers threads are active at any point in time.
+        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+      });
+    }
 
-        std::vector<std::thread> threads;
+    for (std::thread& t : threads) t.join();
+  }
 
-        threads.emplace_back([&] {
-          std::lock_guard lck(mu_unitigs);
-          for (std::string& unitig : buf_unitigs)
-            unitigs.push_back(std::move(unitig));
+  // Processes paths from terminals_left.
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu_unitigs;
+    std::mutex mu_visited;
+
+    for (const Range& range :
+         Range(0, terminals_left.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf_unitigs;
+        std::vector<Kmer<K>> buf_visited;
+
+        range.ForEach([&](int64_t i) {
+          std::vector<Kmer<K>> path = FindPath(terminals_left[i], true);
+
+          if (path.front().Canonical() < path.back().Canonical()) return;
+
+          for (const Kmer<K>& kmer : path)
+            buf_visited.push_back(kmer.Canonical());
+
+          buf_unitigs.push_back(GetUnitigFromKmers(path));
         });
 
-        threads.emplace_back([&] {
-          std::lock_guard lck(mu_visited);
-          for (const Kmer<K>& kmer : buf_visited) visited.insert(kmer);
+        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  // Processes paths from terminals_right.
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu_unitigs;
+    std::mutex mu_visited;
+
+    for (const Range& range :
+         Range(0, terminals_right.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf_unitigs;
+        std::vector<Kmer<K>> buf_visited;
+
+        range.ForEach([&](int64_t i) {
+          std::vector<Kmer<K>> path = FindPath(terminals_right[i], false);
+
+          if (path.front().Canonical() < path.back().Canonical()) return;
+
+          for (const Kmer<K>& kmer : path)
+            buf_visited.push_back(kmer.Canonical());
+
+          buf_unitigs.push_back(GetUnitigFromKmers(path));
         });
 
-        for (std::thread& t : threads) t.join();
+        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
       });
     }
 
@@ -195,39 +283,32 @@ std::vector<std::string> GetUnitigsCanonical(
   }
 
   // Considers non-branching loops.
-  // This is hard to parallelize.
-  {
-    const std::vector<Kmer<K>> nodes_in_non_branching_loop = kmer_set.Find(
-        [&](const Kmer<K>& kmer) {
-          return get_neighbors(kmer).size() == 2 &&
-                 visited.find(kmer) == visited.end();
-        },
-        n_workers);
 
-    for (const Kmer<K>& kmer : nodes_in_non_branching_loop) {
-      if (visited.find(kmer) != visited.end()) continue;
+  std::vector<Kmer<K>> not_visited = kmer_set.Find(
+      [&](const Kmer<K>& kmer) { return visited.find(kmer) == visited.end(); },
+      n_workers);
 
-      std::vector<Kmer<K>> path = find_path(kmer, true);
+  for (const Kmer<K>& start : not_visited) {
+    if (visited.find(start) != visited.end()) continue;
 
-      for (const Kmer<K>& kmer : path) {
-        visited.insert(kmer);
-      }
+    bool is_right_side = true;
+    Kmer<K> current = start;
+    std::vector<Kmer<K>> path;
 
-      for (const std::string& unitig : get_unitigs(path)) {
-        unitigs.push_back(unitig);
-      }
+    while (visited.find(current) == visited.end()) {
+      visited.insert(current);
+      path.push_back(is_right_side ? current : current.Complement());
+
+      std::vector<Neighbor> neighbors = is_right_side
+                                            ? GetNeighborsRight(current)
+                                            : GetNeighborsLeft(current);
+      assert(neighbors.size() == 1);
+      bool is_same_side;
+      std::tie(current, is_same_side) = neighbors.front();
+      if (is_same_side) is_right_side = !is_right_side;
     }
-  }
 
-  // Kmers with branches are themselves treated as unitigs.
-  {
-    const std::vector<Kmer<K>> branching_kmers = kmer_set.Find(
-        [&](const Kmer<K>& kmer) { return get_neighbors(kmer).size() >= 3; },
-        n_workers);
-
-    for (const Kmer<K>& kmer : branching_kmers) {
-      unitigs.push_back(kmer.String());
-    }
+    unitigs.push_back(GetUnitigFromKmers(path));
   }
 
   return unitigs;
