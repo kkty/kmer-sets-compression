@@ -51,6 +51,7 @@ foreach(
   NAME
   kmer
   kmer_counter
+  kmer_set_compressed
   kmer_set
   range
   graph
