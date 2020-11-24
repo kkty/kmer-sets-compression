@@ -26,6 +26,8 @@ ABSL_FLAG(std::string, compressor, "cat", "specify compressor for output");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(bool, check, false,
+          "does compression & decompression to see if it is working");
 ABSL_FLAG(std::string, in, "", "input file name");
 ABSL_FLAG(std::string, out, "", "output file name");
 
@@ -61,10 +63,14 @@ void Main() {
   spdlog::info("constructed kmer_counter");
   spdlog::info("constructing kmer_set");
 
-  const auto [kmer_set, cutoff_count] =
+  KmerSet<K, KeyType> kmer_set;
+  int64_t cutoff_count;
+
+  std::tie(kmer_set, cutoff_count) =
       kmer_counter.ToSet(absl::GetFlag(FLAGS_cutoff), n_workers);
 
   spdlog::info("constructed kmer_set");
+  spdlog::info("cutoff_count = {}", cutoff_count);
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
@@ -77,10 +83,20 @@ void Main() {
   spdlog::info("kmer_set_compressed.Size() = {}",
                kmer_set_compressed.Size(n_workers));
 
-  std::string output_file_name;
+  if (absl::GetFlag(FLAGS_check)) {
+    const KmerSet<K, KeyType> decompressed =
+        kmer_set_compressed.ToKmerSet(canonical, n_workers);
+    if (!kmer_set.Equals(decompressed, n_workers)) {
+      spdlog::error("decompressed is not equal to kmer_set");
+      std::exit(1);
+    }
+  }
 
-  kmer_set_compressed.Dump(absl::GetFlag(FLAGS_out),
-                           absl::GetFlag(FLAGS_compressor));
+  std::string output_file_name = absl::GetFlag(FLAGS_out);
+
+  if (!output_file_name.empty()) {
+    kmer_set_compressed.Dump(output_file_name, absl::GetFlag(FLAGS_compressor));
+  }
 }
 
 int main(int argc, char** argv) {
