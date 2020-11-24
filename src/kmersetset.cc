@@ -62,7 +62,7 @@ void Main(const std::vector<std::string>& files) {
   const auto read_file = [&](int i, int n_workers) {
     const std::string& file = files[i];
 
-    spdlog::info("file = {}", file);
+    spdlog::info("reading {}", file);
 
     if (absl::GetFlag(FLAGS_type) == "fastq") {
       kmer_sets[i] = GetKmerSetFromFASTQFile<K, KeyType>(
@@ -71,8 +71,11 @@ void Main(const std::vector<std::string>& files) {
       kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
           file, decompressor, canonical, n_workers);
     }
+
+    spdlog::info("finished reading {}", file);
   };
 
+  // Reading files in parallel may use a lot of memory.
   if (absl::GetFlag(FLAGS_parallel_input)) {
     boost::asio::thread_pool pool(n_workers);
 
