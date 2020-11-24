@@ -16,7 +16,7 @@
 #include "core/range.h"
 #include "core/unitigs.h"
 
-// Represents a set of kmers with unitigs, thereby reducing space.
+// Represents a set of kmers with SPSS, thereby reducing space.
 template <int K, typename KeyType>
 class KmerSetCompressed {
  public:
@@ -24,15 +24,15 @@ class KmerSetCompressed {
   // storing canonical kmers, "canonical" should be true.
   static KmerSetCompressed FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
                                        bool canonical, int n_workers) {
-    std::vector<std::string> unitigs;
+    std::vector<std::string> spss;
 
     if (canonical) {
-      unitigs = GetUnitigsCanonical<K, KeyType>(kmer_set, n_workers);
+      spss = GetSPSSCanonical<K, KeyType>(kmer_set, n_workers);
     } else {
-      unitigs = GetUnitigs<K, KeyType>(kmer_set, n_workers);
+      spss = GetUnitigs<K, KeyType>(kmer_set, n_workers);
     }
 
-    return KmerSetCompressed(std::move(unitigs));
+    return KmerSetCompressed(std::move(spss));
   }
 
   // Constructs a KmerSet.
@@ -42,12 +42,12 @@ class KmerSetCompressed {
     std::vector<std::thread> threads;
     std::mutex mu;
 
-    for (const Range& range : Range(0, unitigs_.size()).Split(n_workers)) {
+    for (const Range& range : Range(0, spss_.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
         range.ForEach([&](int i) {
-          const std::string s = unitigs_[i];
+          const std::string s = spss_[i];
           for (size_t i = 0; i < s.size() + 1 - K; i++) {
             const Kmer<K> kmer(s.substr(i, K));
             buf.push_back(canonical ? kmer.Canonical() : kmer);
@@ -67,13 +67,13 @@ class KmerSetCompressed {
   // Dumps data to a file.
   // Dumped data can be read by Load().
   void Dump(const std::string& file_name, const std::string& compressor) const {
-    WriteLines(file_name, compressor, unitigs_);
+    WriteLines(file_name, compressor, spss_);
   }
 
   // Dumps data to a vector of strings.
   // Dumped data can be read by Load().
   // Each string does not contain whitespaces or line breaks.
-  std::vector<std::string> Dump() const { return unitigs_; }
+  std::vector<std::string> Dump() const { return spss_; }
 
   // Loads data from a file.
   static KmerSetCompressed Load(const std::string& file_name,
@@ -91,9 +91,9 @@ class KmerSetCompressed {
     std::vector<std::thread> threads;
     std::atomic_int64_t size = 0;
 
-    for (const Range& range : Range(0, unitigs_.size()).Split(n_workers)) {
+    for (const Range& range : Range(0, spss_.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int i) { size += unitigs_[i].length(); });
+        range.ForEach([&](int i) { size += spss_[i].length(); });
       });
     }
 
@@ -103,10 +103,9 @@ class KmerSetCompressed {
   }
 
  private:
-  KmerSetCompressed(std::vector<std::string> unitigs)
-      : unitigs_(std::move(unitigs)){};
+  KmerSetCompressed(std::vector<std::string> spss) : spss_(std::move(spss)){};
 
-  std::vector<std::string> unitigs_;
+  std::vector<std::string> spss_;
 };
 
 #endif
