@@ -15,6 +15,7 @@
 #include "core/kmer_set.h"
 #include "core/kmer_set_compressed.h"
 #include "core/kmer_set_set.h"
+#include "flags.h"
 #include "log.h"
 #include "spdlog/spdlog.h"
 
@@ -28,15 +29,12 @@ ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(bool, check, false,
           "does compression & decompression to see if it is working");
-ABSL_FLAG(std::string, in, "", "input file name");
 ABSL_FLAG(std::string, out, "", "output file name");
 
 template <int K, typename KeyType>
-void Main() {
+void Main(const std::string& file_name) {
   InitDefaultLogger();
   if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
-
-  const std::string file_name = absl::GetFlag(FLAGS_in);
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const bool canonical = absl::GetFlag(FLAGS_canonical);
@@ -100,26 +98,26 @@ void Main() {
 }
 
 int main(int argc, char** argv) {
-  absl::ParseCommandLine(argc, argv);
+  const std::string file_name = ParseFlags(argc, argv)[0];
 
   const int k = absl::GetFlag(FLAGS_k);
 
   switch (k) {
     case 15:
       // 15 * 2 - 16 = 14 bits are used to select buckets.
-      Main<15, uint16_t>();
+      Main<15, uint16_t>(file_name);
       break;
     case 19:
       // 19 * 2 - 16 = 22 bits are used to select buckets.
-      Main<19, uint16_t>();
+      Main<19, uint16_t>(file_name);
       break;
     case 23:
       // 23 * 2 - 32 = 14 bits are used to select buckets.
-      Main<23, uint32_t>();
+      Main<23, uint32_t>(file_name);
       break;
     case 27:
       // 27 * 2 - 32 = 22 bits are used to select buckets.
-      Main<27, uint32_t>();
+      Main<27, uint32_t>(file_name);
       break;
     default:
       spdlog::error("unsupported k value");
