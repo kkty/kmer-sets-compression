@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
@@ -29,11 +30,35 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   return s;
 }
 
+std::string Complement(std::string s) {
+  std::reverse(s.begin(), s.end());
+
+  for (size_t i = 0; i < s.length(); i++) {
+    switch (s[i]) {
+      case 'A':
+        s[i] = 'T';
+        break;
+      case 'C':
+        s[i] = 'G';
+        break;
+      case 'G':
+        s[i] = 'C';
+        break;
+      case 'T':
+        s[i] = 'A';
+        break;
+    }
+  }
+
+  return s;
+}
+
 // Constructs unitigs from a set of canonical kmers.
 template <int K, typename KeyType>
 std::vector<std::string> GetUnitigsCanonical(
     const KmerSet<K, KeyType>& kmer_set, int n_workers) {
-  // If the second element is true, the edge connects the same side of two kmers.
+  // If the second element is true, the edge connects the same side of two
+  // kmers.
   using Neighbor = std::pair<Kmer<K>, bool>;
 
   // Lists neighbors of the right side of "kmer".
@@ -312,6 +337,538 @@ std::vector<std::string> GetUnitigsCanonical(
   }
 
   return unitigs;
+}
+
+// Constructs a small-weight SPSS from a set of canonical kmers.
+template <int K, typename KeyType>
+std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
+                                          int n_workers) {
+  const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
+  const int64_t n = unitigs.size();
+
+  // Considers a graph where node i represents unitigs[i].
+  // Each node has two sides just as the one considered in
+  // GetUnitigsCanonical().
+
+  // If i is in prefixes[kmer], the unitigs.substr(0, K) == kmer.String().
+  absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> prefixes;
+
+  // Similar to prefixes, but suffixes are considered.
+  absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> suffixes;
+
+  // Constructs "prefixes" and "suffixes".
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu_prefixes;
+    std::mutex mu_suffixes;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> buf_prefixes;
+        absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> buf_suffixes;
+
+        range.ForEach([&](int64_t i) {
+          const std::string& unitig = unitigs[i];
+          const Kmer<K> prefix(unitig.substr(0, K));
+          const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+          buf_prefixes[prefix].push_back(i);
+          buf_suffixes[suffix].push_back(i);
+        });
+
+        // Moves from buffers.
+
+        bool done_prefixes = false;
+        bool done_suffixes = false;
+
+        while (!done_prefixes || !done_suffixes) {
+          if (!done_prefixes && mu_prefixes.try_lock()) {
+            prefixes.insert(buf_prefixes.begin(), buf_prefixes.end());
+            mu_prefixes.unlock();
+            done_prefixes = true;
+          }
+
+          if (!done_suffixes && mu_suffixes.try_lock()) {
+            suffixes.insert(buf_suffixes.begin(), buf_suffixes.end());
+            mu_suffixes.unlock();
+            done_suffixes = true;
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  // If the second element is true, the edge connects the same side of two
+  // nodes.
+  using Edge = std::pair<int64_t, bool>;
+
+  // edge_left[i] is the edge incident to the left side of i.
+  absl::flat_hash_map<int64_t, Edge> edges_left;
+
+  // edge_right[i] is the edge incident to the right side of i.
+  absl::flat_hash_map<int64_t, Edge> edges_right;
+
+  // Calculates "edges_left" and "edges_right".
+  {
+    // Nodes are divided into some buckets to allow parallel processing.
+    const int n_buckets = n_workers * 64;
+
+    std::vector<std::thread> threads;
+    std::vector<std::mutex> mus(n_buckets);
+    std::vector<absl::flat_hash_map<int64_t, Edge>> buf_edges_left(n_buckets);
+    std::vector<absl::flat_hash_map<int64_t, Edge>> buf_edges_right(n_buckets);
+
+    // Acquires locks for node i and j.
+    const auto AcquireLock = [&](int64_t i, int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].lock();
+        return;
+      }
+
+      mus[std::min(bucket_i, bucket_j)].lock();
+      mus[std::max(bucket_i, bucket_j)].lock();
+    };
+
+    // Releases locks for node i and j.
+    const auto ReleaseLock = [&](int64_t i, int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].unlock();
+        return;
+      }
+
+      mus[std::max(bucket_i, bucket_j)].unlock();
+      mus[std::min(bucket_i, bucket_j)].unlock();
+    };
+
+    // Returns true if an edge is indicent to the left side of i.
+    const auto HasEdgeLeft = [&](int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edges_left[bucket].find(i) != buf_edges_left[bucket].end();
+    };
+
+    // Returns true if an edge is indicent to the right side of i.
+    const auto HasEdgeRight = [&](int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edges_right[bucket].find(i) != buf_edges_right[bucket].end();
+    };
+
+    // Adds an edge incident to the left side of i.
+    const auto AddEdgeLeft = [&](int64_t i, int64_t j, bool is_same_side) {
+      int bucket_i = i % n_buckets;
+      buf_edges_left[bucket_i][i] = {j, is_same_side};
+    };
+
+    // Adds an edge incident to the right side of i.
+    const auto AddEdgeRight = [&](int64_t i, int64_t j, bool is_same_side) {
+      int bucket_i = i % n_buckets;
+      buf_edges_right[bucket_i][i] = {j, is_same_side};
+    };
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        range.ForEach([&](int64_t i) {
+          const std::string& unitig = unitigs[i];
+
+          const Kmer<K> prefix(unitig.substr(0, K));
+          const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+
+          for (const Kmer<K>& suffix_next : suffix.Nexts()) {
+            if (prefixes.find(suffix_next) != prefixes.end()) {
+              for (int64_t j : prefixes[suffix_next]) {
+                if (i == j) continue;
+
+                // There is an edge from the right side from i to the left
+                // side of j.
+
+                AcquireLock(i, j);
+
+                if (!HasEdgeRight(i) && !HasEdgeLeft(j)) {
+                  AddEdgeRight(i, j, false);
+                  AddEdgeLeft(j, i, false);
+                }
+
+                ReleaseLock(i, j);
+              }
+            }
+
+            const Kmer<K> suffix_next_complement = suffix_next.Complement();
+
+            if (suffixes.find(suffix_next_complement) != suffixes.end()) {
+              for (int64_t j : suffixes[suffix_next_complement]) {
+                if (i == j) continue;
+
+                // There is an edge from the right side from i to the right side
+                // of j.
+
+                AcquireLock(i, j);
+
+                if (!HasEdgeRight(i) && !HasEdgeRight(j)) {
+                  AddEdgeRight(i, j, true);
+                  AddEdgeRight(j, i, true);
+                }
+
+                ReleaseLock(i, j);
+              }
+            }
+          }
+
+          for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
+            if (suffixes.find(prefix_prev) != suffixes.end()) {
+              for (int64_t j : suffixes[prefix_prev]) {
+                if (i == j) continue;
+
+                // There is an edge from the left side of i to the right side of
+                // j.
+
+                AcquireLock(i, j);
+
+                if (!HasEdgeLeft(i) && !HasEdgeRight(j)) {
+                  AddEdgeLeft(i, j, false);
+                  AddEdgeRight(j, i, false);
+                }
+
+                ReleaseLock(i, j);
+              }
+            }
+
+            const Kmer<K> prefix_prev_complement = prefix_prev.Complement();
+
+            if (prefixes.find(prefix_prev_complement) != prefixes.end()) {
+              for (int64_t j : prefixes[prefix_prev_complement]) {
+                if (i == j) continue;
+
+                // There is an edge from the left side of i to the left side of
+                // j.
+
+                AcquireLock(i, j);
+
+                if (!HasEdgeLeft(i) && !HasEdgeLeft(j)) {
+                  AddEdgeLeft(i, j, true);
+                  AddEdgeLeft(j, i, true);
+                }
+
+                ReleaseLock(i, j);
+              }
+            }
+          }
+        });
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    // Moves from buffers.
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      boost::asio::post(pool, [&] {
+        for (int i = 0; i < n_buckets; i++) {
+          edges_left.insert(buf_edges_left[i].begin(), buf_edges_left[i].end());
+        }
+      });
+
+      boost::asio::post(pool, [&] {
+        for (int i = 0; i < n_buckets; i++) {
+          edges_right.insert(buf_edges_right[i].begin(),
+                             buf_edges_right[i].end());
+        }
+      });
+
+      pool.join();
+    }
+  }
+
+  // Nodes without edges on the left side.
+  std::vector<int64_t> terminals_left;
+  // Nodes without edges on the right side.
+  std::vector<int64_t> terminals_right;
+  // Nodes without edges on both sides.
+  std::vector<int64_t> terminals_both;
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu_terminals_left;
+    std::mutex mu_terminals_right;
+    std::mutex mu_terminals_both;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<int64_t> buf_terminals_left;
+        std::vector<int64_t> buf_terminals_right;
+        std::vector<int64_t> buf_terminals_both;
+
+        range.ForEach([&](int64_t i) {
+          const bool has_left = edges_left.find(i) != edges_left.end();
+          const bool has_right = edges_right.find(i) != edges_right.end();
+
+          if (!has_left && !has_right) {
+            buf_terminals_both.push_back(i);
+          } else if (!has_left) {
+            buf_terminals_left.push_back(i);
+          } else if (!has_right) {
+            buf_terminals_right.push_back(i);
+          }
+        });
+
+        // Moves from buffers.
+
+        bool done_terminals_left = false;
+        bool done_terminals_right = false;
+        bool done_terminals_both = false;
+
+        while (!done_terminals_left || !done_terminals_right ||
+               !done_terminals_both) {
+          if (!done_terminals_left && mu_terminals_left.try_lock()) {
+            terminals_left.insert(terminals_left.end(),
+                                  buf_terminals_left.begin(),
+                                  buf_terminals_left.end());
+            mu_terminals_left.unlock();
+            done_terminals_left = true;
+          }
+
+          if (!done_terminals_right && mu_terminals_right.try_lock()) {
+            terminals_right.insert(terminals_right.end(),
+                                   buf_terminals_right.begin(),
+                                   buf_terminals_right.end());
+            mu_terminals_right.unlock();
+            done_terminals_right = true;
+          }
+
+          if (!done_terminals_both && mu_terminals_both.try_lock()) {
+            terminals_both.insert(terminals_both.end(),
+                                  buf_terminals_both.begin(),
+                                  buf_terminals_both.end());
+            mu_terminals_both.unlock();
+            done_terminals_both = true;
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  // If the second pair of a pair is true, the compliment of the unitig should
+  // be considered when concatenating.
+  using Path = std::vector<std::pair<int64_t, bool>>;
+
+  // If is_right_side is true, finds a path from the right side of start.
+  // If is_right_side is false, finds a path from the left side of start.
+  const auto FindPath = [&](int64_t start, bool is_right_side) {
+    Path path;
+
+    int64_t current = start;
+
+    while (true) {
+      bool is_same_side;
+
+      if (is_right_side) {
+        path.emplace_back(current, false);
+        if (edges_right.find(current) == edges_right.end()) break;
+        std::tie(current, is_same_side) = edges_right[current];
+      } else {
+        path.emplace_back(current, true);
+        if (edges_left.find(current) == edges_left.end()) break;
+        std::tie(current, is_same_side) = edges_left[current];
+      }
+
+      if (is_same_side) is_right_side = !is_right_side;
+    }
+
+    return path;
+  };
+
+  const auto GetStringFromPath = [&](const Path& path) {
+    assert(path.size() > 0);
+
+    std::string s;
+    bool is_first = true;
+
+    for (const std::pair<int64_t, bool>& p : path) {
+      if (is_first) {
+        s += p.second ? Complement(unitigs[p.first]) : unitigs[p.first];
+        is_first = false;
+      } else {
+        s += p.second ? Complement(unitigs[p.first])
+                            .substr(K - 1, unitigs[p.first].length() - (K - 1))
+                      : unitigs[p.first].substr(
+                            K - 1, unitigs[p.first].length() - (K - 1));
+      }
+    }
+
+    return s;
+  };
+
+  std::vector<std::string> spss;
+  absl::flat_hash_set<int64_t> visited;
+
+  // Constructs "spss" and "visited".
+  {
+    const auto MoveFromBuffer = [&](std::mutex& mu_spss, std::mutex& mu_visited,
+                                    std::vector<std::string>& buf_spss,
+                                    std::vector<int64_t>& buf_visited) {
+      bool done_spss = false;
+      bool done_visited = false;
+
+      while (!done_spss || !done_visited) {
+        if (!done_spss && mu_spss.try_lock()) {
+          for (std::string& s : buf_spss) spss.push_back(std::move(s));
+          mu_spss.unlock();
+          done_spss = true;
+        }
+
+        if (!done_visited && mu_visited.try_lock()) {
+          visited.insert(buf_visited.begin(), buf_visited.end());
+          mu_visited.unlock();
+          done_visited = true;
+        }
+      }
+    };
+
+    // Considers paths from terminals_left.
+    {
+      std::vector<std::thread> threads;
+      std::mutex mu_spss;
+      std::mutex mu_visited;
+
+      for (const Range& range :
+           Range(0, terminals_left.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          std::vector<std::string> buf_spss;
+          std::vector<int64_t> buf_visited;
+
+          range.ForEach([&](int64_t i) {
+            Path path = FindPath(terminals_left[i], true);
+
+            if (path.front().first > path.back().first) return;
+
+            for (size_t j = 0; j < path.size(); j++) {
+              buf_visited.push_back(path[j].first);
+            }
+
+            buf_spss.push_back(GetStringFromPath(path));
+          });
+
+          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    // Considers paths from terminals_right.
+    {
+      std::vector<std::thread> threads;
+      std::mutex mu_spss;
+      std::mutex mu_visited;
+
+      for (const Range& range :
+           Range(0, terminals_right.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          std::vector<std::string> buf_spss;
+          std::vector<int64_t> buf_visited;
+
+          range.ForEach([&](int64_t i) {
+            Path path = FindPath(terminals_right[i], false);
+
+            if (path.front().first > path.back().first) return;
+
+            for (size_t j = 0; j < path.size(); j++) {
+              buf_visited.push_back(path[j].first);
+            }
+
+            buf_spss.push_back(GetStringFromPath(path));
+          });
+
+          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    // Considers nodes in terminal_both.
+    {
+      std::vector<std::thread> threads;
+      std::mutex mu_spss;
+      std::mutex mu_visited;
+
+      for (const Range& range :
+           Range(0, terminals_both.size()).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          std::vector<std::string> buf_spss;
+          std::vector<int64_t> buf_visited;
+
+          range.ForEach([&](int64_t i) {
+            buf_visited.push_back(terminals_both[i]);
+            buf_spss.push_back(unitigs[terminals_both[i]]);
+          });
+
+          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+  }
+
+  // Considers non-branching loops.
+  {
+    std::vector<int64_t> not_visited;
+
+    // Constructs "not_visited".
+    {
+      std::vector<std::thread> threads;
+      std::mutex mu;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          std::vector<int64_t> buf;
+
+          range.ForEach([&](int64_t i) {
+            if (visited.find(i) == visited.end()) {
+              buf.push_back(i);
+            }
+          });
+
+          std::lock_guard lck(mu);
+          not_visited.insert(not_visited.end(), buf.begin(), buf.end());
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    for (int64_t start : not_visited) {
+      if (visited.find(start) != visited.end()) continue;
+
+      Path path;
+      int64_t current = start;
+      bool is_right_side = true;
+
+      while (visited.find(current) == visited.end()) {
+        visited.insert(current);
+        path.emplace_back(current, !is_right_side);
+
+        bool is_same_side;
+        std::tie(current, is_same_side) =
+            is_right_side ? edges_right[current] : edges_left[current];
+
+        if (is_same_side) is_right_side = !is_right_side;
+      }
+
+      spss.push_back(GetStringFromPath(path));
+    }
+  }
+
+  return spss;
 }
 
 // Constructs unitigs from a kmer set.
