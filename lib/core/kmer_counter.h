@@ -198,8 +198,8 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, KeyType>, int64_t> ToSet(ValueType cutoff,
-                                                int n_workers) const {
+  std::pair<KmerSet<K, KeyType>, int64_t> ToKmerSet(ValueType cutoff,
+                                                    int n_workers) const {
     KmerSet<K, KeyType> set;
     std::mutex mu;
 
@@ -231,6 +231,7 @@ class KmerCounter {
     return {set, (int64_t)cutoff_count};
   }
 
+  // Returns the count for a kmer.
   ValueType Get(const Kmer<K>& kmer) const {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
     auto it = buckets_[bucket].find(key);
@@ -238,9 +239,10 @@ class KmerCounter {
     return it->second;
   }
 
-  KmerCounter& Add(const Kmer<K>& kmer, ValueType count) {
+  // Increments the count for a kmer.
+  KmerCounter& Add(const Kmer<K>& kmer, ValueType v) {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
-    buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], count);
+    buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], v);
     return *this;
   }
 
@@ -269,8 +271,9 @@ class KmerCounter {
     return *this;
   }
 
-  static KmerCounter FromSet(const KmerSet<K, KeyType>& kmer_set,
-                             int n_workers) {
+  // Constructs a KmerCounter from a KmerSet. The counts are set to 1.
+  static KmerCounter FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
+                                 int n_workers) {
     KmerCounter kmer_counter;
 
     kmer_set.ForEachBucket(

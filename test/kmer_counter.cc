@@ -2,8 +2,8 @@
 
 #include <tuple>
 
-#include "gtest/gtest.h"
 #include "core/kmer.h"
+#include "gtest/gtest.h"
 
 TEST(KmerCounter, AddAndGet) {
   const int K = 5;
@@ -46,7 +46,7 @@ TEST(KmerCounter, Multiply) {
   ASSERT_EQ(kmer_counter.Get(kmer2), 6);
 }
 
-TEST(KmerCounter, ToSetAndFromSet) {
+TEST(KmerCounter, ToAndFromKmerSet) {
   const int K = 5;
   const int n_workers = 1;
   using KeyType = uint8_t;
@@ -61,7 +61,7 @@ TEST(KmerCounter, ToSetAndFromSet) {
 
   KmerSet<K, KeyType> kmer_set;
   int cutoff;
-  std::tie(kmer_set, cutoff) = kmer_counter.ToSet(3, n_workers);
+  std::tie(kmer_set, cutoff) = kmer_counter.ToKmerSet(3, n_workers);
 
   ASSERT_EQ(cutoff, 2);
   ASSERT_EQ(kmer_set.Size(), 2);
@@ -69,7 +69,7 @@ TEST(KmerCounter, ToSetAndFromSet) {
   ASSERT_TRUE(kmer_set.Contains(Kmer<K>("TTTTT")));
 
   KmerCounter<K, KeyType, ValueType> reconstructed_kmer_counter =
-      KmerCounter<K, KeyType, ValueType>::FromSet(kmer_set, n_workers);
+      KmerCounter<K, KeyType, ValueType>::FromKmerSet(kmer_set, n_workers);
 
   ASSERT_EQ(reconstructed_kmer_counter.Size(), 2);
   ASSERT_EQ(reconstructed_kmer_counter.Get(Kmer<K>("AAAAA")), n_workers);

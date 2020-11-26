@@ -60,7 +60,7 @@ KmerSet<K, KeyType> GetKmerSetFromFASTQFile(const std::string& file_name,
 
   KmerSet<K, KeyType> kmer_set;
   int64_t cutoff_count;
-  std::tie(kmer_set, cutoff_count) = kmer_counter.ToSet(cutoff, n_workers);
+  std::tie(kmer_set, cutoff_count) = kmer_counter.ToKmerSet(cutoff, n_workers);
 
   spdlog::info("constructed kmer_set");
 

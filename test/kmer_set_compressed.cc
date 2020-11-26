@@ -6,7 +6,7 @@
 #include "core/kmer_set.h"
 #include "gtest/gtest.h"
 
-TEST(KmerSetCompressed, FromSetAndToSet) {
+TEST(KmerSetCompressed, FromAndToKmerSet) {
   const int K = 9;
   using KeyType = uint8_t;
 
