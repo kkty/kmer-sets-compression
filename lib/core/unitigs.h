@@ -30,6 +30,8 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
   return s;
 }
 
+// Returns the complement of s. The complement of s can be constructed by
+// reversing s and replacing A, C, G and T with T, G, C and A respectively.
 std::string Complement(std::string s) {
   std::reverse(s.begin(), s.end());
 
@@ -875,7 +877,7 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 template <int K, typename KeyType>
 std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
                                     int n_workers) {
-  const auto get_nexts = [&](const Kmer<K>& kmer) {
+  const auto GetNexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
     for (const Kmer<K>& next : kmer.Nexts()) {
@@ -885,7 +887,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
     return v;
   };
 
-  const auto get_prevs = [&](const Kmer<K>& kmer) {
+  const auto GetPrevs = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
     for (const Kmer<K>& prev : kmer.Prevs()) {
@@ -898,7 +900,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
   // Kmers where a unitig starts.
   const auto start_kmers = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
-        const auto prevs = get_prevs(kmer);
+        const auto prevs = GetPrevs(kmer);
 
         // If the k-mer has no incoming edges.
         if (prevs.size() == 0) return true;
@@ -909,7 +911,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
         // There is an edge from "prev" to "kmer".
         const Kmer<K> prev = prevs[0];
 
-        const auto prev_nexts = get_nexts(prev);
+        const auto prev_nexts = GetNexts(prev);
 
         // If "prev" has multiple outgoing edges.
         if (prev_nexts.size() >= 2) return true;
@@ -922,7 +924,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
   const auto end_kmers = [&] {
     const auto v = kmer_set.Find(
         [&](const Kmer<K>& kmer) {
-          const auto nexts = get_nexts(kmer);
+          const auto nexts = GetNexts(kmer);
 
           // If the k-mer has no outgoing edges.
           if (nexts.size() == 0) return true;
@@ -933,7 +935,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
           // There is an edge from "kmer" to "next".
           const Kmer<K> next = nexts[0];
 
-          const auto next_prevs = get_prevs(next);
+          const auto next_prevs = GetPrevs(next);
 
           // If "next" has multiple incoming edges.
           if (next_prevs.size() >= 2) return true;
@@ -971,7 +973,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
             buf_visited.Add(current);
             path.push_back(current);
             if (end_kmers.find(current) != end_kmers.end()) break;
-            current = get_nexts(current)[0];
+            current = GetNexts(current)[0];
           }
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
@@ -1017,7 +1019,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
       while (!visited.Contains(current)) {
         path.push_back(current);
         visited.Add(current);
-        current = get_nexts(current)[0];
+        current = GetNexts(current)[0];
       }
 
       unitigs.push_back(GetUnitigFromKmers(path));

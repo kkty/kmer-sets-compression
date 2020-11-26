@@ -66,7 +66,7 @@ std::pair<Kmer<K>, Kmer<K>> SampleConnectedPair(const KmerGraph<K>& g, int n) {
 template <int K, typename KeyType>
 KmerGraph<K> ConstructKmerGraph(const KmerSet<K, KeyType>& kmer_set,
                                 int n_workers) {
-  const auto get_nexts = [&](const Kmer<K>& kmer) {
+  const auto GetNexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
     for (const Kmer<K>& next : kmer.Nexts()) {
@@ -76,7 +76,7 @@ KmerGraph<K> ConstructKmerGraph(const KmerSet<K, KeyType>& kmer_set,
     return v;
   };
 
-  const auto get_prevs = [&](const Kmer<K>& kmer) {
+  const auto GetPrevs = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
 
     for (const Kmer<K>& prev : kmer.Prevs()) {
@@ -89,7 +89,7 @@ KmerGraph<K> ConstructKmerGraph(const KmerSet<K, KeyType>& kmer_set,
   // Finds branching kmers.
   std::vector<Kmer<K>> kmers = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
-        return get_nexts(kmer).size() >= 2 || get_prevs(kmer).size() >= 2;
+        return GetNexts(kmer).size() >= 2 || GetPrevs(kmer).size() >= 2;
       },
       n_workers);
 
@@ -118,7 +118,7 @@ KmerGraph<K> ConstructKmerGraph(const KmerSet<K, KeyType>& kmer_set,
           const Kmer<K> kmer = queue.front();
           queue.pop();
 
-          for (const Kmer<K>& next : get_nexts(kmer)) {
+          for (const Kmer<K>& next : GetNexts(kmer)) {
             if (distances.find(next) == distances.end()) {
               distances[next] = distances[kmer] + 1;
 
@@ -190,7 +190,7 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
   const absl::flat_hash_map<Kmer<K>, int64_t>& ids = g.ids;
 
   // Returns the set of l-mers present in "kmer".
-  const auto get_lmers = [&](const Kmer<K>& kmer) {
+  const auto GetLmers = [&](const Kmer<K>& kmer) {
     absl::flat_hash_set<std::string> lmers;
     const std::string kmer_s = kmer.String();
 
@@ -203,11 +203,11 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
 
   // The set of l-mers present in "goal".
   // It is used to calculate h(n).
-  const auto lmers_goal = get_lmers(goal);
+  const auto lmers_goal = GetLmers(goal);
 
   // h(i) gives an approximate of distance(i, goal_id).
   const auto h = [&](int i) {
-    const auto lmers = get_lmers(kmers[i]);
+    const auto lmers = GetLmers(kmers[i]);
 
     int distance = 0;
 

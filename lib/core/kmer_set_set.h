@@ -103,28 +103,28 @@ class KmerSetSet {
         KmerSet<K, KeyType> add;
         KmerSet<K, KeyType> sub;
 
-        const auto calculate_add = [&](int n_workers) {
+        const auto CalculateAdd = [&](int n_workers) {
           add = diffs->Get(
               diff_table_.find(path[i])->second.find(path[i + 1])->second,
               n_workers);
         };
 
-        const auto calculate_sub = [&](int n_workers) {
+        const auto CalculateSub = [&](int n_workers) {
           sub = diffs->Get(
               diff_table_.find(path[i + 1])->second.find(path[i])->second,
               n_workers);
         };
 
         if (n_workers == 1) {
-          calculate_add(1);
-          calculate_sub(1);
+          CalculateAdd(1);
+          CalculateSub(1);
         } else {
           std::vector<std::thread> threads;
 
-          threads.emplace_back([&] { calculate_add(n_workers / 2); });
+          threads.emplace_back([&] { CalculateAdd(n_workers / 2); });
 
           threads.emplace_back(
-              [&] { calculate_sub(n_workers - n_workers / 2); });
+              [&] { CalculateSub(n_workers - n_workers / 2); });
 
           for (std::thread& t : threads) t.join();
         }
@@ -462,7 +462,7 @@ class KmerSetSetMM {
   // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
     // Returns the diff from "from" to "to".
-    const auto get_diff = [&](int from, int to) {
+    const auto GetDiff = [&](int from, int to) {
       int pos = diff_table_.find(from)->second.find(to)->second;
 
       if (IsTerminal()) {
@@ -475,10 +475,10 @@ class KmerSetSetMM {
     int parent = parents_.find(i)->second;
 
     if (parent == -1) {
-      return get_diff(-1, i);
+      return GetDiff(-1, i);
     }
 
-    return Add(get_diff(-1, parent), get_diff(parent, i), n_workers);
+    return Add(GetDiff(-1, parent), GetDiff(parent, i), n_workers);
   }
 
   // Dumps data to a vector of strings.
