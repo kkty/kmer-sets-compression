@@ -61,45 +61,11 @@ class KmerCounter {
     return sum;
   }
 
-  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
-                                               bool canonical, int n_workers) {
-    return FromFASTQ(ReadLines(file_name), canonical, n_workers);
-  }
-
-  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
-                                               const std::string& decompressor,
-                                               bool canonical, int n_workers) {
-    return FromFASTQ(ReadLines(file_name, decompressor), canonical, n_workers);
-  }
-
-  // Counts kmers in a FASTQ file.
-  // If "canonical" is true, canonical kmers are counted. E.g., "GGC" will be
-  // counted as "GCC".
-  static absl::StatusOr<KmerCounter> FromFASTQ(std::vector<std::string> lines,
-                                               bool canonical, int n_workers) {
+  static KmerCounter FromReads(std::vector<std::string> reads, bool canonical,
+                               int n_workers) {
     KmerCounter kmer_counter;
 
-    if (lines.size() % 4 != 0)
-      return absl::UnknownError("there should be 4 * N lines");
-
-    std::vector<std::string> reads;
-    reads.reserve(lines.size() / 4);
-
-    for (size_t i = 0; i < lines.size(); i++) {
-      if (i % 4 == 0 && lines[i][0] != '@')
-        return absl::UnknownError("the line should start with '@'");
-
-      if (i % 4 == 1)
-        reads.push_back(std::move(lines[i]));
-      else
-        std::string().swap(lines[i]);
-    }
-
-    // Clear up "lines".
-    std::vector<std::string>().swap(lines);
-
     std::vector<std::mutex> buckets_mutexes(kBucketsNum);
-
     std::vector<std::thread> threads;
 
     for (const Range& range : Range(0, reads.size()).Split(n_workers)) {
@@ -153,6 +119,81 @@ class KmerCounter {
     for (std::thread& thread : threads) thread.join();
 
     return kmer_counter;
+  }
+
+  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
+                                               bool canonical, int n_workers) {
+    return FromFASTQ(ReadLines(file_name), canonical, n_workers);
+  }
+
+  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
+                                               const std::string& decompressor,
+                                               bool canonical, int n_workers) {
+    return FromFASTQ(ReadLines(file_name, decompressor), canonical, n_workers);
+  }
+
+  // Counts kmers in a FASTQ data.
+  static absl::StatusOr<KmerCounter> FromFASTQ(std::vector<std::string> lines,
+                                               bool canonical, int n_workers) {
+    if (lines.size() % 4 != 0)
+      return absl::UnknownError("there should be 4 * N lines");
+
+    std::vector<std::string> reads;
+    reads.reserve(lines.size() / 4);
+
+    for (size_t i = 0; i < lines.size(); i++) {
+      if (i % 4 == 0 && lines[i][0] != '@')
+        return absl::UnknownError("the line should start with '@'");
+
+      if (i % 4 == 1)
+        reads.push_back(std::move(lines[i]));
+      else
+        std::string().swap(lines[i]);
+    }
+
+    // "lines" is not needed anymore.
+    std::vector<std::string>().swap(lines);
+
+    return FromReads(std::move(reads), canonical, n_workers);
+  }
+
+  // Counts kmers in a FASTA file.
+  static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
+                                               bool canonical, int n_workers) {
+    return FromFASTA(ReadLines(file_name), canonical, n_workers);
+  }
+
+  // Counts kmers in a FASTA file. "decompressor" is used to decompress the
+  // file.
+  static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
+                                               const std::string& decompressor,
+                                               bool canonical, int n_workers) {
+    return FromFASTA(ReadLines(file_name, decompressor), canonical, n_workers);
+  }
+
+  // Counts kmers in a FASTA data.
+  static absl::StatusOr<KmerCounter> FromFASTA(std::vector<std::string> lines,
+                                               bool canonical, int n_workers) {
+    if (lines.size() % 2 != 0)
+      return absl::UnknownError("there should be 2 * N lines");
+
+    std::vector<std::string> reads;
+    reads.reserve(lines.size() / 2);
+
+    for (size_t i = 0; i < lines.size(); i++) {
+      if (i % 2 == 0 && lines[i][0] != '>')
+        return absl::UnknownError("the line should start with '>'");
+
+      if (i % 2 == 1)
+        reads.push_back(std::move(lines[i]));
+      else
+        std::string().swap(lines[i]);
+    }
+
+    // "lines" is not needed anymore.
+    std::vector<std::string>().swap(lines);
+
+    return FromReads(std::move(reads), canonical, n_workers);
   }
 
   // Returns a KmerSet, ignoring ones that appear less often.
