@@ -36,23 +36,11 @@ class KmerSetSet {
              int n_workers)
       : kmer_sets_(std::move(kmer_sets)) {
     // Considers a non-directed complete graph where ith node represents
-    // kmer_sets[i].
+    // kmer_sets_[i].
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
-      // Returns the weight of SPSS.
-      const auto GetSPSSWeight = [](const KmerSet<K, KeyType>& kmer_set) {
-        int64_t weight = 0;
-        for (const std::string& s : GetSPSSCanonical(kmer_set, 1)) {
-          weight += s.length();
-        }
-        return weight;
-      };
-
-      return GetSPSSWeight(kmer_sets_[i]) + GetSPSSWeight(kmer_sets_[j]) -
-             GetSPSSWeight(Intersection(kmer_sets_[i], kmer_sets_[j], 1)) -
-             GetSPSSWeight(Sub(kmer_sets_[i], kmer_sets_[j], 1)) -
-             GetSPSSWeight(Sub(kmer_sets_[j], kmer_sets_[i], 1));
+      return kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
     };
 
     absl::flat_hash_map<std::pair<int, int>, int64_t> weights;
