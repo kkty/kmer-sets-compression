@@ -164,8 +164,16 @@ void Main(const std::vector<std::string>& files) {
   } else {
     spdlog::info("constructing kmer_set_set");
 
-    KmerSetSet<K, KeyType> kmer_set_set(
-        kmer_sets, absl::GetFlag(FLAGS_iteration), n_workers);
+    const KmerSetSet<K, KeyType> kmer_set_set = [&] {
+      if (absl::GetFlag(FLAGS_check)) {
+        return KmerSetSet<K, KeyType>(kmer_sets, absl::GetFlag(FLAGS_iteration),
+                                      n_workers);
+      } else {
+        return KmerSetSet<K, KeyType>(
+            std::move(kmer_sets), absl::GetFlag(FLAGS_iteration), n_workers);
+      }
+    }();
+
     spdlog::info("constructed kmer_set_set");
 
     const std::string out_file = absl::GetFlag(FLAGS_out);
