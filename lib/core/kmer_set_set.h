@@ -94,7 +94,8 @@ class KmerSetSet {
 
       kmer_sets_[i].Sub(kmer_sets_[n], n_workers);
       kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
-      parents_[i] = parents_[j] = n;
+      children_[i].push_back(n);
+      children_[j].push_back(n);
 
       spdlog::debug("updating weights");
 
@@ -135,18 +136,27 @@ class KmerSetSet {
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
     KmerSet<K, KeyType> kmer_set;
 
-    while (true) {
+    std::queue<int> queue;
+    queue.push(i);
+
+    while (!queue.empty()) {
+      int i = queue.front();
+      queue.pop();
+
       kmer_set.Add(kmer_sets_[i], n_workers);
-      auto it = parents_.find(i);
-      if (it == parents_.end()) break;
-      i = it->second;
+      auto it = children_.find(i);
+      if (it != children_.end()) {
+        for (int child : it->second) {
+          queue.push(child);
+        }
+      }
     }
 
     return kmer_set;
   }
 
  private:
-  absl::flat_hash_map<int, int> parents_;
+  absl::flat_hash_map<int, std::vector<int>> children_;
   std::vector<KmerSet<K, KeyType>> kmer_sets_;
 };
 
