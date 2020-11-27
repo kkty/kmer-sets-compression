@@ -188,7 +188,9 @@ class KmerSetSet {
 
       for (size_t i = 0; i < kmer_sets_.size(); i++) {
         boost::asio::post(pool, [&, i] {
+          spdlog::debug("dumping kmer set: i = {}", i);
           v[n + i] = absl::StrJoin(GetSPSSCanonical(kmer_sets_[i], 1), " ");
+          spdlog::debug("dumped kmer set: i = {}", i);
         });
       }
 
