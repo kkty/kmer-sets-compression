@@ -155,6 +155,55 @@ class KmerSetSet {
     return kmer_set;
   }
 
+  std::vector<std::string> Dump(int n_workers) const {
+    std::vector<std::string> v;
+
+    {
+      std::stringstream ss;
+      ss << children_.size();
+      v.push_back(ss.str());
+    }
+
+    for (const std::pair<const int, std::vector<int>>& p : children_) {
+      std::stringstream ss;
+      ss << p.first << ' ' << p.second.size();
+      for (int child : p.second) {
+        ss << ' ' << child;
+      }
+      v.push_back(ss.str());
+    }
+
+    {
+      std::stringstream ss;
+      ss << kmer_sets_.size();
+      v.push_back(ss.str());
+    }
+
+    const int n = v.size();
+
+    v.resize(n + kmer_sets_.size());
+
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      for (size_t i = 0; i < kmer_sets_.size(); i++) {
+        boost::asio::post(pool, [&, i] {
+          v[n + i] = absl::StrJoin(GetSPSSCanonical(kmer_sets_[i], 1), " ");
+        });
+      }
+
+      pool.join();
+    }
+
+    return v;
+  }
+
+  // Dumps data to a file.
+  void Dump(const std::string& file_name, const std::string& compressor,
+            int n_workers) const {
+    WriteLines(file_name, compressor, Dump(n_workers));
+  }
+
  private:
   absl::flat_hash_map<int, std::vector<int>> children_;
   std::vector<KmerSet<K, KeyType>> kmer_sets_;

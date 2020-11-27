@@ -168,6 +168,12 @@ void Main(const std::vector<std::string>& files) {
         kmer_sets, absl::GetFlag(FLAGS_iteration), n_workers);
     spdlog::info("constructed kmer_set_set");
 
+    const std::string out_file = absl::GetFlag(FLAGS_out);
+
+    if (out_file != "") {
+      kmer_set_set.Dump(out_file, absl::GetFlag(FLAGS_compressor), n_workers);
+    }
+
     if (absl::GetFlag(FLAGS_check)) {
       for (int i = 0; i < n_datasets; i++) {
         spdlog::info(
