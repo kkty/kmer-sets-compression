@@ -28,178 +28,138 @@
 #include "lemon/matching.h"
 #include "spdlog/spdlog.h"
 
-// KmerSetSet can be used to represent multiple k-mer sets in less space.
-// It is a recursive structure. That is, a KmerSetSet can contain another
-// KmerSetSet internally.
+// KmerSetSet can be used to represent multiple kmer sets efficiently.
 template <int K, typename KeyType>
 class KmerSetSet {
  public:
-  // Not to have a recursive structure, set "recursion_limit" to 0.
-  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int recursion_limit,
+  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int n_iterations,
              int n_workers)
-      : n_(kmer_sets.size()) {
-    // kmer_sets[n_] is an empty set.
-    kmer_sets.push_back(KmerSet<K, KeyType>());
+      : kmer_sets_(std::move(kmer_sets)) {
+    // Considers a non-directed complete graph where ith node represents
+    // kmer_sets[i].
 
-    std::tie(cost_, tree_) = ConstructMST(kmer_sets, n_, n_workers);
+    // Calculates the weight of the edge between ith node and jth node.
+    const auto GetEdgeWeight = [&](int i, int j) {
+      // Returns the weight of SPSS.
+      const auto GetSPSSWeight = [](const KmerSet<K, KeyType>& kmer_set) {
+        int64_t weight = 0;
+        for (const std::string& s : GetSPSSCanonical(kmer_set, 1)) {
+          weight += s.length();
+        }
+        return weight;
+      };
 
-    spdlog::debug("constructed MST: cost_ = {}", cost_);
+      return GetSPSSWeight(kmer_sets_[i]) + GetSPSSWeight(kmer_sets_[j]) -
+             GetSPSSWeight(Intersection(kmer_sets_[i], kmer_sets_[j], 1)) -
+             GetSPSSWeight(Sub(kmer_sets_[i], kmer_sets_[j], 1)) -
+             GetSPSSWeight(Sub(kmer_sets_[j], kmer_sets_[i], 1));
+    };
 
-    std::vector<KmerSet<K, KeyType>> diffs;
+    absl::flat_hash_map<std::pair<int, int>, int64_t> weights;
 
-    for (int i = 0; i < n_; i++) {
-      const int parent = tree_->Parent(i);
+    spdlog::debug("calculating initial weights");
+    {
+      const int n = kmer_sets_.size();
+      boost::asio::thread_pool pool(n_workers);
+      std::mutex mu;
 
-      diff_table_[i][parent] = diffs.size();
-      diffs.push_back(Sub(kmer_sets[parent], kmer_sets[i], n_workers));
+      for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+          boost::asio::post(pool, [&, i, j] {
+            spdlog::debug("calculating weight: i = {}, j = {}", i, j);
+            int64_t weight = GetEdgeWeight(i, j);
+            spdlog::debug("calculated weight: i = {}, j = {}", i, j);
 
-      diff_table_[parent][i] = diffs.size();
-      diffs.push_back(Sub(kmer_sets[i], kmer_sets[parent], n_workers));
+            std::lock_guard lck(mu);
+            weights[{i, j}] = weight;
+          });
+        }
+      }
+
+      pool.join();
     }
+    spdlog::debug("calculated initial weights");
 
-    if (recursion_limit == 0) {
-      diffs_ = std::move(diffs);
-    } else {
-      diffs_ = new KmerSetSet(std::move(diffs), recursion_limit - 1, n_workers);
+    while (n_iterations--) {
+      spdlog::debug("n_iterations = {}", n_iterations);
+
+      const int n = kmer_sets_.size();
+
+      // Finds the max weight in the graph.
+      int64_t weight = 0;
+      int i, j;
+      for (const std::pair<const std::pair<int, int>, int64_t>& p : weights) {
+        if (p.second > weight) {
+          std::tie(i, j) = p.first;
+          weight = p.second;
+        }
+      }
+
+      if (weight == 0) break;
+
+      spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
+
+      // Constructs kmer_sets_[n] by intersecting kmer_sets_[i] and
+      // kmer_sets_[j].
+      kmer_sets_.push_back(
+          Intersection(kmer_sets_[i], kmer_sets_[j], n_workers));
+
+      kmer_sets_[i].Sub(kmer_sets_[n], n_workers);
+      kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
+      parents_[i] = parents_[j] = n;
+
+      spdlog::debug("updating weights");
+
+      boost::asio::thread_pool pool(n_workers);
+      std::mutex mu;
+
+      for (int k = i + 1; k < n; k++) {
+        boost::asio::post(pool, [&, k] {
+          int64_t weight = GetEdgeWeight(i, k);
+          std::lock_guard lck(mu);
+          weights[{i, k}] = weight;
+        });
+      }
+
+      for (int k = j + 1; k < n; k++) {
+        boost::asio::post(pool, [&, k] {
+          int64_t weight = GetEdgeWeight(j, k);
+          std::lock_guard lck(mu);
+          weights[{j, k}] = weight;
+        });
+      }
+
+      for (int k = 0; k < n; k++) {
+        boost::asio::post(pool, [&, k] {
+          int64_t weight = GetEdgeWeight(k, n);
+          std::lock_guard lck(mu);
+          weights[{k, n}] = weight;
+        });
+      }
+
+      pool.join();
+
+      spdlog::debug("updated weights");
     }
   }
 
-  ~KmerSetSet() {
-    if (!IsTerminal()) delete std::get<KmerSetSet*>(diffs_);
-  }
-
-  // Returns the ith k-mer set.
+  // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
-    std::vector<int> path;
-
-    while (true) {
-      path.push_back(i);
-      if (i == n_) break;
-      i = tree_->Parent(i);
-    }
-
-    std::reverse(path.begin(), path.end());
-
     KmerSet<K, KeyType> kmer_set;
 
-    // Traverses the path and reconstructs the set.
-    for (size_t i = 0; i < path.size() - 1; i++) {
-      if (IsTerminal()) {
-        const std::vector<KmerSet<K, KeyType>>& diffs =
-            std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
-
-        kmer_set
-            .Add(diffs[diff_table_.find(path[i])
-                           ->second.find(path[i + 1])
-                           ->second],
-                 n_workers)
-            .Sub(diffs[diff_table_.find(path[i + 1])
-                           ->second.find(path[i])
-                           ->second],
-                 n_workers);
-      } else {
-        KmerSetSet* diffs = std::get<KmerSetSet*>(diffs_);
-
-        KmerSet<K, KeyType> add;
-        KmerSet<K, KeyType> sub;
-
-        const auto CalculateAdd = [&](int n_workers) {
-          add = diffs->Get(
-              diff_table_.find(path[i])->second.find(path[i + 1])->second,
-              n_workers);
-        };
-
-        const auto CalculateSub = [&](int n_workers) {
-          sub = diffs->Get(
-              diff_table_.find(path[i + 1])->second.find(path[i])->second,
-              n_workers);
-        };
-
-        if (n_workers == 1) {
-          CalculateAdd(1);
-          CalculateSub(1);
-        } else {
-          std::vector<std::thread> threads;
-
-          threads.emplace_back([&] { CalculateAdd(n_workers / 2); });
-
-          threads.emplace_back(
-              [&] { CalculateSub(n_workers - n_workers / 2); });
-
-          for (std::thread& t : threads) t.join();
-        }
-
-        kmer_set.Add(add, n_workers).Sub(sub, n_workers);
-      }
+    while (true) {
+      kmer_set.Add(kmer_sets_[i], n_workers);
+      auto it = parents_.find(i);
+      if (it == parents_.end()) break;
+      i = it->second;
     }
 
     return kmer_set;
   }
 
-  int64_t Cost() const {
-    if (IsTerminal()) return cost_;
-
-    return std::get<KmerSetSet*>(diffs_)->Cost();
-  }
-
  private:
-  // Returns true if it is the end of recursion.
-  bool IsTerminal() const {
-    return std::holds_alternative<std::vector<KmerSet<K, KeyType>>>(diffs_);
-  }
-
-  static std::pair<int64_t, Tree> ConstructMST(
-      const std::vector<KmerSet<K, KeyType>>& kmer_sets, int root,
-      int n_workers) {
-    BidirectionalGraph g;
-
-    // Adds edges.
-    {
-      std::vector<std::pair<int, int>> pairs;
-
-      for (size_t i = 0; i < kmer_sets.size(); i++) {
-        for (size_t j = i + 1; j < kmer_sets.size(); j++) {
-          pairs.emplace_back(i, j);
-        }
-      }
-
-      std::vector<std::thread> threads;
-      std::mutex mu;
-
-      for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          range.ForEach([&](int i) {
-            std::pair<int, int> pair = pairs[i];
-
-            int64_t cost =
-                kmer_sets[pair.first].Diff(kmer_sets[pair.second], 1);
-
-            std::lock_guard _{mu};
-
-            g.AddEdge(pair.first, pair.second, cost);
-          });
-        });
-      }
-
-      for (std::thread& t : threads) t.join();
-    }
-
-    return g.MST(root);
-  }
-
-  int n_;
-
-  int64_t cost_;
-
-  // Tree does not have a default constructor.
-  std::optional<Tree> tree_;
-
-  // If diffs_ is of type std::vector<KmerSet<K, KeyType>>,
-  // diffs_[diff_table_[i][j]] represents the diff from ith data to jth data.
-  // If diffs_ is of type KmerSetSet*, diffs_->Get(diff_table_[i][j]) represents
-  // the diff from ith data to jth data.
-  std::variant<std::vector<KmerSet<K, KeyType>>, KmerSetSet*> diffs_;
-  absl::flat_hash_map<int, absl::flat_hash_map<int, int>> diff_table_;
+  absl::flat_hash_map<int, int> parents_;
+  std::vector<KmerSet<K, KeyType>> kmer_sets_;
 };
 
 // KmerSetMM is similar to KmerSetSet, but it uses maximum weighted matching.

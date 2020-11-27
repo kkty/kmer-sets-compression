@@ -30,7 +30,8 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
-ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSet");
+ABSL_FLAG(int, iteration, 1, "number of iterations for KmerSetSet");
+ABSL_FLAG(int, recursion, 1, "recursion limit for KmerSetSetMM");
 ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
 ABSL_FLAG(bool, mm, false, "use maximum weighted matching algorithm");
 ABSL_FLAG(bool, approximate_matching, false,
@@ -164,10 +165,8 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("constructing kmer_set_set");
 
     KmerSetSet<K, KeyType> kmer_set_set(
-        kmer_sets, absl::GetFlag(FLAGS_recursion), n_workers);
+        kmer_sets, absl::GetFlag(FLAGS_iteration), n_workers);
     spdlog::info("constructed kmer_set_set");
-
-    spdlog::info("kmer_set_set.Cost() = {}", kmer_set_set.Cost());
 
     if (absl::GetFlag(FLAGS_check)) {
       for (int i = 0; i < n_datasets; i++) {
