@@ -20,6 +20,7 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
+ABSL_FLAG(std::string, type, "fastq", "input file type");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "cat",
           "specify decompressor for FASTQ files");
@@ -43,19 +44,42 @@ void Main(const std::string& file_name) {
 
   const KmerCounter<K, KeyType> kmer_counter = [&] {
     const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+    const std::string type = absl::GetFlag(FLAGS_type);
 
-    absl::StatusOr<KmerCounter<K, KeyType>> status_or =
-        decompressor != "" ? KmerCounter<K, KeyType>::FromFASTQ(
-                                 file_name, decompressor, canonical, n_workers)
-                           : KmerCounter<K, KeyType>::FromFASTQ(
-                                 file_name, canonical, n_workers);
+    if (type == "fastq") {
+      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+          decompressor != ""
+              ? KmerCounter<K, KeyType>::FromFASTQ(file_name, decompressor,
+                                                   canonical, n_workers)
+              : KmerCounter<K, KeyType>::FromFASTQ(file_name, canonical,
+                                                   n_workers);
 
-    if (!status_or.ok()) {
-      spdlog::error("failed to parse FASTQ file: {}",
-                    status_or.status().ToString());
+      if (!status_or.ok()) {
+        spdlog::error("failed to parse FASTQ file: {}",
+                      status_or.status().ToString());
+        std::exit(1);
+      }
+
+      return *status_or;
+    } else if (type == "fasta") {
+      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+          decompressor != ""
+              ? KmerCounter<K, KeyType>::FromFASTA(file_name, decompressor,
+                                                   canonical, n_workers)
+              : KmerCounter<K, KeyType>::FromFASTA(file_name, canonical,
+                                                   n_workers);
+
+      if (!status_or.ok()) {
+        spdlog::error("failed to parse FASTA file: {}",
+                      status_or.status().ToString());
+        std::exit(1);
+      }
+
+      return *status_or;
+    } else {
+      spdlog::error("invalid type: {}", type);
+      std::exit(1);
     }
-
-    return *status_or;
   }();
 
   spdlog::info("constructed kmer_counter");
