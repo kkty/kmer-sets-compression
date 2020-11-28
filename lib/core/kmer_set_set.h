@@ -24,6 +24,7 @@
 #include "core/kmer_set.h"
 #include "core/kmer_set_compressed.h"
 #include "core/range.h"
+#include "core/unitigs.h"
 #include "lemon/list_graph.h"
 #include "lemon/matching.h"
 #include "spdlog/spdlog.h"
@@ -87,10 +88,39 @@ class KmerSetSet {
 
       spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
 
-      // Constructs kmer_sets_[n] by intersecting kmer_sets_[i] and
-      // kmer_sets_[j].
-      kmer_sets_.push_back(
-          Intersection(kmer_sets_[i], kmer_sets_[j], n_workers));
+      // Constructs kmer_set from kmer_sets_[i] and kmer_sets_[j].
+      KmerSet<K, KeyType> kmer_set;
+      {
+        std::vector<std::string> spss = GetSPSSCanonical(
+            Intersection(kmer_sets_[i], kmer_sets_[j], n_workers), n_workers);
+
+        std::vector<std::thread> threads;
+        std::mutex mu;
+
+        for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
+          threads.emplace_back([&, range] {
+            KmerSet<K, KeyType> buf;
+
+            range.ForEach([&](int64_t k) {
+              const std::string& s = spss[k];
+
+              if (s.length() == K) return;
+
+              for (int l = 0; l + K < s.length(); l++) {
+                buf.Add(Kmer<K>(s.substr(l, K)).Canonical());
+              }
+            });
+
+            std::lock_guard lck(mu);
+            kmer_set.Add(buf, 1);
+          });
+        }
+
+        for (std::thread& t : threads) t.join();
+      }
+
+      // Moves kmer_set to kmer_sets_[n].
+      kmer_sets_.push_back(std::move(kmer_set));
 
       kmer_sets_[i].Sub(kmer_sets_[n], n_workers);
       kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
