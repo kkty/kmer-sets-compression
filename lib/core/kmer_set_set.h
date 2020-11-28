@@ -69,6 +69,16 @@ class KmerSetSet {
     }
     spdlog::debug("calculated initial weights");
 
+    std::atomic_int64_t total_size = 0;
+    {
+      boost::asio::thread_pool pool(n_workers);
+      for (size_t i = 0; i < kmer_sets_.size(); i++) {
+        boost::asio::post(pool, [&, i] { total_size += kmer_sets_[i].Size(); });
+      }
+      pool.join();
+    }
+    spdlog::debug("total_size = {}", total_size);
+
     while (n_iterations--) {
       spdlog::debug("n_iterations = {}", n_iterations);
 
@@ -89,35 +99,10 @@ class KmerSetSet {
       spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
 
       // Constructs kmer_set from kmer_sets_[i] and kmer_sets_[j].
-      KmerSet<K, KeyType> kmer_set;
-      {
-        std::vector<std::string> spss = GetSPSSCanonical(
-            Intersection(kmer_sets_[i], kmer_sets_[j], n_workers), n_workers);
+      KmerSet<K, KeyType> kmer_set =
+          Intersection(kmer_sets_[i], kmer_sets_[j], n_workers);
 
-        std::vector<std::thread> threads;
-        std::mutex mu;
-
-        for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
-          threads.emplace_back([&, range] {
-            KmerSet<K, KeyType> buf;
-
-            range.ForEach([&](int64_t k) {
-              const std::string& s = spss[k];
-
-              if (s.length() == K) return;
-
-              for (int l = 0; l + K < s.length(); l++) {
-                buf.Add(Kmer<K>(s.substr(l, K)).Canonical());
-              }
-            });
-
-            std::lock_guard lck(mu);
-            kmer_set.Add(buf, 1);
-          });
-        }
-
-        for (std::thread& t : threads) t.join();
-      }
+      int64_t original_size = kmer_sets_[i].Size() + kmer_sets_[j].Size();
 
       // Moves kmer_set to kmer_sets_[n].
       kmer_sets_.push_back(std::move(kmer_set));
@@ -126,6 +111,12 @@ class KmerSetSet {
       kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
       children_[i].push_back(n);
       children_[j].push_back(n);
+
+      int64_t size_diff = kmer_sets_[n].Size() + kmer_sets_[i].Size() +
+                          kmer_sets_[j].Size() - original_size;
+
+      total_size += size_diff;
+      spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);
 
       spdlog::debug("updating weights");
 
