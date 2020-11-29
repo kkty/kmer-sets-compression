@@ -41,11 +41,7 @@ class KmerSetSet {
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
-      int64_t intersection_size =
-          kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
-      int64_t union_size =
-          kmer_sets_[i].Size() + kmer_sets_[j].Size() - intersection_size;
-      return intersection_size * 1000 / union_size;
+      return kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
     };
 
     absl::flat_hash_map<std::pair<int, int>, int64_t> weights;
@@ -214,7 +210,10 @@ class KmerSetSet {
       for (size_t i = 0; i < kmer_sets_.size(); i++) {
         boost::asio::post(pool, [&, i] {
           spdlog::debug("dumping kmer set: i = {}", i);
-          v[n + i] = absl::StrJoin(GetSPSSCanonical(kmer_sets_[i], 1), " ");
+          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
+              KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_sets_[i], true,
+                                                         1);
+          v[n + i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
           spdlog::debug("dumped kmer set: i = {}", i);
         });
       }
@@ -231,7 +230,43 @@ class KmerSetSet {
     WriteLines(file_name, compressor, Dump(n_workers));
   }
 
+  // static KmerSetSet Load(const std::vector<std::string>& v, int n_workers) {
+  //   absl::flat_hash_map<int, std::vector<int>> children;
+  //   std::vector<KmerSet<K, KeyType>> kmer_sets;
+
+  //   int children_size;
+  //   {
+  //     std::stringstream ss(v[0]);
+  //     ss >> children_size;
+  //   }
+  //   children.reserve(children_size);
+
+  //   for (int i = 0; i < children_size; i++) {
+  //     std::stringstream ss(v[i + 1]);
+  //     int key;
+  //     int size;
+  //     ss >> key >> size;
+  //     for (int j = 0; j < size; j++) {
+  //       int value;
+  //       ss >> value;
+  //       children[key].push_back(value);
+  //     }
+  //   }
+
+  //   int size;
+  //   {
+  //     std::stringstream ss(v[i + 1 + children_size]);
+  //     ss >> size;
+  //   }
+
+  //   return KmerSetSet(children, kmer_sets);
+  // }
+
  private:
+  KmerSetSet(absl::flat_hash_map<int, std::vector<int>> children,
+             std::vector<KmerSet<K, KeyType>> kmer_sets)
+      : children_(children), kmer_sets_(kmer_sets) {}
+
   absl::flat_hash_map<int, std::vector<int>> children_;
   std::vector<KmerSet<K, KeyType>> kmer_sets_;
 };
