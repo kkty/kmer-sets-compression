@@ -41,7 +41,11 @@ class KmerSetSet {
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
-      return kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
+      int64_t intersection_size =
+          kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
+      int64_t union_size =
+          kmer_sets_[i].Size() + kmer_sets_[j].Size() - intersection_size;
+      return intersection_size * 1000 / union_size;
     };
 
     absl::flat_hash_map<std::pair<int, int>, int64_t> weights;
