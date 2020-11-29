@@ -368,6 +368,39 @@ class KmerSet {
 };
 
 template <int K, typename KeyType>
+KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
+                        int begin, int end, int n_workers) {
+  if (end - begin == 1) return kmer_sets[begin];
+
+  const int mid = (begin + end) / 2;
+
+  if (n_workers == 1) {
+    return Add(Add(kmer_sets, begin, mid, 1), Add(kmer_sets, mid, end, 1), 1);
+  }
+
+  KmerSet<K, KeyType> lhs;
+  KmerSet<K, KeyType> rhs;
+
+  std::vector<std::thread> threads;
+
+  threads.emplace_back(
+      [&] { lhs = Add(kmer_sets, begin, mid, n_workers / 2); });
+
+  threads.emplace_back(
+      [&] { rhs = Add(kmer_sets, mid, end, n_workers - n_workers / 2); });
+
+  for (std::thread& t : threads) t.join();
+
+  return Add(std::move(lhs), rhs, n_workers);
+}
+
+template <int K, typename KeyType>
+KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
+                        int n_workers) {
+  return Add(kmer_sets, n_workers, 0, kmer_sets.size(), n_workers);
+}
+
+template <int K, typename KeyType>
 KmerSet<K, KeyType> Add(KmerSet<K, KeyType> lhs, const KmerSet<K, KeyType>& rhs,
                         int n_workers) {
   return lhs.Add(rhs, n_workers);
