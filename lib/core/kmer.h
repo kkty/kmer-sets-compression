@@ -111,6 +111,7 @@ class Kmer {
   std::bitset<K * 2> bits_;
 };
 
+// Returns a randomly-generated kmer.
 template <int K>
 Kmer<K> GetRandomKmer() {
   absl::InsecureBitGen bitgen;
