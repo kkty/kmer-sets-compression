@@ -3,6 +3,8 @@
 
 #include <string>
 #include <tuple>
+#include <thread>
+#include <vector>
 
 #include "absl/status/statusor.h"
 #include "core/kmer_counter.h"
@@ -65,6 +67,42 @@ KmerSet<K, KeyType> GetKmerSetFromFASTQFile(const std::string& file_name,
   spdlog::info("constructed kmer_set");
 
   return kmer_set;
+}
+
+// Returns a list of reads in a FASTA file.
+std::vector<std::string> ReadFASTAFile(const std::string& file_name,
+                                       const std::string& decompressor,
+                                       int n_workers) {
+  std::vector<std::string> lines = ReadLines(file_name, decompressor);
+
+  const int n_lines = lines.size();
+
+  std::vector<std::string> reads(n_lines / 2);
+
+  {
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, n_lines).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        range.ForEach([&](int64_t i) {
+          const std::string& line = lines[i];
+          if (i % 2 == 0) {
+            if (line[0] != '>') {
+              spdlog::error("invalid file");
+              std::exit(1);
+            }
+            std::string().swap(lines[i]);
+          } else {
+            reads[i / 2] = std::move(lines[i]);
+          }
+        });
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  return reads;
 }
 
 #endif
