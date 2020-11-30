@@ -11,6 +11,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
+#include "spdlog/spdlog.h"
 
 // "ACCG", "CCGT", "CGTT" -> "ACCGTT"
 template <int K>
@@ -345,7 +346,10 @@ std::vector<std::string> GetUnitigsCanonical(
 template <int K, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
                                           int n_workers, int n_buckets = 64) {
+  spdlog::debug("constructing unitigs");
   const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
+  spdlog::debug("constructed unitigs");
+
   const int64_t n = unitigs.size();
 
   // Considers a graph where node i represents unitigs[i].
@@ -358,8 +362,9 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
   // Similar to prefixes, but suffixes are considered.
   absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> suffixes;
 
-  // Constructs "prefixes" and "suffixes".
   {
+    spdlog::debug("constructing prefixes and suffixes");
+
     std::vector<std::thread> threads;
     std::mutex mu_prefixes;
     std::mutex mu_suffixes;
@@ -399,6 +404,8 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
     }
 
     for (std::thread& t : threads) t.join();
+
+    spdlog::debug("constructed prefixes and suffixes");
   }
 
   // If the second element is true, the edge connects the same side of two
@@ -411,8 +418,9 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
   // edge_right[i] is the edge incident to the right side of i.
   absl::flat_hash_map<int64_t, Edge> edges_right;
 
-  // Calculates "edges_left" and "edges_right".
   {
+    spdlog::debug("constructing edges_left and edges_right");
+
     // Nodes are divided into n_buckets buckets to allow parallel processing.
 
     std::vector<std::thread> threads;
@@ -584,6 +592,8 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 
       pool.join();
     }
+
+    spdlog::debug("constructed edges_left and edges_right");
   }
 
   // Nodes without edges on the left side.
@@ -594,6 +604,9 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
   std::vector<int64_t> terminals_both;
 
   {
+    spdlog::debug(
+        "constructing terminals_left, terminals_right, and terminals_both");
+
     std::vector<std::thread> threads;
     std::mutex mu_terminals_left;
     std::mutex mu_terminals_right;
@@ -654,6 +667,9 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
     }
 
     for (std::thread& t : threads) t.join();
+
+    spdlog::debug(
+        "constructed terminals_left, terminals_right, and terminals_both");
   }
 
   // If the second pair of a pair is true, the compliment of the unitig should
@@ -710,8 +726,9 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
   std::vector<std::string> spss;
   absl::flat_hash_set<int64_t> visited;
 
-  // Constructs "spss" and "visited".
   {
+    spdlog::debug("constructing spss and visited");
+
     const auto MoveFromBuffer = [&](std::mutex& mu_spss, std::mutex& mu_visited,
                                     std::vector<std::string>& buf_spss,
                                     std::vector<int64_t>& buf_visited) {
@@ -818,10 +835,13 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 
       for (std::thread& t : threads) t.join();
     }
+
+    spdlog::debug("constructed spss and visited");
   }
 
-  // Considers non-branching loops.
   {
+    spdlog::debug("processing non-branching loops");
+
     std::vector<int64_t> not_visited;
 
     // Constructs "not_visited".
@@ -867,6 +887,8 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 
       spss.push_back(GetStringFromPath(path));
     }
+
+    spdlog::debug("processed non-branching loops");
   }
 
   return spss;
