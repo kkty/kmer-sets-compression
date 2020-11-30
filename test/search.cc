@@ -34,28 +34,26 @@ TEST(search, ConstructGraphCanonical) {
     std::vector<std::pair<int64_t, int64_t>> edges =
         g.edges[g.ids[Kmer<K>("AAAAAAT")]];
 
-    ASSERT_EQ(std::find_if(edges.begin(), edges.end(),
-                           [&](const std::pair<int64_t, int64_t>& p) {
-                             return p.first == g.ids[Kmer<K>("AAATCCC")];
-                           })
-                  ->second,
-              3
+    int i = std::find_if(edges.begin(), edges.end(),
+                         [&](const std::pair<int64_t, int64_t>& p) {
+                           return p.first == g.ids[Kmer<K>("AAATCCC")];
+                         })
+                ->second;
 
-    );
+    ASSERT_EQ(i, 3);
   }
 
   {
     std::vector<std::pair<int64_t, int64_t>> edges =
         g.edges[g.ids[Kmer<K>("AAAAAAT")]];
 
-    ASSERT_EQ(std::find_if(edges.begin(), edges.end(),
-                           [&](const std::pair<int64_t, int64_t>& p) {
-                             return p.first == g.ids[Kmer<K>("AATGGGG")];
-                           })
-                  ->second,
-              4
+    int i = std::find_if(edges.begin(), edges.end(),
+                         [&](const std::pair<int64_t, int64_t>& p) {
+                           return p.first == g.ids[Kmer<K>("AATGGGG")];
+                         })
+                ->second;
 
-    );
+    ASSERT_EQ(i, 4);
   }
 
   {
