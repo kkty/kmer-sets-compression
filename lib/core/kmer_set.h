@@ -83,6 +83,13 @@ class KmerSet {
     return sum;
   }
 
+  // Clears up all the elements in the set.
+  void Clear() {
+    for (Bucket& bucket : buckets_) {
+      Bucket().swap(bucket);
+    }
+  }
+
   // Adds a single kmer.
   void Add(const Kmer<K>& kmer) {
     const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
