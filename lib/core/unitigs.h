@@ -344,7 +344,7 @@ std::vector<std::string> GetUnitigsCanonical(
 // Constructs a small-weight SPSS from a set of canonical kmers.
 template <int K, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
-                                          int n_workers) {
+                                          int n_workers, int n_buckets = 64) {
   const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
   const int64_t n = unitigs.size();
 
@@ -413,8 +413,7 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 
   // Calculates "edges_left" and "edges_right".
   {
-    // Nodes are divided into some buckets to allow parallel processing.
-    const int n_buckets = n_workers * 64;
+    // Nodes are divided into n_buckets buckets to allow parallel processing.
 
     std::vector<std::thread> threads;
     std::vector<std::mutex> mus(n_buckets);

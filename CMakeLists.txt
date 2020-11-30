@@ -37,10 +37,11 @@ link_libraries(
 
 foreach(
   NAME
-  search
   compress
   decompress
   kmersetset
+  search
+  spss
 )
   add_executable(${NAME} src/${NAME}.cc)
 endforeach()
