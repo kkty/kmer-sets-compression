@@ -315,6 +315,8 @@ class KmerSetSet {
           std::string().swap(s);
         });
       }
+
+      pool.join();
     }
 
     return KmerSetSet(children, kmer_sets);
