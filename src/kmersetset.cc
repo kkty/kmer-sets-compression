@@ -42,6 +42,8 @@ ABSL_FLAG(bool, approximate_graph, false,
 ABSL_FLAG(bool, partial_matching, false,
           "make mates partially in the matching algorithm");
 ABSL_FLAG(std::string, out, "", "path to save dumped file");
+ABSL_FLAG(std::string, out_folder, "", "folder to save dumped files");
+ABSL_FLAG(std::string, out_extension, "bin", "extension for output files");
 ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
 
 template <int K, typename KeyType>
@@ -177,13 +179,19 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("constructed kmer_set_set");
 
     const std::string out_file = absl::GetFlag(FLAGS_out);
+    const std::string out_folder = absl::GetFlag(FLAGS_out_folder);
+
+    // If --check is not specified, it is OK to invalidate kmer_set_set.
+    const bool clear = !absl::GetFlag(FLAGS_check);
 
     if (out_file != "") {
-      // If --check is not specified, it is OK to invalidate kmer_set_set.
-      const bool clear = !absl::GetFlag(FLAGS_check);
-
       kmer_set_set.Dump(out_file, absl::GetFlag(FLAGS_compressor),
                         absl::GetFlag(FLAGS_canonical), clear, n_workers);
+    } else if (out_folder != "") {
+      kmer_set_set.DumpToFolder(out_folder, absl::GetFlag(FLAGS_compressor),
+                                absl::GetFlag(FLAGS_out_extension),
+                                absl::GetFlag(FLAGS_canonical), clear,
+                                n_workers);
     }
 
     if (absl::GetFlag(FLAGS_check)) {

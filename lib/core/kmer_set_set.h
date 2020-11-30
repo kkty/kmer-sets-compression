@@ -18,6 +18,8 @@
 #include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
+#include "boost/filesystem.hpp"
+#include "boost/format.hpp"
 #include "core/graph.h"
 #include "core/io.h"
 #include "core/kmer.h"
@@ -255,6 +257,75 @@ class KmerSetSet {
     }
 
     return v;
+  }
+
+  // Dumps data to files in a folder.
+  void DumpToFolder(const std::string& folder_name,
+                    const std::string& compressor, const std::string& extension,
+                    bool canonical, bool clear, int n_workers) {
+    if (!boost::filesystem::exists(folder_name)) {
+      boost::filesystem::create_directories(folder_name);
+    }
+
+    {
+      std::vector<std::string> v;
+
+      {
+        std::stringstream ss;
+        ss << children_.size();
+        v.push_back(ss.str());
+      }
+
+      for (const std::pair<const int, std::vector<int>>& p : children_) {
+        std::stringstream ss;
+        ss << p.first << ' ' << p.second.size();
+        for (int child : p.second) {
+          ss << ' ' << child;
+        }
+        v.push_back(ss.str());
+      }
+
+      {
+        std::stringstream ss;
+        ss << kmer_sets_.size();
+        v.push_back(ss.str());
+      }
+
+      WriteLines((boost::filesystem::path(folder_name) /
+                  boost::filesystem::path(
+                      (boost::format("meta.txt.%1%") % extension).str()))
+                     .string(),
+                 compressor, v);
+    }
+
+    if (clear) {
+      absl::flat_hash_map<int, std::vector<int>>().swap(children_);
+    }
+
+    boost::asio::thread_pool pool(n_workers);
+
+    for (size_t i = 0; i < kmer_sets_.size(); i++) {
+      boost::asio::post(pool, [&, i] {
+        spdlog::debug("dumping kmer set: i = {}", i);
+
+        const KmerSetCompact<K, KeyType> kmer_set_compact =
+            KmerSetCompact<K, KeyType>::FromKmerSet(kmer_sets_[i], canonical,
+                                                    1);
+        if (clear) {
+          kmer_sets_[i].Clear();
+        }
+
+        WriteLines((boost::filesystem::path(folder_name) /
+                    boost::filesystem::path(
+                        (boost::format("%1%.%2%") % i % extension).str()))
+                       .string(),
+                   compressor, kmer_set_compact.Dump());
+
+        spdlog::debug("dumped kmer set: i = {}", i);
+      });
+    }
+
+    pool.join();
   }
 
   // Dumps data to a file.
