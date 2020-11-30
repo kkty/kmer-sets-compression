@@ -164,29 +164,43 @@ void Main(const std::vector<std::string>& files) {
   } else {
     spdlog::info("constructing kmer_set_set");
 
-    const KmerSetSet<K, KeyType> kmer_set_set = [&] {
-      if (absl::GetFlag(FLAGS_check)) {
-        return KmerSetSet<K, KeyType>(kmer_sets, absl::GetFlag(FLAGS_iteration),
-                                      n_workers);
-      } else {
-        return KmerSetSet<K, KeyType>(
-            std::move(kmer_sets), absl::GetFlag(FLAGS_iteration), n_workers);
-      }
-    }();
+    KmerSetSet<K, KeyType> kmer_set_set;
+
+    // If --check is not specified, it is OK to invalidate kmer_sets.
+    if (absl::GetFlag(FLAGS_check)) {
+      kmer_set_set = KmerSetSet<K, KeyType>(
+          kmer_sets, absl::GetFlag(FLAGS_iteration), n_workers);
+    } else {
+      kmer_set_set = KmerSetSet<K, KeyType>(
+          std::move(kmer_sets), absl::GetFlag(FLAGS_iteration), n_workers);
+    }
 
     spdlog::info("constructed kmer_set_set");
 
     const std::string out_file = absl::GetFlag(FLAGS_out);
 
     if (out_file != "") {
-      kmer_set_set.Dump(out_file, absl::GetFlag(FLAGS_compressor), n_workers);
+      // If --check is not specified, it is OK to invalidate kmer_set_set.
+      const bool clear = !absl::GetFlag(FLAGS_check);
+
+      kmer_set_set.Dump(out_file, absl::GetFlag(FLAGS_compressor),
+                        absl::GetFlag(FLAGS_canonical), clear, n_workers);
     }
 
     if (absl::GetFlag(FLAGS_check)) {
+      spdlog::info("dumping kmer_set_set");
+      std::vector<std::string> dumped =
+          kmer_set_set.Dump(absl::GetFlag(FLAGS_canonical), true, n_workers);
+      spdlog::info("dumped kmer_set_set");
+
+      spdlog::info("loading");
+      KmerSetSet<K, KeyType> loaded = KmerSetSet<K, KeyType>::Load(
+          std::move(dumped), absl::GetFlag(FLAGS_canonical), n_workers);
+      spdlog::info("loaded");
+
       for (int i = 0; i < n_datasets; i++) {
-        spdlog::info(
-            "kmer_sets[{}].Equals(kmer_set_set.Get({})) = {}", i, i,
-            kmer_sets[i].Equals(kmer_set_set.Get(i, n_workers), n_workers));
+        spdlog::info("kmer_sets[{}].Equals(loaded.Get({})) = {}", i, i,
+                     kmer_sets[i].Equals(loaded.Get(i, n_workers), n_workers));
       }
     }
   }

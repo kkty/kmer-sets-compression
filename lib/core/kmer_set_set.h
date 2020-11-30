@@ -33,6 +33,8 @@
 template <int K, typename KeyType>
 class KmerSetSet {
  public:
+  KmerSetSet() = default;
+
   KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int n_iterations,
              int n_workers)
       : kmer_sets_(std::move(kmer_sets)) {
@@ -44,6 +46,7 @@ class KmerSetSet {
       return kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
     };
 
+    // weights[{i, j}] (i < j) is the weight between the ith node and jth node.
     absl::flat_hash_map<std::pair<int, int>, int64_t> weights;
 
     spdlog::debug("calculating initial weights");
@@ -69,6 +72,8 @@ class KmerSetSet {
     }
     spdlog::debug("calculated initial weights");
 
+    // For each i, calculates the size of kmer_sets_[i] and sums them up.
+    // This value will be updated in the main loop accordingly.
     std::atomic_int64_t total_size = 0;
     {
       boost::asio::thread_pool pool(n_workers);
@@ -84,7 +89,8 @@ class KmerSetSet {
 
       const int n = kmer_sets_.size();
 
-      // Finds the max weight in the graph.
+      // Finds i, j such that the weight between ith node and jth node is
+      // maximized.
       int64_t weight = 0;
       int i, j;
       for (const std::pair<const std::pair<int, int>, int64_t>& p : weights) {
@@ -94,62 +100,72 @@ class KmerSetSet {
         }
       }
 
+      // If there are no edges with positive weights, stops the iteration.
       if (weight == 0) break;
 
       spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
 
-      // Constructs kmer_set from kmer_sets_[i] and kmer_sets_[j].
+      // Constructs kmer_set by intersecting kmer_sets_[i] and kmer_sets_[j].
       KmerSet<K, KeyType> kmer_set =
           Intersection(kmer_sets_[i], kmer_sets_[j], n_workers);
 
-      int64_t original_size = kmer_sets_[i].Size() + kmer_sets_[j].Size();
+      const int64_t original_size = kmer_sets_[i].Size() + kmer_sets_[j].Size();
 
       // Moves kmer_set to kmer_sets_[n].
       kmer_sets_.push_back(std::move(kmer_set));
 
+      // Updates kmer_sets_[i] and kmer_sets_[j] and adds metadata so that the
+      // original kmer_sets_[i] and kmer_sets_[j] can be reconstructed.
       kmer_sets_[i].Sub(kmer_sets_[n], n_workers);
       kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
       children_[i].push_back(n);
       children_[j].push_back(n);
 
-      int64_t size_diff = kmer_sets_[n].Size() + kmer_sets_[i].Size() +
-                          kmer_sets_[j].Size() - original_size;
+      // The change in the number of kmers that are stored in kmer_sets_.
+      // It should be negative.
+      const int64_t size_diff = kmer_sets_[n].Size() + kmer_sets_[i].Size() +
+                                kmer_sets_[j].Size() - original_size;
 
       total_size += size_diff;
       spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);
 
-      spdlog::debug("updating weights");
+      // Updates the graph.
+      // Weights of edges that are incident to ith node, jth node, or nth node
+      // should be modified / added.
+      {
+        spdlog::debug("updating weights");
 
-      boost::asio::thread_pool pool(n_workers);
-      std::mutex mu;
+        boost::asio::thread_pool pool(n_workers);
+        std::mutex mu;
 
-      for (int k = i + 1; k < n; k++) {
-        boost::asio::post(pool, [&, k] {
-          int64_t weight = GetEdgeWeight(i, k);
-          std::lock_guard lck(mu);
-          weights[{i, k}] = weight;
-        });
+        for (int k = i + 1; k < n; k++) {
+          boost::asio::post(pool, [&, k] {
+            int64_t weight = GetEdgeWeight(i, k);
+            std::lock_guard lck(mu);
+            weights[{i, k}] = weight;
+          });
+        }
+
+        for (int k = j + 1; k < n; k++) {
+          boost::asio::post(pool, [&, k] {
+            int64_t weight = GetEdgeWeight(j, k);
+            std::lock_guard lck(mu);
+            weights[{j, k}] = weight;
+          });
+        }
+
+        for (int k = 0; k < n; k++) {
+          boost::asio::post(pool, [&, k] {
+            int64_t weight = GetEdgeWeight(k, n);
+            std::lock_guard lck(mu);
+            weights[{k, n}] = weight;
+          });
+        }
+
+        pool.join();
+
+        spdlog::debug("updated weights");
       }
-
-      for (int k = j + 1; k < n; k++) {
-        boost::asio::post(pool, [&, k] {
-          int64_t weight = GetEdgeWeight(j, k);
-          std::lock_guard lck(mu);
-          weights[{j, k}] = weight;
-        });
-      }
-
-      for (int k = 0; k < n; k++) {
-        boost::asio::post(pool, [&, k] {
-          int64_t weight = GetEdgeWeight(k, n);
-          std::lock_guard lck(mu);
-          weights[{k, n}] = weight;
-        });
-      }
-
-      pool.join();
-
-      spdlog::debug("updated weights");
     }
   }
 
@@ -176,8 +192,12 @@ class KmerSetSet {
     return kmer_set;
   }
 
-  std::vector<std::string> Dump(int n_workers) const {
+  // Dumps the structure to a vector of strings.
+  // If "clear" is true, the contents of the structure will be invalidated.
+  std::vector<std::string> Dump(bool canonical, bool clear, int n_workers) {
     std::vector<std::string> v;
+
+    // Dumps "children_".
 
     {
       std::stringstream ss;
@@ -193,6 +213,12 @@ class KmerSetSet {
       }
       v.push_back(ss.str());
     }
+
+    if (clear) {
+      absl::flat_hash_map<int, std::vector<int>>().swap(children_);
+    }
+
+    // Dumps "kmer_sets_".
 
     {
       std::stringstream ss;
@@ -210,10 +236,17 @@ class KmerSetSet {
       for (size_t i = 0; i < kmer_sets_.size(); i++) {
         boost::asio::post(pool, [&, i] {
           spdlog::debug("dumping kmer set: i = {}", i);
+
           const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_sets_[i], true,
-                                                         1);
+              KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_sets_[i],
+                                                         canonical, 1);
+
           v[n + i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
+
+          if (clear) {
+            kmer_sets_[i].Clear();
+          }
+
           spdlog::debug("dumped kmer set: i = {}", i);
         });
       }
@@ -226,41 +259,66 @@ class KmerSetSet {
 
   // Dumps data to a file.
   void Dump(const std::string& file_name, const std::string& compressor,
-            int n_workers) const {
-    WriteLines(file_name, compressor, Dump(n_workers));
+            bool canonical, bool clear, int n_workers) {
+    WriteLines(file_name, compressor, Dump(canonical, clear, n_workers));
   }
 
-  // static KmerSetSet Load(const std::vector<std::string>& v, int n_workers) {
-  //   absl::flat_hash_map<int, std::vector<int>> children;
-  //   std::vector<KmerSet<K, KeyType>> kmer_sets;
+  // Loads data from a vector of strings.
+  static KmerSetSet Load(std::vector<std::string> v, bool canonical,
+                         int n_workers) {
+    absl::flat_hash_map<int, std::vector<int>> children;
+    std::vector<KmerSet<K, KeyType>> kmer_sets;
 
-  //   int children_size;
-  //   {
-  //     std::stringstream ss(v[0]);
-  //     ss >> children_size;
-  //   }
-  //   children.reserve(children_size);
+    // Loads "children".
 
-  //   for (int i = 0; i < children_size; i++) {
-  //     std::stringstream ss(v[i + 1]);
-  //     int key;
-  //     int size;
-  //     ss >> key >> size;
-  //     for (int j = 0; j < size; j++) {
-  //       int value;
-  //       ss >> value;
-  //       children[key].push_back(value);
-  //     }
-  //   }
+    int children_size;
+    {
+      std::stringstream ss(v[0]);
+      ss >> children_size;
+    }
+    children.reserve(children_size);
 
-  //   int size;
-  //   {
-  //     std::stringstream ss(v[i + 1 + children_size]);
-  //     ss >> size;
-  //   }
+    for (int i = 0; i < children_size; i++) {
+      std::stringstream ss(v[i + 1]);
+      int key;
+      int size;
+      ss >> key >> size;
+      for (int j = 0; j < size; j++) {
+        int value;
+        ss >> value;
+        children[key].push_back(value);
+      }
+    }
 
-  //   return KmerSetSet(children, kmer_sets);
-  // }
+    // Loads "kmer_sets".
+
+    // We are concerned with {v[offset] ... v[v.size() - 1]}.
+    const int offset = children_size + 1;
+
+    int kmer_sets_size;
+    {
+      std::stringstream ss(v[offset]);
+      ss >> kmer_sets_size;
+    }
+
+    kmer_sets.resize(kmer_sets_size);
+
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      for (int i = 0; i < kmer_sets_size; i++) {
+        boost::asio::post(pool, [&, i] {
+          std::string& s = v[offset + 1 + i];
+          KmerSetCompressed<K, KeyType> kmer_set_compressed =
+              KmerSetCompressed<K, KeyType>::Load(absl::StrSplit(s, ' '));
+          kmer_sets[i] = kmer_set_compressed.ToKmerSet(canonical, n_workers);
+          std::string().swap(s);
+        });
+      }
+    }
+
+    return KmerSetSet(children, kmer_sets);
+  }
 
  private:
   KmerSetSet(absl::flat_hash_map<int, std::vector<int>> children,
