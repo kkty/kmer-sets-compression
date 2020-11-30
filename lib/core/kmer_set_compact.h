@@ -1,5 +1,5 @@
-#ifndef CORE_KMER_SET_COMPRESSED_H_
-#define CORE_KMER_SET_COMPRESSED_H_
+#ifndef CORE_KMER_SET_COMPACT_H_
+#define CORE_KMER_SET_COMPACT_H_
 
 #include <algorithm>
 #include <atomic>
@@ -18,11 +18,11 @@
 
 // Represents a set of kmers with SPSS, thereby reducing space.
 template <int K, typename KeyType>
-class KmerSetCompressed {
+class KmerSetCompact {
  public:
-  // Constructs KmerSetCompressed from a kmer set. If the kmer set is for
+  // Constructs KmerSetCompact from a kmer set. If the kmer set is for
   // storing canonical kmers, "canonical" should be true.
-  static KmerSetCompressed FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
+  static KmerSetCompact FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
                                        bool canonical, int n_workers) {
     std::vector<std::string> spss;
 
@@ -32,7 +32,7 @@ class KmerSetCompressed {
       spss = GetUnitigs<K, KeyType>(kmer_set, n_workers);
     }
 
-    return KmerSetCompressed(std::move(spss));
+    return KmerSetCompact(std::move(spss));
   }
 
   // Constructs a KmerSet.
@@ -76,14 +76,14 @@ class KmerSetCompressed {
   std::vector<std::string> Dump() const { return spss_; }
 
   // Loads data from a file.
-  static KmerSetCompressed Load(const std::string& file_name,
+  static KmerSetCompact Load(const std::string& file_name,
                                 const std::string& decompressor) {
-    return KmerSetCompressed(ReadLines(file_name, decompressor));
+    return KmerSetCompact(ReadLines(file_name, decompressor));
   }
 
   // Loads data from a vector of strings.
-  static KmerSetCompressed Load(std::vector<std::string> v) {
-    return KmerSetCompressed(std::move(v));
+  static KmerSetCompact Load(std::vector<std::string> v) {
+    return KmerSetCompact(std::move(v));
   }
 
   // Returns the total length of stored strings.
@@ -103,7 +103,7 @@ class KmerSetCompressed {
   }
 
  private:
-  KmerSetCompressed(std::vector<std::string> spss) : spss_(std::move(spss)){};
+  KmerSetCompact(std::vector<std::string> spss) : spss_(std::move(spss)){};
 
   std::vector<std::string> spss_;
 };

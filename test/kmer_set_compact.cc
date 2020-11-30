@@ -1,4 +1,4 @@
-#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_compact.h"
 
 #include <string>
 
@@ -6,7 +6,7 @@
 #include "core/kmer_set.h"
 #include "gtest/gtest.h"
 
-TEST(KmerSetCompressed, FromAndToKmerSet) {
+TEST(KmerSetCompact, FromAndToKmerSet) {
   const int K = 9;
   using KeyType = uint8_t;
 
@@ -26,8 +26,8 @@ TEST(KmerSetCompressed, FromAndToKmerSet) {
     }
   }
 
-  KmerSetCompressed<K, KeyType> compressed =
-      KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_set, true, 1);
+  KmerSetCompact<K, KeyType> compressed =
+      KmerSetCompact<K, KeyType>::FromKmerSet(kmer_set, true, 1);
 
   KmerSet<K, KeyType> decompressed = compressed.ToKmerSet(true, 1);
 

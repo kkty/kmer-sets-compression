@@ -13,7 +13,6 @@
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compressed.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
 #include "io.h"

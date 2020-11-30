@@ -22,7 +22,7 @@
 #include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_compact.h"
 #include "core/range.h"
 #include "core/unitigs.h"
 #include "lemon/list_graph.h"
@@ -237,11 +237,11 @@ class KmerSetSet {
         boost::asio::post(pool, [&, i] {
           spdlog::debug("dumping kmer set: i = {}", i);
 
-          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_sets_[i],
-                                                         canonical, 1);
+          const KmerSetCompact<K, KeyType> kmer_set_compact =
+              KmerSetCompact<K, KeyType>::FromKmerSet(kmer_sets_[i], canonical,
+                                                      1);
 
-          v[n + i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
+          v[n + i] = absl::StrJoin(kmer_set_compact.Dump(), " ");
 
           if (clear) {
             kmer_sets_[i].Clear();
@@ -309,9 +309,9 @@ class KmerSetSet {
       for (int i = 0; i < kmer_sets_size; i++) {
         boost::asio::post(pool, [&, i] {
           std::string& s = v[offset + 1 + i];
-          KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::Load(absl::StrSplit(s, ' '));
-          kmer_sets[i] = kmer_set_compressed.ToKmerSet(canonical, n_workers);
+          KmerSetCompact<K, KeyType> kmer_set_compact =
+              KmerSetCompact<K, KeyType>::Load(absl::StrSplit(s, ' '));
+          kmer_sets[i] = kmer_set_compact.ToKmerSet(canonical, n_workers);
           std::string().swap(s);
         });
       }
@@ -611,7 +611,7 @@ class KmerSetSetMM {
   }
 
   // Dumps data to a vector of strings.
-  // "canonical" will be used to compress kmer sets with KmerSetCompressed.
+  // "canonical" will be used to compress kmer sets with KmerSetCompact.
   // "v" is used internally to process recursions.
   std::vector<std::string> Dump(
       bool canonical, int n_workers,
@@ -665,7 +665,7 @@ class KmerSetSetMM {
           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
 
       // Dumps diffs to 1 + diffs_.size() strings.
-      // Each KmerSet is converted to KmerSetCompressed and dumped to a
+      // Each KmerSet is converted to KmerSetCompact and dumped to a
       // string.
 
       {
@@ -681,11 +681,10 @@ class KmerSetSetMM {
 
         for (size_t i = 0; i < diffs.size(); i++) {
           boost::asio::post(pool, [&, i] {
-            const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-                KmerSetCompressed<K, KeyType>::FromKmerSet(diffs[i], canonical,
-                                                           1);
+            const KmerSetCompact<K, KeyType> kmer_set_compact =
+                KmerSetCompact<K, KeyType>::FromKmerSet(diffs[i], canonical, 1);
 
-            buf[i] = absl::StrJoin(kmer_set_compressed.Dump(), " ");
+            buf[i] = absl::StrJoin(kmer_set_compact.Dump(), " ");
           });
         }
 
@@ -774,10 +773,10 @@ class KmerSetSetMM {
             return;
           }
 
-          const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-              KmerSetCompressed<K, KeyType>::Load(absl::StrSplit(line, ' '));
+          const KmerSetCompact<K, KeyType> kmer_set_compact =
+              KmerSetCompact<K, KeyType>::Load(absl::StrSplit(line, ' '));
 
-          diffs[j] = kmer_set_compressed.ToKmerSet(canonical, 1);
+          diffs[j] = kmer_set_compact.ToKmerSet(canonical, 1);
         });
       }
 

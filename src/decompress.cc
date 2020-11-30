@@ -5,7 +5,7 @@
 #include "absl/flags/parse.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_compact.h"
 #include "log.h"
 #include "spdlog/spdlog.h"
 
@@ -23,15 +23,15 @@ void Main(const std::string& file_name) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
 
-  spdlog::info("constructing kmer_set_compressed");
-  const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-      KmerSetCompressed<K, KeyType>::Load(file_name,
-                                          absl::GetFlag(FLAGS_decompressor));
-  spdlog::info("constructed kmer_set_compressed");
+  spdlog::info("constructing kmer_set_compact");
+  const KmerSetCompact<K, KeyType> kmer_set_compact =
+      KmerSetCompact<K, KeyType>::Load(file_name,
+                                       absl::GetFlag(FLAGS_decompressor));
+  spdlog::info("constructed kmer_set_compact");
 
   spdlog::info("constructing kmer_set");
   const KmerSet<K, KeyType> kmer_set =
-      kmer_set_compressed.ToKmerSet(absl::GetFlag(FLAGS_canonical), n_workers);
+      kmer_set_compact.ToKmerSet(absl::GetFlag(FLAGS_canonical), n_workers);
   spdlog::info("constructed kmer_set");
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());

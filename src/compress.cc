@@ -13,7 +13,7 @@
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_compact.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
 #include "log.h"
@@ -96,18 +96,17 @@ void Main(const std::string& file_name) {
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
-  spdlog::info("constructing kmer_set_compressed");
-  const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-      KmerSetCompressed<K, KeyType>::FromKmerSet(kmer_set, canonical,
-                                                 n_workers);
-  spdlog::info("constructed kmer_set_compressed");
+  spdlog::info("constructing kmer_set_compact");
+  const KmerSetCompact<K, KeyType> kmer_set_compact =
+      KmerSetCompact<K, KeyType>::FromKmerSet(kmer_set, canonical, n_workers);
+  spdlog::info("constructed kmer_set_compact");
 
-  spdlog::info("kmer_set_compressed.Size() = {}",
-               kmer_set_compressed.Size(n_workers));
+  spdlog::info("kmer_set_compact.Size() = {}",
+               kmer_set_compact.Size(n_workers));
 
   if (absl::GetFlag(FLAGS_check)) {
     const KmerSet<K, KeyType> decompressed =
-        kmer_set_compressed.ToKmerSet(canonical, n_workers);
+        kmer_set_compact.ToKmerSet(canonical, n_workers);
     if (!kmer_set.Equals(decompressed, n_workers)) {
       spdlog::error("decompressed is not equal to kmer_set");
       std::exit(1);
@@ -117,7 +116,7 @@ void Main(const std::string& file_name) {
   std::string output_file_name = absl::GetFlag(FLAGS_out);
 
   if (!output_file_name.empty()) {
-    kmer_set_compressed.Dump(output_file_name, absl::GetFlag(FLAGS_compressor));
+    kmer_set_compact.Dump(output_file_name, absl::GetFlag(FLAGS_compressor));
   }
 }
 

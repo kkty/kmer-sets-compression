@@ -2,31 +2,31 @@
 #define IO_H_
 
 #include <string>
-#include <tuple>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "absl/status/statusor.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compressed.h"
+#include "core/kmer_set_compact.h"
 #include "spdlog/spdlog.h"
 
 template <int K, typename KeyType>
 KmerSet<K, KeyType> GetKmerSetFromCompressedKmersFile(
     const std::string& file_name, const std::string& decompressor,
     bool canonical, int n_workers) {
-  spdlog::info("constructing kmer_set_compressed");
+  spdlog::info("constructing kmer_set_compact");
 
-  const KmerSetCompressed<K, KeyType> kmer_set_compressed =
-      KmerSetCompressed<K, KeyType>::Load(file_name, decompressor);
+  const KmerSetCompact<K, KeyType> kmer_set_compact =
+      KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
 
-  spdlog::info("constructed kmer_set_compressed");
+  spdlog::info("constructed kmer_set_compact");
 
   spdlog::info("constructing kmer_set");
 
   const KmerSet<K, KeyType> kmer_set =
-      kmer_set_compressed.ToKmerSet(canonical, n_workers);
+      kmer_set_compact.ToKmerSet(canonical, n_workers);
 
   spdlog::info("constructed kmer_set");
 
