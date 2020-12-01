@@ -140,19 +140,23 @@ class KmerSetSet {
         boost::asio::thread_pool pool(n_workers);
         std::mutex mu;
 
-        for (int k = i + 1; k < n; k++) {
+        for (int k = 0; k < n; k++) {
+          if (i == k) continue;
+
           boost::asio::post(pool, [&, k] {
             int64_t weight = GetEdgeWeight(i, k);
             std::lock_guard lck(mu);
-            weights[{i, k}] = weight;
+            weights[{std::min(i, k), std::max(i, k)}] = weight;
           });
         }
 
-        for (int k = j + 1; k < n; k++) {
+        for (int k = 0; k < n; k++) {
+          if (j == k) continue;
+
           boost::asio::post(pool, [&, k] {
             int64_t weight = GetEdgeWeight(j, k);
             std::lock_guard lck(mu);
-            weights[{j, k}] = weight;
+            weights[{std::min(j, k), std::max(j, k)}] = weight;
           });
         }
 
