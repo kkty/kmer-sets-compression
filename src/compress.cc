@@ -35,66 +35,74 @@ ABSL_FLAG(std::string, out, "", "output file name");
 template <int K, typename KeyType>
 void Main(const std::string& file_name) {
   InitDefaultLogger();
-  if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
 
-  const int n_workers = absl::GetFlag(FLAGS_workers);
+  const std::string type = absl::GetFlag(FLAGS_type);
+  const bool debug = absl::GetFlag(FLAGS_debug);
+  const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+  const std::string compressor = absl::GetFlag(FLAGS_compressor);
   const bool canonical = absl::GetFlag(FLAGS_canonical);
+  const int cutoff = absl::GetFlag(FLAGS_cutoff);
+  const int n_workers = absl::GetFlag(FLAGS_workers);
+  const bool check = absl::GetFlag(FLAGS_check);
+  const std::string out = absl::GetFlag(FLAGS_out);
 
-  spdlog::info("constructing kmer_counter");
+  if (debug) EnableDebugLogs();
 
-  const KmerCounter<K, KeyType> kmer_counter = [&] {
-    const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
-    const std::string type = absl::GetFlag(FLAGS_type);
+  KmerSet<K, KeyType> kmer_set;
+
+  {
+    KmerCounter<K, KeyType> kmer_counter;
+
+    spdlog::info("constructing kmer_counter");
 
     if (type == "fastq") {
-      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+      absl::StatusOr<KmerCounter<K, KeyType>> statusor =
           decompressor != ""
               ? KmerCounter<K, KeyType>::FromFASTQ(file_name, decompressor,
                                                    canonical, n_workers)
               : KmerCounter<K, KeyType>::FromFASTQ(file_name, canonical,
                                                    n_workers);
 
-      if (!status_or.ok()) {
+      if (!statusor.ok()) {
         spdlog::error("failed to parse FASTQ file: {}",
-                      status_or.status().ToString());
+                      statusor.status().ToString());
         std::exit(1);
       }
 
-      return *status_or;
+      kmer_counter = std::move(statusor).value();
     } else if (type == "fasta") {
-      absl::StatusOr<KmerCounter<K, KeyType>> status_or =
+      absl::StatusOr<KmerCounter<K, KeyType>> statusor =
           decompressor != ""
               ? KmerCounter<K, KeyType>::FromFASTA(file_name, decompressor,
                                                    canonical, n_workers)
               : KmerCounter<K, KeyType>::FromFASTA(file_name, canonical,
                                                    n_workers);
 
-      if (!status_or.ok()) {
+      if (!statusor.ok()) {
         spdlog::error("failed to parse FASTA file: {}",
-                      status_or.status().ToString());
+                      statusor.status().ToString());
         std::exit(1);
       }
 
-      return *status_or;
+      kmer_counter = std::move(statusor).value();
     } else {
       spdlog::error("invalid type: {}", type);
       std::exit(1);
     }
-  }();
 
-  spdlog::info("constructed kmer_counter");
-  spdlog::info("constructing kmer_set");
+    spdlog::info("constructed kmer_counter");
 
-  KmerSet<K, KeyType> kmer_set;
-  int64_t cutoff_count;
+    spdlog::info("constructing kmer_set");
 
-  std::tie(kmer_set, cutoff_count) =
-      kmer_counter.ToKmerSet(absl::GetFlag(FLAGS_cutoff), n_workers);
+    int64_t cutoff_count;
+    std::tie(kmer_set, cutoff_count) =
+        kmer_counter.ToKmerSet(cutoff, n_workers);
 
-  spdlog::info("constructed kmer_set");
-  spdlog::info("cutoff_count = {}", cutoff_count);
-  spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
-  spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
+    spdlog::info("constructed kmer_set");
+    spdlog::info("cutoff_count = {}", cutoff_count);
+    spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
+    spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
+  }
 
   spdlog::info("constructing kmer_set_compact");
   const KmerSetCompact<K, KeyType> kmer_set_compact =
@@ -104,7 +112,7 @@ void Main(const std::string& file_name) {
   spdlog::info("kmer_set_compact.Size() = {}",
                kmer_set_compact.Size(n_workers));
 
-  if (absl::GetFlag(FLAGS_check)) {
+  if (check) {
     const KmerSet<K, KeyType> decompressed =
         kmer_set_compact.ToKmerSet(canonical, n_workers);
     if (!kmer_set.Equals(decompressed, n_workers)) {
@@ -113,10 +121,8 @@ void Main(const std::string& file_name) {
     }
   }
 
-  std::string output_file_name = absl::GetFlag(FLAGS_out);
-
-  if (!output_file_name.empty()) {
-    kmer_set_compact.Dump(output_file_name, absl::GetFlag(FLAGS_compressor));
+  if (!out.empty()) {
+    kmer_set_compact.Dump(out, compressor);
   }
 }
 
