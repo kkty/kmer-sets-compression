@@ -7,6 +7,11 @@
 
 #include "absl/random/random.h"
 
+// Kmer is used to represent a single kmer.
+// Data is represented with 2 * K bits internally, regarding 'A', 'C', 'G', and
+// 'T' as 00, 01, 10 and 11 respectively.
+// The class supports conversions from / to strings, which may contain 'A', 'C',
+// 'G' and 'T'.
 template <int K>
 class Kmer {
  public:
@@ -18,6 +23,9 @@ class Kmer {
 
   Kmer(const std::bitset<K * 2>& bits) : bits_(bits) {}
 
+  // Returns the string representation of the kmer.
+  // The length of the output string is K and only contains 'A', 'C', 'G' and
+  // 'T'.
   std::string String() const {
     std::string s;
     s.reserve(K);
@@ -27,6 +35,8 @@ class Kmer {
     return s;
   }
 
+  // Returns the ith character of the kmer. The return value is either 'A', 'C',
+  // 'G' or 'T'.
   char Get(int idx) const {
     // Gets the ith bit from the right.
     const auto get = [&](int i) { return bits_[K * 2 - 1 - i]; };
@@ -40,6 +50,8 @@ class Kmer {
     return 'T';
   }
 
+  // Sets the ith character of the kmer. "idx" should be in [0, K) and "c"
+  // should be either 'A', 'C', 'G' or 'T'.
   void Set(int idx, char c) {
     // Sets the ith bit from the left.
     const auto set = [&](int i) { bits_.set(K * 2 - 1 - i); };
@@ -60,6 +72,12 @@ class Kmer {
     }
   }
 
+  // Returns the complement of the kmer.
+  // The complement of a kmer is constructed by reversing the original kmer and
+  // replacing 'A', 'C', 'G' and 'T' with 'T', 'G', 'C' and 'A' respectively.
+  // Idea: kmer and kmer.Complement() can be paired in double stranded
+  // structures.
+  // Example: The complement of "AACCG" is "CGGTT".
   Kmer<K> Complement() const {
     Kmer<K> complement;
     for (int i = 0; i < K; i++) {
@@ -69,6 +87,8 @@ class Kmer {
     return complement;
   }
 
+  // Returns the minimum of the kmer and the complement of the kmer.
+  // The dictionary ordering is used to get the minium.
   Kmer<K> Canonical() const { return std::min(*this, this->Complement()); }
 
   Kmer<K> Next(char c) const {
@@ -103,6 +123,7 @@ class Kmer {
     return prevs;
   }
 
+  // Returns the bit-wise representation of the kmer.
   std::bitset<K * 2> Bits() const { return bits_; }
 
   size_t Hash() const { return std::hash<std::bitset<K * 2>>()(bits_); }

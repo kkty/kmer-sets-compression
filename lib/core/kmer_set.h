@@ -31,6 +31,10 @@ Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
   return Kmer<K>{bits};
 }
 
+// KmerSet can be used to hold a unique set of kmers.
+// As data are divided into multiple buckets, some operations can be done
+// efficiently in parallel. E.g., it supports multi-threaded operations for
+// merging 2 KmerSets and finding all the kmers that match a condition.
 template <int K, typename KeyType>
 class KmerSet {
  public:
@@ -46,11 +50,13 @@ class KmerSet {
         std::vector<Bucket> buf(kBucketsNum);
 
         range.ForEach([&](int64_t i) {
-          const Kmer<K>& kmer = kmers[i];
-          const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
-
+          int bucket;
+          KeyType key;
+          std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmers[i]);
           buf[bucket].insert(key);
         });
+
+        // Moves data from buffer.
 
         std::vector<bool> done(kBucketsNum);
         int done_count = 0;
@@ -75,6 +81,7 @@ class KmerSet {
     for (auto& t : threads) t.join();
   }
 
+  // Returns the total number of stored kmers.
   int64_t Size() const {
     int64_t sum = 0;
     for (const auto& bucket : buckets_) {
@@ -291,6 +298,9 @@ class KmerSet {
     WriteLines(file_name, compressor, lines);
   }
 
+  // Returns the hash value.
+  // If two KmerSets contain the same set of kmers, they will produce the same
+  // hash value.
   size_t Hash(int n_workers) const {
     size_t hash = 0;
     std::mutex mu;
@@ -346,7 +356,7 @@ class KmerSet {
 
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
-  // Execute a function for each bucket.
+  // Executes a function for each bucket (in parallel.)
   //
   // Example:
   //   ForEachBucket([&](const Bucket& bucket, int bucket_id) { ... },
