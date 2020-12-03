@@ -157,6 +157,15 @@ void Main(const std::string& file1, const std::string& file2) {
       std::cout << ' ' << result.visited_nodes;
     }
 
+    {
+      spdlog::info("executing fast A*");
+      const SearchResult result = AStarSearch<K>(kmer_graph, start, goal);
+      spdlog::info("executed fast A*");
+      spdlog::info("found = {}, distance = {}, visited_nodes = {}",
+                   result.found, result.distance, result.visited_nodes);
+      std::cout << ' ' << result.visited_nodes;
+    }
+
     std::cout << std::endl;
 
     n--;

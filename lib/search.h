@@ -1,6 +1,8 @@
 #ifndef SEARCH_H_
 #define SEARCH_H_
 
+#include <algorithm>
+#include <limits>
 #include <mutex>
 #include <queue>
 #include <stack>
@@ -176,6 +178,169 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
           distances[to] > distances[from] + cost) {
         distances[to] = distances[from] + cost;
         queue.push({distances[to], to});
+      }
+    }
+  }
+
+  return {false, 0, 0};
+}
+
+// Calculates all-pair shortest distances in dBG.
+// If GetAllPairDistances(...)[{kmer1, kmer2}] = i, the distance from kmer1 to
+// kmer2 is i.
+template <int K, typename KeyType>
+absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> GetAllPairDistances(
+    const KmerSet<K, KeyType>& kmer_set, int n_workers) {
+  const std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
+
+  absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> distances;
+
+  std::vector<std::thread> threads;
+  std::mutex mu;
+
+  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+    threads.emplace_back([&, range] {
+      absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> buf_distances;
+
+      range.ForEach([&](int64_t i) {
+        const Kmer<K>& start = kmers[i];
+
+        absl::flat_hash_map<Kmer<K>, int64_t> d;
+        d[start] = 0;
+
+        std::queue<Kmer<K>> queue;
+        queue.push(start);
+
+        while (!queue.empty()) {
+          const Kmer<K> current = queue.front();
+          queue.pop();
+
+          for (const Kmer<K>& next : current.Nexts()) {
+            if (!kmer_set.Contains(next)) continue;
+            if (d.find(next) != d.end()) continue;
+            d[next] = d[current] + 1;
+            queue.push(next);
+          }
+        }
+
+        for (const std::pair<const Kmer<K>, int64_t>& p : d) {
+          buf_distances[{start, p.first}] = p.second;
+        }
+      });
+
+      std::lock_guard lck(mu);
+      distances.insert(buf_distances.begin(), buf_distances.end());
+    });
+  }
+
+  for (std::thread& t : threads) t.join();
+
+  return distances;
+}
+
+// Executes A* search using the all-pair shortest distances for the dBG
+// represented by L-mers.
+template <int K, int L>
+SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
+                         const Kmer<K>& goal,
+                         const absl::flat_hash_map<std::pair<Kmer<L>, Kmer<L>>,
+                                                   int64_t>& distances) {
+  const auto h = [&](int i) {
+    int64_t max = 0;
+
+    std::string s = g.kmers[i].String();
+    std::string s_goal = goal.String();
+
+    for (int j = 0; j < K - L + 1; j++) {
+      max =
+          std::max(max, distances
+                            .find(std::make_pair(Kmer<L>(s.substr(j, L)),
+                                                 Kmer<L>(s_goal.substr(j, L))))
+                            ->second
+
+          );
+    }
+
+    return max;
+  };
+
+  const int64_t start_id = g.ids.find(start)->second;
+  const int64_t goal_id = g.ids.find(goal)->second;
+
+  // f[i] will be distance(start_id, i) + h(i)
+  absl::flat_hash_map<int64_t, int64_t> f;
+  f[start_id] = h(start_id);
+  std::priority_queue<std::pair<int64_t, int64_t>,
+                      std::vector<std::pair<int64_t, int64_t>>,
+                      std::greater<std::pair<int64_t, int64_t>>>
+      queue;
+  queue.push({f[start_id], start_id});
+
+  while (!queue.empty()) {
+    int from = queue.top().second;
+    queue.pop();
+
+    if (from == goal_id) {
+      return {true, f[from], (int64_t)f.size()};
+    }
+
+    for (const std::pair<int64_t, int64_t>& edge : g.edges[from]) {
+      int64_t to, cost;
+      std::tie(to, cost) = edge;
+
+      if (f.find(to) == f.end() || f[to] > f[from] - h(from) + h(to) + cost) {
+        f[to] = f[from] - h(from) + h(to) + cost;
+        queue.push({f[to], to});
+      }
+    }
+  }
+
+  return {false, 0, 0};
+}
+
+template <int K>
+SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
+                         const Kmer<K>& goal) {
+  const auto h = [&](int i) {
+    const std::string s = g.kmers[i].String();
+    const std::string s_goal = goal.String();
+
+    for (int j = 0; j < K; j++) {
+      // If the (K-j)-suffix of s is equal to the (K-j)-prefix of s_goal, there
+      // may be a path whose distance is j that goes from s to s_goal.
+      if (s.substr(j, K - j) == s_goal.substr(0, K - j)) return j;
+    }
+
+    return K;
+  };
+
+  const int64_t start_id = g.ids.find(start)->second;
+  const int64_t goal_id = g.ids.find(goal)->second;
+
+  // f[i] will be distance(start_id, i) + h(i)
+  absl::flat_hash_map<int64_t, int64_t> f;
+  f[start_id] = h(start_id);
+  std::priority_queue<std::pair<int64_t, int64_t>,
+                      std::vector<std::pair<int64_t, int64_t>>,
+                      std::greater<std::pair<int64_t, int64_t>>>
+      queue;
+  queue.push({f[start_id], start_id});
+
+  while (!queue.empty()) {
+    int from = queue.top().second;
+    queue.pop();
+
+    if (from == goal_id) {
+      return {true, f[from], (int64_t)f.size()};
+    }
+
+    for (const std::pair<int64_t, int64_t>& edge : g.edges[from]) {
+      int64_t to, cost;
+      std::tie(to, cost) = edge;
+
+      if (f.find(to) == f.end() || f[to] > f[from] - h(from) + h(to) + cost) {
+        f[to] = f[from] - h(from) + h(to) + cost;
+        queue.push({f[to], to});
       }
     }
   }
