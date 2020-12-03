@@ -278,6 +278,39 @@ class KmerSet {
     return Diff(other, n_workers) == 0;
   }
 
+  // Extracts K2-mers from the K-mer set.
+  // K2 should be equal to or less than K.
+  template <int K2, typename KeyType2>
+  KmerSet<K2, KeyType2> Extract(int n_workers) const {
+    std::vector<Kmer<K>> kmers = Find(n_workers);
+    KmerSet<K2, KeyType2> extracted;
+
+    std::vector<std::thread> threads;
+    int done = 0;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        KmerSet<K2, KeyType2> buf;
+
+        range.ForEach([&](int64_t i) {
+          const std::string s = kmers[i].String();
+          for (int j = 0; j < (int)s.size() - K2 + 1; j++) {
+            buf.Add(Kmer<K2>(s.substr(j, K2)));
+          }
+        });
+
+        std::lock_guard lck(mu);
+        extracted.Add(buf, 1 + done);
+        done += 1;
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    return extracted;
+  }
+
   // Dumps kmers to a file.
   void Dump(const std::string& file_name, const std::string& compressor,
             int n_workers) const {
