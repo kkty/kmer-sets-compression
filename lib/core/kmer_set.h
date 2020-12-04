@@ -1,10 +1,12 @@
 #ifndef CORE_KMER_SET_H_
 #define CORE_KMER_SET_H_
 
+#include <bitset>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+#include <tuple>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
@@ -14,10 +16,11 @@
 #include "core/kmer.h"
 #include "core/range.h"
 
-// The first N bits are used to get the bucket ID.
+// The last sizeof(KeyType) * 8 bits are used as keys.
+// The other bits are used to select buckets.
 template <int K, typename KeyType>
 std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
-  const auto& bits = kmer.Bits();
+  const std::bitset<2 * K> bits = kmer.Bits();
   const int key_bits = sizeof(KeyType) * 8;
   const int bucket_id = bits.to_ullong() >> key_bits;
   const KeyType key = bits.to_ullong() % (1ull << key_bits);
@@ -66,7 +69,7 @@ class KmerSet {
             if (done[i]) continue;
 
             if (mus[i].try_lock()) {
-              for (const auto& key : buf[i]) buckets_[i].insert(key);
+              for (const KeyType& key : buf[i]) buckets_[i].insert(key);
 
               mus[i].unlock();
 
@@ -78,13 +81,13 @@ class KmerSet {
       });
     }
 
-    for (auto& t : threads) t.join();
+    for (std::thread& t : threads) t.join();
   }
 
   // Returns the total number of stored kmers.
   int64_t Size() const {
     int64_t sum = 0;
-    for (const auto& bucket : buckets_) {
+    for (const Bucket& bucket : buckets_) {
       sum += bucket.size();
     }
     return sum;
@@ -99,19 +102,28 @@ class KmerSet {
 
   // Adds a single kmer.
   void Add(const Kmer<K>& kmer) {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    int bucket;
+    KeyType key;
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
     buckets_[bucket].insert(key);
   }
 
   // Removes a single kmer.
   void Remove(const Kmer<K>& kmer) {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    int bucket;
+    KeyType key;
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
     buckets_[bucket].erase(key);
   }
 
   // Returns true if the kmer is contained in the set.
   bool Contains(const Kmer<K>& kmer) const {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    int bucket;
+    KeyType key;
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
 
@@ -125,16 +137,14 @@ class KmerSet {
         [&](const Bucket& bucket, int bucket_id) {
           std::vector<Kmer<K>> buf;
 
-          for (const auto& key : bucket) {
+          for (const KeyType& key : bucket) {
             const Kmer<K> kmer =
                 GetKmerFromBucketAndKey<K, KeyType>(bucket_id, key);
             if (pred(kmer)) buf.push_back(kmer);
           }
 
           std::lock_guard lck(mu);
-          for (const auto& kmer : buf) {
-            kmers.push_back(kmer);
-          }
+          kmers.insert(kmers.end(), buf.begin(), buf.end());
         },
         n_workers);
 
@@ -150,7 +160,7 @@ class KmerSet {
   KmerSet& Add(const KmerSet& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
-          for (const auto& key : other_bucket) {
+          for (const KeyType& key : other_bucket) {
             buckets_[bucket_id].insert(key);
           }
         },
@@ -163,7 +173,7 @@ class KmerSet {
   KmerSet& Sub(const KmerSet& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
-          for (const auto& key : other_bucket) {
+          for (const KeyType& key : other_bucket) {
             buckets_[bucket_id].erase(key);
           }
         },
@@ -326,7 +336,7 @@ class KmerSet {
       });
     }
 
-    for (auto& t : threads) t.join();
+    for (std::thread& t : threads) t.join();
 
     WriteLines(file_name, compressor, lines);
   }
@@ -380,10 +390,10 @@ class KmerSet {
     return KmerSet(kmers, n_workers);
   }
 
-  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
-
  private:
   using Bucket = absl::flat_hash_set<KeyType>;
+
+  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
 
   std::vector<Bucket> buckets_;
 
