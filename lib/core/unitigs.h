@@ -347,7 +347,8 @@ template <int K, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
                                           int n_workers, int n_buckets = 64) {
   spdlog::debug("constructing unitigs");
-  const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
+  const std::vector<std::string> unitigs =
+      GetUnitigsCanonical(kmer_set, n_workers);
   spdlog::debug("constructed unitigs");
 
   const int64_t n = unitigs.size();
@@ -456,13 +457,13 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
       mus[std::min(bucket_i, bucket_j)].unlock();
     };
 
-    // Returns true if an edge is indicent to the left side of i.
+    // Returns true if an edge is incident to the left side of i.
     const auto HasEdgeLeft = [&](int64_t i) {
       int bucket = i % n_buckets;
       return buf_edges_left[bucket].find(i) != buf_edges_left[bucket].end();
     };
 
-    // Returns true if an edge is indicent to the right side of i.
+    // Returns true if an edge is incident to the right side of i.
     const auto HasEdgeRight = [&](int64_t i) {
       int bucket = i % n_buckets;
       return buf_edges_right[bucket].find(i) != buf_edges_right[bucket].end();
@@ -703,7 +704,7 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
   };
 
   const auto GetStringFromPath = [&](const Path& path) {
-    assert(path.size() > 0);
+    assert(!path.empty());
 
     std::string s;
     bool is_first = true;
