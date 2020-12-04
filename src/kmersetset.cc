@@ -11,7 +11,6 @@
 #include "boost/asio/thread_pool.hpp"
 #include "core/graph.h"
 #include "core/kmer.h"
-#include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
@@ -20,13 +19,11 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(std::string, type, "fastq", "input file type (fastq or ckmers)");
 ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for input files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
-ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
 ABSL_FLAG(int, iteration, 1, "number of iterations for KmerSetSet");
@@ -42,6 +39,7 @@ ABSL_FLAG(bool, approximate_graph, false,
 ABSL_FLAG(bool, partial_matching, false,
           "make mates partially in the matching algorithm");
 ABSL_FLAG(std::string, out, "", "path to save dumped file");
+ABSL_FLAG(std::string, out_graph, "", "path to save dumped DOT file");
 ABSL_FLAG(std::string, out_folder, "", "folder to save dumped files");
 ABSL_FLAG(std::string, out_extension, "bin", "extension for output files");
 ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
@@ -53,26 +51,21 @@ void Main(const std::vector<std::string>& files) {
   if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
-  const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
   const bool canonical = absl::GetFlag(FLAGS_canonical);
-  const int cutoff = absl::GetFlag(FLAGS_cutoff);
 
   const int n_datasets = files.size();
 
   std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
 
-  const auto read_file = [&](int i, int n_workers) {
+  // Reads the ith file and constructs kmer_sets[i].
+  const auto ReadFile = [&](int i, int n_workers) {
     const std::string& file = files[i];
+    const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
     spdlog::info("reading {}", file);
 
-    if (absl::GetFlag(FLAGS_type) == "fastq") {
-      kmer_sets[i] = GetKmerSetFromFASTQFile<K, KeyType>(
-          file, decompressor, canonical, cutoff, n_workers);
-    } else {
-      kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
-          file, decompressor, canonical, n_workers);
-    }
+    kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
+        file, decompressor, canonical, n_workers);
 
     spdlog::info("finished reading {}", file);
   };
@@ -82,24 +75,27 @@ void Main(const std::vector<std::string>& files) {
     boost::asio::thread_pool pool(n_workers);
 
     for (int i = 0; i < n_datasets; i++) {
-      boost::asio::post(pool, [&, i] { read_file(i, 1); });
+      boost::asio::post(pool, [&, i] { ReadFile(i, 1); });
     }
 
     pool.join();
   } else {
     for (int i = 0; i < n_datasets; i++) {
-      read_file(i, n_workers);
+      ReadFile(i, n_workers);
     }
   }
 
-  int64_t total_size = 0;
-  for (int i = 0; i < n_datasets; i++) {
-    int64_t kmer_set_size = kmer_sets[i].Size();
-    spdlog::info("i = {}, kmer_set_size = {}", i, kmer_set_size);
-    total_size += kmer_set_size;
-  }
+  {
+    int64_t total_size = 0;
 
-  spdlog::info("total_size = {}", total_size);
+    for (int i = 0; i < n_datasets; i++) {
+      int64_t kmer_set_size = kmer_sets[i].Size();
+      spdlog::info("i = {}, kmer_set_size = {}", i, kmer_set_size);
+      total_size += kmer_set_size;
+    }
+
+    spdlog::info("total_size = {}", total_size);
+  }
 
   if (absl::GetFlag(FLAGS_similarity)) {
     for (int i = 0; i < n_datasets; i++) {
@@ -166,43 +162,63 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("constructing kmer_set_set");
 
     KmerSetSet<K, KeyType> kmer_set_set;
+    const bool check = absl::GetFlag(FLAGS_check);
 
     // If --check is not specified, it is OK to invalidate kmer_sets.
-    if (absl::GetFlag(FLAGS_check)) {
-      kmer_set_set = KmerSetSet<K, KeyType>(
-          kmer_sets, absl::GetFlag(FLAGS_iteration), n_workers);
-    } else {
-      kmer_set_set = KmerSetSet<K, KeyType>(
-          std::move(kmer_sets), absl::GetFlag(FLAGS_iteration), n_workers);
+    {
+      const int n_iterations = absl::GetFlag(FLAGS_iteration);
+
+      if (check) {
+        kmer_set_set =
+            KmerSetSet<K, KeyType>(kmer_sets, n_iterations, n_workers);
+      } else {
+        kmer_set_set = KmerSetSet<K, KeyType>(std::move(kmer_sets),
+                                              n_iterations, n_workers);
+      }
     }
 
     spdlog::info("constructed kmer_set_set");
 
-    const std::string out_file = absl::GetFlag(FLAGS_out);
-    const std::string out_folder = absl::GetFlag(FLAGS_out_folder);
+    // If --out-graph is specified, dumps a DOT file.
+    {
+      const std::string out_graph = absl::GetFlag(FLAGS_out_graph);
 
-    // If --check is not specified, it is OK to invalidate kmer_set_set.
-    const bool clear = !absl::GetFlag(FLAGS_check);
-
-    if (out_file != "") {
-      kmer_set_set.Dump(out_file, absl::GetFlag(FLAGS_compressor),
-                        absl::GetFlag(FLAGS_canonical), clear, n_workers);
-    } else if (out_folder != "") {
-      kmer_set_set.DumpToFolder(out_folder, absl::GetFlag(FLAGS_compressor),
-                                absl::GetFlag(FLAGS_out_extension),
-                                absl::GetFlag(FLAGS_canonical), clear,
-                                n_workers);
+      if (!out_graph.empty()) {
+        spdlog::info("dumping graph");
+        kmer_set_set.DumpGraph(out_graph);
+        spdlog::info("dumped graph");
+      }
     }
 
-    if (absl::GetFlag(FLAGS_check)) {
+    // If --out_file or --out_folder is specified, dumps the structure to a file
+    // or files in a folder.
+    {
+      const std::string out_file = absl::GetFlag(FLAGS_out);
+      const std::string out_folder = absl::GetFlag(FLAGS_out_folder);
+      const std::string compressor = absl::GetFlag(FLAGS_compressor);
+
+      // If --check is not specified, it is OK to invalidate kmer_set_set.
+      const bool clear = !check;
+
+      if (!out_file.empty()) {
+        kmer_set_set.Dump(out_file, compressor, canonical, clear, n_workers);
+      } else if (!out_folder.empty()) {
+        const std::string out_extension = absl::GetFlag(FLAGS_out_extension);
+
+        kmer_set_set.DumpToFolder(out_folder, compressor, out_extension,
+                                  canonical, clear, n_workers);
+      }
+    }
+
+    if (check) {
       spdlog::info("dumping kmer_set_set");
       std::vector<std::string> dumped =
-          kmer_set_set.Dump(absl::GetFlag(FLAGS_canonical), true, n_workers);
+          kmer_set_set.Dump(canonical, true, n_workers);
       spdlog::info("dumped kmer_set_set");
 
       spdlog::info("loading");
-      KmerSetSet<K, KeyType> loaded = KmerSetSet<K, KeyType>::Load(
-          std::move(dumped), absl::GetFlag(FLAGS_canonical), n_workers);
+      KmerSetSet<K, KeyType> loaded =
+          KmerSetSet<K, KeyType>::Load(std::move(dumped), canonical, n_workers);
       spdlog::info("loaded");
 
       for (int i = 0; i < n_datasets; i++) {
