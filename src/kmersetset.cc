@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
@@ -64,8 +65,16 @@ void Main(const std::vector<std::string>& files) {
 
     spdlog::info("reading {}", file);
 
-    kmer_sets[i] = GetKmerSetFromCompressedKmersFile<K, KeyType>(
-        file, decompressor, canonical, n_workers);
+    absl::StatusOr<KmerSet<K, KeyType>> statusor =
+        GetKmerSetFromCompressedKmersFile<K, KeyType>(file, decompressor,
+                                                      canonical, n_workers);
+
+    if (!statusor.ok()) {
+      spdlog::error("failed to read file: {}", statusor.status().ToString());
+      std::exit(1);
+    }
+
+    kmer_sets[i] = std::move(statusor).value();
 
     spdlog::info("finished reading {}", file);
   };
@@ -135,8 +144,13 @@ void Main(const std::vector<std::string>& files) {
     const std::string out_file = absl::GetFlag(FLAGS_out);
 
     if (out_file != "") {
-      kmer_set_set_mm.Dump(out_file, absl::GetFlag(FLAGS_compressor), canonical,
-                           n_workers);
+      const absl::Status status = kmer_set_set_mm.Dump(
+          out_file, absl::GetFlag(FLAGS_compressor), canonical, n_workers);
+
+      if (!status.ok()) {
+        spdlog::error("failed to dump kmer_set_mm: {}", status.ToString());
+        std::exit(1);
+      }
     }
 
     if (absl::GetFlag(FLAGS_check)) {
@@ -185,7 +199,13 @@ void Main(const std::vector<std::string>& files) {
 
       if (!out_graph.empty()) {
         spdlog::info("dumping graph");
-        kmer_set_set.DumpGraph(out_graph);
+
+        const absl::Status status = kmer_set_set.DumpGraph(out_graph);
+
+        if (!status.ok()) {
+          spdlog::error("failed to dump graph: {}", status.ToString());
+        }
+
         spdlog::info("dumped graph");
       }
     }
@@ -200,13 +220,22 @@ void Main(const std::vector<std::string>& files) {
       // If --check is not specified, it is OK to invalidate kmer_set_set.
       const bool clear = !check;
 
+      absl::Status status;
+
       if (!out_file.empty()) {
-        kmer_set_set.Dump(out_file, compressor, canonical, clear, n_workers);
+        status = kmer_set_set.Dump(out_file, compressor, canonical, clear,
+                                   n_workers);
+
       } else if (!out_folder.empty()) {
         const std::string out_extension = absl::GetFlag(FLAGS_out_extension);
 
-        kmer_set_set.DumpToFolder(out_folder, compressor, out_extension,
-                                  canonical, clear, n_workers);
+        status = kmer_set_set.DumpToFolder(
+            out_folder, compressor, out_extension, canonical, clear, n_workers);
+      }
+
+      if (!status.ok()) {
+        spdlog::error("failed to dump kmer_set_set: {}", status.ToString());
+        std::exit(1);
       }
     }
 

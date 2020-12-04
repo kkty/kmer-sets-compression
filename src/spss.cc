@@ -25,11 +25,26 @@ void Main(const std::string& file_name) {
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const int n_buckets = absl::GetFlag(FLAGS_buckets);
 
-  spdlog::info("constructing kmer_set_compact");
-  const KmerSetCompact<K, KeyType> kmer_set_compact =
-      KmerSetCompact<K, KeyType>::Load(file_name,
-                                       absl::GetFlag(FLAGS_decompressor));
-  spdlog::info("constructed kmer_set_compact");
+  KmerSetCompact<K, KeyType> kmer_set_compact;
+
+  {
+    spdlog::info("constructing kmer_set_compact");
+
+    const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+
+    absl::StatusOr<KmerSetCompact<K, KeyType>> statusor =
+        KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+
+    if (!statusor.ok()) {
+      spdlog::error("failed to load kmer_set_compact from file: {}",
+                    statusor.status().ToString());
+      std::exit(1);
+    }
+
+    kmer_set_compact = std::move(statusor).value();
+
+    spdlog::info("constructed kmer_set_compact");
+  }
 
   spdlog::info("constructing kmer_set");
   const KmerSet<K, KeyType> kmer_set =

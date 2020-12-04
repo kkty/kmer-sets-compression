@@ -2,6 +2,7 @@
 #define CORE_KMER_SET_SET_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <mutex>
 #include <optional>
@@ -14,6 +15,9 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/random/random.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
@@ -264,9 +268,10 @@ class KmerSetSet {
   }
 
   // Dumps data to files in a folder.
-  void DumpToFolder(const std::string& folder_name,
-                    const std::string& compressor, const std::string& extension,
-                    bool canonical, bool clear, int n_workers) {
+  absl::Status DumpToFolder(const std::string& folder_name,
+                            const std::string& compressor,
+                            const std::string& extension, bool canonical,
+                            bool clear, int n_workers) {
     if (!boost::filesystem::exists(folder_name)) {
       boost::filesystem::create_directories(folder_name);
     }
@@ -295,11 +300,16 @@ class KmerSetSet {
         v.push_back(ss.str());
       }
 
-      WriteLines((boost::filesystem::path(folder_name) /
-                  boost::filesystem::path(
-                      (boost::format("meta.txt.%1%") % extension).str()))
-                     .string(),
-                 compressor, v);
+      absl::Status status =
+          WriteLines((boost::filesystem::path(folder_name) /
+                      boost::filesystem::path(
+                          (boost::format("meta.txt.%1%") % extension).str()))
+                         .string(),
+                     compressor, v);
+
+      if (!status.ok()) {
+        return status;
+      }
     }
 
     if (clear) {
@@ -307,6 +317,7 @@ class KmerSetSet {
     }
 
     boost::asio::thread_pool pool(n_workers);
+    std::atomic_int fail_count = 0;
 
     for (size_t i = 0; i < kmer_sets_.size(); i++) {
       boost::asio::post(pool, [&, i] {
@@ -319,38 +330,54 @@ class KmerSetSet {
           kmer_sets_[i].Clear();
         }
 
-        WriteLines((boost::filesystem::path(folder_name) /
-                    boost::filesystem::path(
-                        (boost::format("%1%.%2%") % i % extension).str()))
-                       .string(),
-                   compressor, kmer_set_compact.Dump());
+        const absl::Status status =
+            WriteLines((boost::filesystem::path(folder_name) /
+                        boost::filesystem::path(
+                            (boost::format("%1%.%2%") % i % extension).str()))
+                           .string(),
+                       compressor, kmer_set_compact.Dump());
+
+        if (!status.ok()) {
+          spdlog::error("failed to write data to a file: {}",
+                        status.ToString());
+          fail_count += 1;
+        }
 
         spdlog::debug("dumped kmer set: i = {}", i);
       });
     }
 
     pool.join();
+
+    if (fail_count) {
+      return absl::InternalError(
+          absl::StrFormat("failed to write %d data", fail_count));
+    }
+
+    return absl::OkStatus();
   }
 
   // Dumps data to a file.
-  void Dump(const std::string& file_name, const std::string& compressor,
-            bool canonical, bool clear, int n_workers) {
-    WriteLines(file_name, compressor, Dump(canonical, clear, n_workers));
+  absl::Status Dump(const std::string& file_name, const std::string& compressor,
+                    bool canonical, bool clear, int n_workers) {
+    return WriteLines(file_name, compressor, Dump(canonical, clear, n_workers));
   }
 
   // Dumps the graph structure with DOT format.
-  void DumpGraph(const std::string& file_name) const {
+  absl::Status DumpGraph(const std::string& file_name) const {
     std::vector<std::string> lines;
 
-    lines.push_back("digraph graph {");
+    lines.push_back("digraph G {");
+
     for (const std::pair<const int, std::vector<int>>& p : children_) {
       for (int i : p.second) {
         lines.push_back((boost::format("v%1% -> v%2%;") % p.first % i).str());
       }
     }
+
     lines.push_back("}");
 
-    WriteLines(file_name, lines);
+    return WriteLines(file_name, lines);
   }
 
   // Loads data from a vector of strings.
@@ -793,9 +820,9 @@ class KmerSetSetMM {
   }
 
   // Dumps data to a file.
-  void Dump(const std::string& file_name, const std::string& compressor,
-            bool canonical, int n_workers) const {
-    WriteLines(file_name, compressor, Dump(canonical, n_workers));
+  absl::Status Dump(const std::string& file_name, const std::string& compressor,
+                    bool canonical, int n_workers) const {
+    return WriteLines(file_name, compressor, Dump(canonical, n_workers));
   }
 
   // Loads data from a vector of strings.
@@ -879,10 +906,23 @@ class KmerSetSetMM {
     }
   }
 
-  static KmerSetSetMM* Load(const std::string& file_name,
-                            const std::string& decompressor, bool canonical,
-                            int n_workers) {
-    return Load(ReadLines(file_name, decompressor), canonical, n_workers);
+  static absl::StatusOr<KmerSetSetMM*> Load(const std::string& file_name,
+                                            const std::string& decompressor,
+                                            bool canonical, int n_workers) {
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
+    return Load(std::move(lines), canonical, n_workers);
   }
 
  private:

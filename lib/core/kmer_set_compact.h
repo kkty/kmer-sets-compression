@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "core/kmer.h"
@@ -20,10 +22,12 @@
 template <int K, typename KeyType>
 class KmerSetCompact {
  public:
+  KmerSetCompact() = default;
+
   // Constructs KmerSetCompact from a kmer set. If the kmer set is for
   // storing canonical kmers, "canonical" should be true.
   static KmerSetCompact FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
-                                       bool canonical, int n_workers) {
+                                    bool canonical, int n_workers) {
     std::vector<std::string> spss;
 
     if (canonical) {
@@ -66,8 +70,9 @@ class KmerSetCompact {
 
   // Dumps data to a file.
   // Dumped data can be read by Load().
-  void Dump(const std::string& file_name, const std::string& compressor) const {
-    WriteLines(file_name, compressor, spss_);
+  absl::Status Dump(const std::string& file_name,
+                    const std::string& compressor) const {
+    return WriteLines(file_name, compressor, spss_);
   }
 
   // Dumps data to a vector of strings.
@@ -76,9 +81,21 @@ class KmerSetCompact {
   std::vector<std::string> Dump() const { return spss_; }
 
   // Loads data from a file.
-  static KmerSetCompact Load(const std::string& file_name,
-                                const std::string& decompressor) {
-    return KmerSetCompact(ReadLines(file_name, decompressor));
+  static absl::StatusOr<KmerSetCompact> Load(const std::string& file_name,
+                                             const std::string& decompressor) {
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
+    return KmerSetCompact(std::move(lines));
   }
 
   // Loads data from a vector of strings.

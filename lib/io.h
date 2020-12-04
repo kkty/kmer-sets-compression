@@ -1,6 +1,7 @@
 #ifndef IO_H_
 #define IO_H_
 
+#include <atomic>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -13,15 +14,25 @@
 #include "spdlog/spdlog.h"
 
 template <int K, typename KeyType>
-KmerSet<K, KeyType> GetKmerSetFromCompressedKmersFile(
+absl::StatusOr<KmerSet<K, KeyType>> GetKmerSetFromCompressedKmersFile(
     const std::string& file_name, const std::string& decompressor,
     bool canonical, int n_workers) {
-  spdlog::info("constructing kmer_set_compact");
+  KmerSetCompact<K, KeyType> kmer_set_compact;
 
-  const KmerSetCompact<K, KeyType> kmer_set_compact =
-      KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+  {
+    spdlog::info("constructing kmer_set_compact");
 
-  spdlog::info("constructed kmer_set_compact");
+    absl::StatusOr<KmerSetCompact<K, KeyType>> statusor =
+        KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+
+    if (!statusor.ok()) {
+      return statusor.status();
+    }
+
+    kmer_set_compact = std::move(statusor).value();
+
+    spdlog::info("constructed kmer_set_compact");
+  }
 
   spdlog::info("constructing kmer_set");
 
@@ -70,17 +81,34 @@ KmerSet<K, KeyType> GetKmerSetFromFASTQFile(const std::string& file_name,
 }
 
 // Returns a list of reads in a FASTA file.
-std::vector<std::string> ReadFASTAFile(const std::string& file_name,
-                                       const std::string& decompressor,
-                                       int n_workers) {
-  std::vector<std::string> lines = ReadLines(file_name, decompressor);
+absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
+    const std::string& file_name, const std::string& decompressor,
+    int n_workers) {
+  std::vector<std::string> lines;
+
+  {
+    absl::StatusOr<std::vector<std::string>> statusor =
+        ReadLines(file_name, decompressor);
+
+    if (!statusor.ok()) {
+      return statusor.status();
+    }
+
+    lines = std::move(statusor).value();
+  }
 
   const int n_lines = lines.size();
+
+  if (n_lines % 2 != 0) {
+    return absl::FailedPreconditionError(
+        "FASTA files should contain an even number of lines");
+  }
 
   std::vector<std::string> reads(n_lines / 2);
 
   {
     std::vector<std::thread> threads;
+    std::atomic_bool is_valid = true;
 
     for (const Range& range : Range(0, n_lines).Split(n_workers)) {
       threads.emplace_back([&, range] {
@@ -88,9 +116,9 @@ std::vector<std::string> ReadFASTAFile(const std::string& file_name,
           const std::string& line = lines[i];
           if (i % 2 == 0) {
             if (line[0] != '>') {
-              spdlog::error("invalid file");
-              std::exit(1);
+              is_valid = false;
             }
+
             std::string().swap(lines[i]);
           } else {
             reads[i / 2] = std::move(lines[i]);
@@ -100,6 +128,10 @@ std::vector<std::string> ReadFASTAFile(const std::string& file_name,
     }
 
     for (std::thread& t : threads) t.join();
+
+    if (!is_valid) {
+      return absl::FailedPreconditionError("invalid FASTA file");
+    }
   }
 
   return reads;

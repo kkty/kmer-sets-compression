@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/status/statusor.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
@@ -30,10 +31,24 @@ void Main(const std::vector<std::string>& files) {
     const std::string& file_name = files[i];
     spdlog::info("processing: i = {}, file_name = {}", i, file_name);
 
-    spdlog::info("constructing kmer_set_compact");
-    const KmerSetCompact<K, KeyType> kmer_set_compact =
-        KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
-    spdlog::info("constructed kmer_set_compact");
+    KmerSetCompact<K, KeyType> kmer_set_compact;
+
+    {
+      spdlog::info("constructing kmer_set_compact");
+
+      absl::StatusOr<KmerSetCompact<K, KeyType>> statusor =
+          KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        spdlog::error("failed to load kmer_set_compact: {}",
+                      statusor.status().ToString());
+        std::exit(1);
+      }
+
+      kmer_set_compact = std::move(statusor).value();
+
+      spdlog::info("constructed kmer_set_compact");
+    }
 
     spdlog::info("constructing kmer_set");
     const KmerSet<K, KeyType> kmer_set =

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
@@ -123,46 +124,22 @@ class KmerCounter {
     return kmer_counter;
   }
 
-  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
-                                               bool canonical, int n_workers) {
-    return FromFASTQ(ReadLines(file_name), canonical, n_workers);
-  }
-
-  static absl::StatusOr<KmerCounter> FromFASTQ(const std::string& file_name,
-                                               const std::string& decompressor,
-                                               bool canonical, int n_workers) {
-    return FromFASTQ(ReadLines(file_name, decompressor), canonical, n_workers);
-  }
-
-  // Counts kmers in a FASTQ data.
-  static absl::StatusOr<KmerCounter> FromFASTQ(std::vector<std::string> lines,
-                                               bool canonical, int n_workers) {
-    if (lines.size() % 4 != 0)
-      return absl::UnknownError("there should be 4 * N lines");
-
-    std::vector<std::string> reads;
-    reads.reserve(lines.size() / 4);
-
-    for (size_t i = 0; i < lines.size(); i++) {
-      if (i % 4 == 0 && lines[i][0] != '@')
-        return absl::UnknownError("the line should start with '@'");
-
-      if (i % 4 == 1)
-        reads.push_back(std::move(lines[i]));
-      else
-        std::string().swap(lines[i]);
-    }
-
-    // "lines" is not needed anymore.
-    std::vector<std::string>().swap(lines);
-
-    return FromReads(std::move(reads), canonical, n_workers);
-  }
-
   // Counts kmers in a FASTA file.
   static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
                                                bool canonical, int n_workers) {
-    return FromFASTA(ReadLines(file_name), canonical, n_workers);
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
+    return FromFASTA(std::move(lines), canonical, n_workers);
   }
 
   // Counts kmers in a FASTA file. "decompressor" is used to decompress the
@@ -170,26 +147,43 @@ class KmerCounter {
   static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
                                                const std::string& decompressor,
                                                bool canonical, int n_workers) {
-    return FromFASTA(ReadLines(file_name, decompressor), canonical, n_workers);
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
+    return FromFASTA(std::move(lines), canonical, n_workers);
   }
 
   // Counts kmers in a FASTA data.
   static absl::StatusOr<KmerCounter> FromFASTA(std::vector<std::string> lines,
                                                bool canonical, int n_workers) {
-    if (lines.size() % 2 != 0)
-      return absl::UnknownError("there should be 2 * N lines");
+    if (lines.size() % 2 != 0) {
+      return absl::FailedPreconditionError(
+          "FASTA files should have an even number of lines");
+    }
 
     std::vector<std::string> reads;
     reads.reserve(lines.size() / 2);
 
     for (size_t i = 0; i < lines.size(); i++) {
-      if (i % 2 == 0 && lines[i][0] != '>')
-        return absl::UnknownError("the line should start with '>'");
+      if (i % 2 == 0 && lines[i][0] != '>') {
+        return absl::FailedPreconditionError("invalid FASTA file");
+      }
 
-      if (i % 2 == 1)
+      if (i % 2 == 1) {
         reads.push_back(std::move(lines[i]));
-      else
+      } else {
         std::string().swap(lines[i]);
+      }
     }
 
     // "lines" is not needed anymore.

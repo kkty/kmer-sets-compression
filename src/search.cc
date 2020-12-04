@@ -8,6 +8,7 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/random/random.h"
+#include "absl/status/statusor.h"
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
@@ -32,10 +33,36 @@ void Main(const std::string& file1, const std::string& file2) {
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
-  const std::vector<std::string> reads1 =
-      ReadFASTAFile(file1, decompressor, n_workers);
-  const std::vector<std::string> reads2 =
-      ReadFASTAFile(file2, decompressor, n_workers);
+  std::vector<std::string> reads1;
+  std::vector<std::string> reads2;
+
+  {
+    spdlog::info("reading file: {}", file1);
+
+    absl::StatusOr<std::vector<std::string>> statusor =
+        ReadFASTAFile(file1, decompressor, n_workers);
+
+    if (!statusor.ok()) {
+      spdlog::error("failed to read file: {}", statusor.status().ToString());
+      std::exit(1);
+    }
+
+    reads1 = std::move(statusor).value();
+  }
+
+  {
+    spdlog::info("reading file: {}", file2);
+
+    absl::StatusOr<std::vector<std::string>> statusor =
+        ReadFASTAFile(file2, decompressor, n_workers);
+
+    if (!statusor.ok()) {
+      spdlog::error("failed to read file: {}", statusor.status().ToString());
+      std::exit(1);
+    }
+
+    reads2 = std::move(statusor).value();
+  }
 
   const int64_t n_reads = reads1.size();
 

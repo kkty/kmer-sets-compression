@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/status/statusor.h"
 #include "gtest/gtest.h"
 
 std::vector<std::string> GetTestData() {
@@ -22,16 +23,33 @@ TEST(io, WriteAndRead) {
   const std::string file_name = "/tmp/data";
   const std::vector<std::string> lines = GetTestData();
 
-  WriteLines(file_name, lines);
+  {
+    absl::Status status = WriteLines(file_name, lines);
+    ASSERT_TRUE(status.ok());
+  }
 
-  ASSERT_EQ(ReadLines(file_name), lines);
+  {
+    absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name);
+
+    ASSERT_TRUE(statusor.ok());
+    ASSERT_EQ(statusor.value(), lines);
+  }
 }
 
 TEST(io, WriteAndReadCompressed) {
-  const std::string file_name = "/tmp/data";
+  const std::string file_name = "/tmp/data.gz";
   const std::vector<std::string> lines = GetTestData();
 
-  WriteLines(file_name, "gzip -c", lines);
+  {
+    absl::Status status = WriteLines(file_name, "gzip -c", lines);
+    ASSERT_TRUE(status.ok());
+  }
 
-  ASSERT_EQ(ReadLines(file_name, "gzip -d -c"), lines);
+  {
+    absl::StatusOr<std::vector<std::string>> statusor =
+        ReadLines(file_name, "gzip -d -c");
+
+    ASSERT_TRUE(statusor.ok());
+    ASSERT_EQ(statusor.value(), lines);
+  }
 }

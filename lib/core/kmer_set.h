@@ -5,11 +5,13 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
+#include "absl/status/statusor.h"
+#include "absl/status/status.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "core/io.h"
@@ -322,7 +324,7 @@ class KmerSet {
   }
 
   // Dumps kmers to a file.
-  void Dump(const std::string& file_name, const std::string& compressor,
+  absl::Status Dump(const std::string& file_name, const std::string& compressor,
             int n_workers) const {
     std::vector<Kmer<K>> kmers = Find(n_workers);
 
@@ -338,7 +340,7 @@ class KmerSet {
 
     for (std::thread& t : threads) t.join();
 
-    WriteLines(file_name, compressor, lines);
+    return WriteLines(file_name, compressor, lines);
   }
 
   // Returns the hash value.
@@ -367,9 +369,22 @@ class KmerSet {
   }
 
   // Loads kmers from a file.
-  static KmerSet Load(const std::string& file_name,
-                      const std::string& decompressor, int n_workers) {
-    std::vector<std::string> lines = ReadLines(file_name, decompressor);
+  static absl::StatusOr<KmerSet> Load(const std::string& file_name,
+                                      const std::string& decompressor,
+                                      int n_workers) {
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
     std::vector<Kmer<K>> kmers(lines.size());
 
     std::vector<std::thread> threads;

@@ -9,7 +9,6 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
-#include "core/graph.h"
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
@@ -20,7 +19,6 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(std::string, type, "fastq", "input file type");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "cat",
           "specify decompressor for FASTQ files");
@@ -36,7 +34,6 @@ template <int K, typename KeyType>
 void Main(const std::string& file_name) {
   InitDefaultLogger();
 
-  const std::string type = absl::GetFlag(FLAGS_type);
   const bool debug = absl::GetFlag(FLAGS_debug);
   const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
   const std::string compressor = absl::GetFlag(FLAGS_compressor);
@@ -53,24 +50,9 @@ void Main(const std::string& file_name) {
   {
     KmerCounter<K, KeyType> kmer_counter;
 
-    spdlog::info("constructing kmer_counter");
+    {
+      spdlog::info("constructing kmer_counter");
 
-    if (type == "fastq") {
-      absl::StatusOr<KmerCounter<K, KeyType>> statusor =
-          decompressor != ""
-              ? KmerCounter<K, KeyType>::FromFASTQ(file_name, decompressor,
-                                                   canonical, n_workers)
-              : KmerCounter<K, KeyType>::FromFASTQ(file_name, canonical,
-                                                   n_workers);
-
-      if (!statusor.ok()) {
-        spdlog::error("failed to parse FASTQ file: {}",
-                      statusor.status().ToString());
-        std::exit(1);
-      }
-
-      kmer_counter = std::move(statusor).value();
-    } else if (type == "fasta") {
       absl::StatusOr<KmerCounter<K, KeyType>> statusor =
           decompressor != ""
               ? KmerCounter<K, KeyType>::FromFASTA(file_name, decompressor,
@@ -85,12 +67,9 @@ void Main(const std::string& file_name) {
       }
 
       kmer_counter = std::move(statusor).value();
-    } else {
-      spdlog::error("invalid type: {}", type);
-      std::exit(1);
-    }
 
-    spdlog::info("constructed kmer_counter");
+      spdlog::info("constructed kmer_counter");
+    }
 
     spdlog::info("constructing kmer_set");
 
@@ -122,7 +101,12 @@ void Main(const std::string& file_name) {
   }
 
   if (!out.empty()) {
-    kmer_set_compact.Dump(out, compressor);
+    absl::Status status = kmer_set_compact.Dump(out, compressor);
+
+    if (!status.ok()) {
+      spdlog::error("failed to dump kmer_set_compact: {}", status.ToString());
+      std::exit(1);
+    }
   }
 }
 
