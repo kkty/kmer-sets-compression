@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -24,26 +25,24 @@
 // the latter is returned.
 template <typename T>
 T AddWithMax(T x, T y) {
-  T max = std::numeric_limits<T>::max();
-
-  if (std::is_floating_point<T>::value) {
-    return std::min((double)max, (double)x + (double)y);
-  } else {
+  if (std::is_integral<T>::value) {
+    T max = std::numeric_limits<T>::max();
     return std::min((int64_t)max, (int64_t)x + (int64_t)y);
   }
+
+  return x + y;
 }
 
 // Multiplies two numerical values. If the result exceeds the max value for the
 // type, the latter is returned.
 template <typename T>
 T MultiplyWithMax(T x, T y) {
-  T max = std::numeric_limits<T>::max();
-
-  if (std::is_floating_point<T>::value) {
-    return std::min((double)max, (double)x * (double)y);
-  } else {
+  if (std::is_integral<T>::value) {
+    T max = std::numeric_limits<T>::max();
     return std::min((int64_t)max, (int64_t)x * (int64_t)y);
   }
+
+  return x * y;
 }
 
 // KmerCounter can be used to count kmers.
@@ -55,7 +54,7 @@ class KmerCounter {
   // Returns the number of distinct k-mers.
   int64_t Size() const {
     int64_t sum = 0;
-    for (const auto& bucket : buckets_) {
+    for (const Bucket& bucket : buckets_) {
       sum += bucket.size();
     }
     return sum;
@@ -76,11 +75,14 @@ class KmerCounter {
           std::string& read = reads[i];
           std::vector<std::string> fragments = absl::StrSplit(read, "N");
 
-          for (const auto& fragment : fragments) {
+          for (const std::string& fragment : fragments) {
             for (size_t i = 0; i + K <= fragment.length(); i++) {
               const Kmer<K> kmer(fragment.substr(i, K));
 
-              const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(
+              int bucket;
+              KeyType key;
+
+              std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
 
               buf[bucket][key] = AddWithMax<ValueType>(buf[bucket][key], 1);
@@ -98,13 +100,13 @@ class KmerCounter {
           for (int i = 0; i < kBucketsNum; i++) {
             if (done[i]) continue;
 
-            auto& mu = buckets_mutexes[i];
+            std::mutex& mu = buckets_mutexes[i];
 
             if (mu.try_lock()) {
-              auto& bucket = kmer_counter.buckets_[i];
+              Bucket& bucket = kmer_counter.buckets_[i];
 
-              for (const auto& [key, count] : buf[i]) {
-                bucket[key] = AddWithMax(bucket[key], count);
+              for (const std::pair<const KeyType, ValueType>& p : buf[i]) {
+                bucket[p.first] = AddWithMax(bucket[p.first], p.second);
               }
 
               mu.unlock();
@@ -210,7 +212,11 @@ class KmerCounter {
         [&](const Bucket& bucket, int bucket_id) {
           std::vector<KeyType> buf;
 
-          for (const auto& [key, count] : bucket) {
+          for (const std::pair<const KeyType, ValueType>& p : bucket) {
+            KeyType key;
+            ValueType count;
+            std::tie(key, count) = p;
+
             if (count < cutoff) {
               cutoff_count += 1;
               continue;
@@ -233,7 +239,10 @@ class KmerCounter {
 
   // Returns the count for a kmer.
   ValueType Get(const Kmer<K>& kmer) const {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    int bucket;
+    KeyType key;
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
     auto it = buckets_[bucket].find(key);
     if (it == buckets_[bucket].end()) return 0;
     return it->second;
@@ -241,7 +250,10 @@ class KmerCounter {
 
   // Increments the count for a kmer.
   KmerCounter& Add(const Kmer<K>& kmer, ValueType v) {
-    const auto [bucket, key] = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    int bucket;
+    KeyType key;
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+
     buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], v);
     return *this;
   }
@@ -249,7 +261,11 @@ class KmerCounter {
   KmerCounter& Add(const KmerCounter& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
-          for (const auto& [key, value] : other_bucket) {
+          for (const std::pair<const KeyType, ValueType>& p : other_bucket) {
+            KeyType key;
+            ValueType value;
+            std::tie(key, value) = p;
+
             buckets_[bucket_id][key] =
                 AddWithMax(buckets_[bucket_id][key], value);
           }
@@ -262,7 +278,11 @@ class KmerCounter {
   KmerCounter& Multiply(ValueType v, int n_workers) {
     ForEachBucket(
         [&](const Bucket& bucket, int bucket_id) {
-          for (const auto& [key, value] : bucket) {
+          for (const std::pair<const KeyType, ValueType>& p : bucket) {
+            KeyType key;
+            ValueType value;
+            std::tie(key, value) = p;
+
             buckets_[bucket_id][key] = MultiplyWithMax(value, v);
           }
         },
