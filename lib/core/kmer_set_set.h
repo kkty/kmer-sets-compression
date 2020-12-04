@@ -24,7 +24,6 @@
 #include "boost/asio/thread_pool.hpp"
 #include "boost/filesystem.hpp"
 #include "boost/format.hpp"
-#include "core/graph.h"
 #include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"

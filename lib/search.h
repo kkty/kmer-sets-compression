@@ -13,7 +13,6 @@
 #include "absl/random/random.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "core/graph.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
@@ -368,19 +367,19 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
 
   // The set of l-mers present in "goal".
   // It is used to calculate h(n).
-  const auto lmers_goal = GetLmers(goal);
+  const absl::flat_hash_set<std::string> lmers_goal = GetLmers(goal);
 
   // h(i) gives an approximate of distance(i, goal_id).
   const auto h = [&](int i) {
-    const auto lmers = GetLmers(kmers[i]);
+    const absl::flat_hash_set<std::string> lmers = GetLmers(kmers[i]);
 
     int distance = 0;
 
-    for (const auto& lmer_goal : lmers_goal) {
+    for (const std::string& lmer_goal : lmers_goal) {
       if (lmers.find(lmer_goal) == lmers.end()) distance += 1;
     }
 
-    for (const auto& lmer : lmers) {
+    for (const std::string& lmer : lmers) {
       if (lmers_goal.find(lmer) == lmers_goal.end()) distance += 1;
     }
 

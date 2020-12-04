@@ -55,7 +55,6 @@ foreach(
   kmer_set_compact
   kmer_set
   range
-  graph
   io
   search
 )
