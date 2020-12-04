@@ -1,9 +1,17 @@
 #include "core/kmer_counter.h"
 
+#include <limits>
 #include <tuple>
 
 #include "core/kmer.h"
+#include "core/kmer_set.h"
 #include "gtest/gtest.h"
+
+TEST(KmerCounter, AddWithMax) {
+  uint8_t x = 1;
+  x = AddWithMax(std::numeric_limits<uint8_t>::max(), x);
+  ASSERT_EQ(x, std::numeric_limits<uint8_t>::max());
+}
 
 TEST(KmerCounter, AddAndGet) {
   const int K = 5;
