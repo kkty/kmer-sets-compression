@@ -338,6 +338,21 @@ class KmerSetSet {
     WriteLines(file_name, compressor, Dump(canonical, clear, n_workers));
   }
 
+  // Dumps the graph structure with DOT format.
+  void DumpGraph(const std::string& file_name) const {
+    std::vector<std::string> lines;
+
+    lines.push_back("digraph graph {");
+    for (const std::pair<const int, std::vector<int>>& p : children_) {
+      for (int i : p.second) {
+        lines.push_back((boost::format("v%1% -> v%2%;") % p.first % i).str());
+      }
+    }
+    lines.push_back("}");
+
+    WriteLines(file_name, lines);
+  }
+
   // Loads data from a vector of strings.
   static KmerSetSet Load(std::vector<std::string> v, bool canonical,
                          int n_workers) {
