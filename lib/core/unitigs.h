@@ -142,12 +142,18 @@ std::vector<std::string> GetUnitigsCanonical(
     return false;
   };
 
+  spdlog::debug("constructing terminals_left");
+
   // kmers that has no mates on the left side, but has a mate on the right side.
   const std::vector<Kmer<K>> terminals_left = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
         return IsTerminalLeft(kmer) && !IsTerminalRight(kmer);
       },
       n_workers);
+
+  spdlog::debug("constructed terminals_left");
+
+  spdlog::debug("constructing terminals_right");
 
   // kmers that has no mates on the right side, but has a mate on the left side.
   const std::vector<Kmer<K>> terminals_right = kmer_set.Find(
@@ -156,12 +162,18 @@ std::vector<std::string> GetUnitigsCanonical(
       },
       n_workers);
 
+  spdlog::debug("constructed terminals_right");
+
+  spdlog::debug("constructing terminals_both");
+
   // kmers that has no mates on the both sides.
   const std::vector<Kmer<K>> terminals_both = kmer_set.Find(
       [&](const Kmer<K>& kmer) {
         return IsTerminalLeft(kmer) && IsTerminalRight(kmer);
       },
       n_workers);
+
+  spdlog::debug("constructed terminals_both");
 
   // If "is_right_side" is true, finds a path from the right side of "start".
   // If "is_right_side" is false, finds a path from the left side of "start".
@@ -225,7 +237,8 @@ std::vector<std::string> GetUnitigsCanonical(
     }
   };
 
-  // Processes kmers in terminals_both.
+  spdlog::debug("processing kmers in terminals_both");
+
   {
     std::vector<std::thread> threads;
     std::mutex mu_unitigs;
@@ -250,7 +263,10 @@ std::vector<std::string> GetUnitigsCanonical(
     for (std::thread& t : threads) t.join();
   }
 
-  // Processes paths from terminals_left.
+  spdlog::debug("processed kmers in terminals_both");
+
+  spdlog::debug("processing paths from terminals_left");
+
   {
     std::vector<std::thread> threads;
     std::mutex mu_unitigs;
@@ -280,7 +296,10 @@ std::vector<std::string> GetUnitigsCanonical(
     for (std::thread& t : threads) t.join();
   }
 
-  // Processes paths from terminals_right.
+  spdlog::debug("processed paths from terminals_left");
+
+  spdlog::debug("processing paths from terminals_right");
+
   {
     std::vector<std::thread> threads;
     std::mutex mu_unitigs;
@@ -310,7 +329,9 @@ std::vector<std::string> GetUnitigsCanonical(
     for (std::thread& t : threads) t.join();
   }
 
-  // Considers non-branching loops.
+  spdlog::debug("processed paths from terminals_right");
+
+  spdlog::debug("processing non-branching loops");
 
   std::vector<Kmer<K>> not_visited = kmer_set.Find(
       [&](const Kmer<K>& kmer) { return visited.find(kmer) == visited.end(); },
@@ -338,6 +359,8 @@ std::vector<std::string> GetUnitigsCanonical(
 
     unitigs.push_back(GetUnitigFromKmers(path));
   }
+
+  spdlog::debug("processed non-branching loops");
 
   return unitigs;
 }
