@@ -57,6 +57,7 @@ foreach(
   range
   io
   search
+  unitigs
 )
   add_executable(test_${NAME} test/${NAME}.cc)
   add_test(test_${NAME} test_${NAME})
