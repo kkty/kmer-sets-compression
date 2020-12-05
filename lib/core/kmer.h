@@ -3,6 +3,7 @@
 
 #include <array>
 #include <bitset>
+#include <cassert>
 #include <string>
 
 #include "absl/random/random.h"
@@ -17,11 +18,14 @@ class Kmer {
  public:
   Kmer() = default;
 
-  Kmer(const std::string& s) {
-    for (int i = 0; i < K; i++) Set(i, s[i]);
+  explicit Kmer(const std::string& s) {
+    for (int i = 0; i < K; i++) {
+      assert(s[i] == 'A' || s[i] == 'C' || s[i] == 'G' || s[i] == 'T');
+      Set(i, s[i]);
+    }
   }
 
-  Kmer(const std::bitset<K * 2>& bits) : bits_(bits) {}
+  explicit Kmer(const std::bitset<K * 2>& bits) : bits_(bits) {}
 
   // Returns the string representation of the kmer.
   // The length of the output string is K and only contains 'A', 'C', 'G' and
@@ -44,10 +48,23 @@ class Kmer {
     const bool b0 = get(idx * 2);
     const bool b1 = get(idx * 2 + 1);
 
-    if (!b0 && !b1) return 'A';
-    if (b0 && !b1) return 'G';
-    if (!b0 && b1) return 'C';
-    return 'T';
+    if (!b0) {
+      if (!b1) {
+        // 00
+        return 'A';
+      } else {
+        // 01
+        return 'C';
+      }
+    } else {
+      if (!b1) {
+        // 10
+        return 'G';
+      } else {
+        // 11
+        return 'T';
+      }
+    }
   }
 
   // Sets the ith character of the kmer. "idx" should be in [0, K) and "c"
@@ -69,6 +86,8 @@ class Kmer {
         set(idx * 2);
         set(idx * 2 + 1);
         break;
+      default:
+        assert(false);
     }
   }
 
@@ -88,7 +107,7 @@ class Kmer {
   }
 
   // Returns the minimum of the kmer and the complement of the kmer.
-  // The dictionary ordering is used to get the minium.
+  // The dictionary ordering is used to get the minimum.
   Kmer<K> Canonical() const { return std::min(*this, this->Complement()); }
 
   Kmer<K> Next(char c) const {

@@ -12,11 +12,11 @@ struct Range {
   // Splits the range to n distinct ranges. If n is smaller than Size(), some
   // resulting ranges have a size of zero.
   std::vector<Range> Split(int64_t n) const {
-    const int small_chunk_size = Size() / n;
-    const int large_chunk_size = small_chunk_size + 1;
+    const int64_t small_chunk_size = Size() / n;
+    const int64_t large_chunk_size = small_chunk_size + 1;
 
-    const int large_chunk_n = Size() - small_chunk_size * n;
-    const int small_chunk_n = n - large_chunk_n;
+    const int64_t large_chunk_n = Size() - small_chunk_size * n;
+    const int64_t small_chunk_n = n - large_chunk_n;
 
     std::vector<Range> ranges;
     ranges.reserve(n);

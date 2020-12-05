@@ -52,8 +52,8 @@ class KmerSetCompact {
 
         range.ForEach([&](int i) {
           const std::string s = spss_[i];
-          for (size_t i = 0; i < s.size() + 1 - K; i++) {
-            const Kmer<K> kmer(s.substr(i, K));
+          for (size_t j = 0; j < s.size() + 1 - K; j++) {
+            const Kmer<K> kmer(s.substr(j, K));
             buf.push_back(canonical ? kmer.Canonical() : kmer);
           }
         });
@@ -86,7 +86,8 @@ class KmerSetCompact {
     std::vector<std::string> lines;
 
     {
-      absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name, decompressor);
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
 
       if (!statusor.ok()) {
         return statusor.status();
@@ -120,7 +121,8 @@ class KmerSetCompact {
   }
 
  private:
-  KmerSetCompact(std::vector<std::string> spss) : spss_(std::move(spss)){};
+  explicit KmerSetCompact(std::vector<std::string> spss)
+      : spss_(std::move(spss)){};
 
   std::vector<std::string> spss_;
 };

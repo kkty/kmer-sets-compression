@@ -186,11 +186,11 @@ class KmerSetSet {
     queue.push(i);
 
     while (!queue.empty()) {
-      int i = queue.front();
+      int current = queue.front();
       queue.pop();
 
-      kmer_set.Add(kmer_sets_[i], n_workers);
-      auto it = children_.find(i);
+      kmer_set.Add(kmer_sets_[current], n_workers);
+      auto it = children_.find(current);
       if (it != children_.end()) {
         for (int child : it->second) {
           queue.push(child);
@@ -366,7 +366,7 @@ class KmerSetSet {
   absl::Status DumpGraph(const std::string& file_name) const {
     std::vector<std::string> lines;
 
-    lines.push_back("digraph G {");
+    lines.emplace_back("digraph G {");
 
     for (const std::pair<const int, std::vector<int>>& p : children_) {
       for (int i : p.second) {
@@ -374,7 +374,7 @@ class KmerSetSet {
       }
     }
 
-    lines.push_back("}");
+    lines.emplace_back("}");
 
     return WriteLines(file_name, lines);
   }
@@ -441,7 +441,7 @@ class KmerSetSet {
  private:
   KmerSetSet(absl::flat_hash_map<int, std::vector<int>> children,
              std::vector<KmerSet<K, KeyType>> kmer_sets)
-      : children_(children), kmer_sets_(kmer_sets) {}
+      : children_(std::move(children)), kmer_sets_(std::move(kmer_sets)) {}
 
   absl::flat_hash_map<int, std::vector<int>> children_;
   std::vector<KmerSet<K, KeyType>> kmer_sets_;
@@ -451,7 +451,7 @@ class KmerSetSet {
 // If "approximate_matching" is true, it uses an approximate matching algorithm.
 // If "approximate_weights" is true, it uses approximate weights for the
 // matching algorithm.
-// If "approximate_graph" is true, it uses a aparse graph for the matching
+// If "approximate_graph" is true, it uses a sparse graph for the matching
 // algorithm, cutting half of edges.
 // If "partial_matching" is true, only half of the nodes are matched. The larger
 // ones are selected.
@@ -485,6 +485,7 @@ class KmerSetSetMM {
         // Considers the larger kmer sets only.
 
         std::vector<int> v;
+        v.reserve(n);
         for (int i = 0; i < n; i++) v.push_back(i);
 
         std::sort(v.begin(), v.end(), [&](int lhs, int rhs) {
@@ -510,7 +511,7 @@ class KmerSetSetMM {
 
         for (int i : nodes) {
           for (int j : nodes) {
-            // Mekes sure i < j.
+            // Makes sure i < j.
             if (i >= j) continue;
 
             if (approximate_graph && absl::Bernoulli(bitgen, 0.5)) continue;
@@ -775,7 +776,7 @@ class KmerSetSetMM {
 
     if (IsTerminal()) {
       // Section delimiter.
-      v.push_back("");
+      v.emplace_back("");
 
       const std::vector<KmerSet<K, KeyType>>& diffs =
           std::get<std::vector<KmerSet<K, KeyType>>>(diffs_);
@@ -845,7 +846,7 @@ class KmerSetSetMM {
       int64_t size;
       ss >> size;
 
-      for (int64_t i = 0; i < size; i++) {
+      for (int64_t j = 0; j < size; j++) {
         int key, value;
         ss >> key >> value;
         parents[key] = value;
@@ -858,14 +859,14 @@ class KmerSetSetMM {
       int64_t size;
       ss >> size;
 
-      for (int64_t i = 0; i < size; i++) {
+      for (int64_t j = 0; j < size; j++) {
         int key1, key2, value;
         ss >> key1 >> key2 >> value;
         diff_table[key1][key2] = value;
       }
     }
 
-    if (v[i + 3] == "") {
+    if (v[i + 3].empty()) {
       // The end of recursion.
 
       // Loads diffs.

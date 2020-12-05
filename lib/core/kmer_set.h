@@ -10,8 +10,8 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
-#include "absl/status/statusor.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "core/io.h"
@@ -23,7 +23,7 @@
 template <int K, typename KeyType>
 std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
   const std::bitset<2 * K> bits = kmer.Bits();
-  const int key_bits = sizeof(KeyType) * 8;
+  const unsigned key_bits = sizeof(KeyType) * 8;
   const int bucket_id = bits.to_ullong() >> key_bits;
   const KeyType key = bits.to_ullong() % (1ull << key_bits);
   return {bucket_id, key};
@@ -31,7 +31,7 @@ std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
 
 template <int K, typename KeyType>
 Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
-  const int key_bits = sizeof(KeyType) * 8;
+  const unsigned key_bits = sizeof(KeyType) * 8;
   std::bitset<K * 2> bits{((uint64_t)bucket_id << key_bits) + (uint64_t)key};
   return Kmer<K>{bits};
 }
@@ -257,7 +257,7 @@ class KmerSet {
     int64_t diff = Diff(other, n_workers);
     int64_t common = Common(other, n_workers);
 
-    return (double)common / (diff + common);
+    return (double)common / (double)(diff + common);
   }
 
   // Estimates the difference between two sets using some buckets.
@@ -325,7 +325,7 @@ class KmerSet {
 
   // Dumps kmers to a file.
   absl::Status Dump(const std::string& file_name, const std::string& compressor,
-            int n_workers) const {
+                    int n_workers) const {
     std::vector<Kmer<K>> kmers = Find(n_workers);
 
     std::vector<std::string> lines(kmers.size());
@@ -408,7 +408,7 @@ class KmerSet {
  private:
   using Bucket = absl::flat_hash_set<KeyType>;
 
-  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
+  static constexpr int kBucketsNum = 1ull << (2 * K - sizeof(KeyType) * 8);
 
   std::vector<Bucket> buckets_;
 
