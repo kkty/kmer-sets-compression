@@ -40,6 +40,7 @@ foreach(
   kmerset-compress
   kmerset-decompress
   kmersetset-compress
+  kmersetset-decompress
   search
   spss
 )
