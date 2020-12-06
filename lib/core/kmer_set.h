@@ -440,6 +440,9 @@ class KmerSet {
 
   template <int, typename, typename>
   friend class KmerCounter;
+
+  template <int, typename>
+  friend class KmerSetImmutable;
 };
 
 template <int K, typename KeyType>
