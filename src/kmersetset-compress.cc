@@ -116,7 +116,7 @@ void Main(const std::vector<std::string>& files) {
   {
     const int n_iterations = absl::GetFlag(FLAGS_iteration);
 
-    // If --check is not specified, kmer_sets_immutable should be copied.
+    // If --check is specified, kmer_sets_immutable should be copied.
     if (check) {
       kmer_set_set =
           KmerSetSet<K, KeyType>(kmer_sets_immutable, n_iterations, n_workers);
