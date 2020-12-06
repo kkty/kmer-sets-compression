@@ -115,7 +115,7 @@ class IntSet {
   }
 
   template <typename FuncType>
-  void Intersection(const IntSet& other, FuncType func) {
+  void Intersection(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
     const IntSet& rhs = other;
 
@@ -155,20 +155,20 @@ class IntSet {
     }
   }
 
-  int64_t IntersectionSize(const IntSet& other) {
+  int64_t IntersectionSize(const IntSet& other) const {
     int64_t size = 0;
     Intersection(other, [&](T) { size++; });
     return size;
   }
 
-  IntSet Intersection(const IntSet& other) {
+  IntSet Intersection(const IntSet& other) const {
     std::vector<T> v;
     Intersection(other, [&](T i) { v.push_back(i); });
     return IntSet(v);
   }
 
   template <typename FuncType>
-  void Add(const IntSet& other, FuncType func) {
+  void Add(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
     const IntSet& rhs = other;
 
@@ -262,20 +262,20 @@ class IntSet {
     }
   }
 
-  int64_t AddSize(const IntSet& other) {
+  int64_t AddSize(const IntSet& other) const {
     int64_t size = 0;
     Add(other, [&](T) { size++; });
     return size;
   }
 
-  IntSet Add(const IntSet& other) {
+  IntSet Add(const IntSet& other) const {
     std::vector<T> v;
     Add(other, [&](T i) { v.push_back(i); });
     return IntSet(v);
   }
 
   template <typename FuncType>
-  void Sub(const IntSet& other, FuncType func) {
+  void Sub(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
     const IntSet& rhs = other;
 
@@ -340,7 +340,7 @@ class IntSet {
     }
   }
 
-  IntSet Sub(const IntSet& other) {
+  IntSet Sub(const IntSet& other) const {
     std::vector<T> v;
     Sub(other, [&](T i) { v.push_back(i); });
     return IntSet(v);

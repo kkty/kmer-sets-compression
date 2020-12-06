@@ -63,7 +63,7 @@ class KmerSetImmutable {
   }
 
   int64_t IntersectionSizeEstimate(const KmerSetImmutable& other,
-                                   int n_buckets) {
+                                   int n_buckets) const {
     int64_t count = 0;
 
     absl::InsecureBitGen bitgen;
@@ -78,12 +78,13 @@ class KmerSetImmutable {
   }
 
   int64_t IntersectionSizeEstimate(const KmerSetImmutable& other,
-                                   double n_buckets_factor) {
+                                   double n_buckets_factor) const {
     return IntersectionSizeEstimate(
         other, static_cast<int>(kBucketsNum * n_buckets_factor));
   }
 
-  KmerSetImmutable Intersection(const KmerSetImmutable& other, int n_workers) {
+  KmerSetImmutable Intersection(const KmerSetImmutable& other,
+                                int n_workers) const {
     KmerSetImmutable kmer_set_immutable;
 
     boost::asio::thread_pool pool(n_workers);
@@ -100,7 +101,7 @@ class KmerSetImmutable {
     return kmer_set_immutable;
   }
 
-  KmerSetImmutable Add(const KmerSetImmutable& other, int n_workers) {
+  KmerSetImmutable Add(const KmerSetImmutable& other, int n_workers) const {
     KmerSetImmutable kmer_set_immutable;
 
     boost::asio::thread_pool pool(n_workers);
@@ -116,7 +117,7 @@ class KmerSetImmutable {
     return kmer_set_immutable;
   }
 
-  KmerSetImmutable Sub(const KmerSetImmutable& other, int n_workers) {
+  KmerSetImmutable Sub(const KmerSetImmutable& other, int n_workers) const {
     KmerSetImmutable kmer_set_immutable;
 
     boost::asio::thread_pool pool(n_workers);
