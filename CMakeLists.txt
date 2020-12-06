@@ -15,7 +15,8 @@ find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread filesystem)
 find_package(mimalloc REQUIRED)
-find_package(LEMON REQUIRED)
+
+find_library(streamvbyte_LIBRARIES streamvbyte_static REQUIRED)
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${LEMON_INCLUDE_DIRS})
 include_directories(lib)
@@ -32,7 +33,7 @@ link_libraries(
   absl::statusor
   absl::random_random
   ${Boost_LIBRARIES}
-  ${LEMON_LIBRARIES}
+  ${streamvbyte_LIBRARIES}
 )
 
 foreach(
