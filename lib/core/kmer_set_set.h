@@ -178,6 +178,9 @@ class KmerSetSet {
     }
   }
 
+  // Returns the number of kmer sets in the structure.
+  int Size() const { return kmer_sets_.size(); }
+
   // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
     KmerSet<K, KeyType> kmer_set;
@@ -362,7 +365,7 @@ class KmerSetSet {
     return WriteLines(file_name, compressor, Dump(canonical, clear, n_workers));
   }
 
-  // Dumps the graph structure with DOT format.
+  // Dumps the graph structure in DOT format.
   absl::Status DumpGraph(const std::string& file_name) const {
     std::vector<std::string> lines;
 
@@ -436,6 +439,25 @@ class KmerSetSet {
     }
 
     return KmerSetSet(children, kmer_sets);
+  }
+
+  static absl::StatusOr<KmerSetSet> Load(const std::string& file_name,
+                                         const std::string& decompressor,
+                                         bool canonical, int n_workers) {
+    std::vector<std::string> lines;
+
+    {
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      lines = std::move(statusor).value();
+    }
+
+    return Load(std::move(lines), canonical, n_workers);
   }
 
  private:
