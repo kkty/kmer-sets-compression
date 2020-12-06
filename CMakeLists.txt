@@ -52,6 +52,7 @@ link_libraries(GTest::gtest_main)
 
 foreach(
   NAME
+  int_set
   kmer
   kmer_counter
   kmer_set_compact
