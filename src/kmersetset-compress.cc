@@ -9,6 +9,7 @@
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "core/kmer_set.h"
+#include "core/kmer_set_immutable.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
 #include "io.h"
@@ -16,7 +17,6 @@
 #include "spdlog/spdlog.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(bool, similarity, false, "calculate Jaccard similarity");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
           "specify decompressor for input files");
@@ -39,10 +39,11 @@ void Main(const std::vector<std::string>& files) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const bool canonical = absl::GetFlag(FLAGS_canonical);
+  const bool check = absl::GetFlag(FLAGS_check);
 
   const int n_datasets = files.size();
 
-  std::vector<KmerSet<K, KeyType>> kmer_sets(n_datasets);
+  std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable(n_datasets);
 
   // Reads the ith file and constructs kmer_sets[i].
   const auto ReadFile = [&](int i, int n_workers) {
@@ -60,23 +61,39 @@ void Main(const std::vector<std::string>& files) {
       std::exit(1);
     }
 
-    kmer_sets[i] = std::move(statusor).value();
+    KmerSet<K, KeyType> kmer_set = std::move(statusor).value();
+
+    kmer_sets_immutable[i] = KmerSetImmutable<K, KeyType>(kmer_set, n_workers);
+
+    if (check) {
+      if (kmer_set.Equals(kmer_sets_immutable[i].ToKmerSet(n_workers),
+                          n_workers)) {
+        spdlog::info("kmer_sets_immutable[{}] -> kmer_set: ok", i);
+      } else {
+        spdlog::error("kmer_sets_immutable[{}] -> kmer_set: failed", i);
+        std::exit(1);
+      }
+    }
 
     spdlog::info("finished reading {}", file);
   };
 
-  // Reading files in parallel may use a lot of memory.
-  if (absl::GetFlag(FLAGS_parallel_input)) {
-    boost::asio::thread_pool pool(n_workers);
+  {
+    // Reading files in parallel may use a lot of memory.
+    const bool parallel_input = absl::GetFlag(FLAGS_parallel_input);
 
-    for (int i = 0; i < n_datasets; i++) {
-      boost::asio::post(pool, [&, i] { ReadFile(i, 1); });
-    }
+    if (parallel_input) {
+      boost::asio::thread_pool pool(n_workers);
 
-    pool.join();
-  } else {
-    for (int i = 0; i < n_datasets; i++) {
-      ReadFile(i, n_workers);
+      for (int i = 0; i < n_datasets; i++) {
+        boost::asio::post(pool, [&, i] { ReadFile(i, 1); });
+      }
+
+      pool.join();
+    } else {
+      for (int i = 0; i < n_datasets; i++) {
+        ReadFile(i, n_workers);
+      }
     }
   }
 
@@ -84,37 +101,28 @@ void Main(const std::vector<std::string>& files) {
     int64_t total_size = 0;
 
     for (int i = 0; i < n_datasets; i++) {
-      int64_t kmer_set_size = kmer_sets[i].Size();
-      spdlog::info("i = {}, kmer_set_size = {}", i, kmer_set_size);
-      total_size += kmer_set_size;
+      int64_t size = kmer_sets_immutable[i].Size();
+      spdlog::info("i = {}, size = {}", i, size);
+      total_size += size;
     }
 
     spdlog::info("total_size = {}", total_size);
   }
 
-  if (absl::GetFlag(FLAGS_similarity)) {
-    for (int i = 0; i < n_datasets; i++) {
-      for (int j = i + 1; j < n_datasets; j++) {
-        double similarity = kmer_sets[i].Similarity(kmer_sets[j], n_workers);
-        spdlog::info("i = {}, j = {}, similarity = {}", i, j, similarity);
-      }
-    }
-  }
-
   spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, KeyType> kmer_set_set;
-  const bool check = absl::GetFlag(FLAGS_check);
 
-  // If --check is not specified, it is OK to invalidate kmer_sets.
   {
     const int n_iterations = absl::GetFlag(FLAGS_iteration);
 
+    // If --check is not specified, kmer_sets_immutable should be copied.
     if (check) {
-      kmer_set_set = KmerSetSet<K, KeyType>(kmer_sets, n_iterations, n_workers);
-    } else {
       kmer_set_set =
-          KmerSetSet<K, KeyType>(std::move(kmer_sets), n_iterations, n_workers);
+          KmerSetSet<K, KeyType>(kmer_sets_immutable, n_iterations, n_workers);
+    } else {
+      kmer_set_set = KmerSetSet<K, KeyType>(std::move(kmer_sets_immutable),
+                                            n_iterations, n_workers);
     }
   }
 
@@ -178,8 +186,14 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("loaded");
 
     for (int i = 0; i < n_datasets; i++) {
-      spdlog::info("kmer_sets[{}].Equals(loaded.Get({})) = {}", i, i,
-                   kmer_sets[i].Equals(loaded.Get(i, n_workers), n_workers));
+      // NOLINTNEXTLINE
+      if (kmer_sets_immutable[i].ToKmerSet(n_workers).Equals(
+              loaded.Get(i, n_workers), n_workers)) {
+        spdlog::info("loaded.Get({}, n_workers): ok", i);
+      } else {
+        spdlog::error("loaded.Get({}, n_workers): failed", i);
+        std::exit(1);
+      }
     }
   }
 }

@@ -39,15 +39,9 @@ class KmerSetSet {
  public:
   KmerSetSet() = default;
 
-  KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int n_iterations,
-             int n_workers)
-      : kmer_sets_immutable_(kmer_sets.size()) {
-    for (size_t i = 0; i < kmer_sets.size(); i++) {
-      kmer_sets_immutable_[i] =
-          KmerSetImmutable<K, KeyType>(kmer_sets[i], n_workers);
-      kmer_sets[i].Clear();
-    }
-
+  KmerSetSet(std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable,
+             int n_iterations, int n_workers)
+      : kmer_sets_immutable_(std::move(kmer_sets_immutable)) {
     // Considers a non-directed complete graph where ith node represents
     // kmer_sets_immutable_[i].
 
