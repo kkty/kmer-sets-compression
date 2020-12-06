@@ -71,7 +71,7 @@ class KmerSetImmutable {
     for (int i = 0; i < n_buckets; i++) {
       int bucket_id = absl::Uniform(bitgen, 0, kBucketsNum);
 
-      count += buckets_[bucket_id].AddSize(other.buckets_[bucket_id]);
+      count += buckets_[bucket_id].IntersectionSize(other.buckets_[bucket_id]);
     }
 
     return count * kBucketsNum / n_buckets;

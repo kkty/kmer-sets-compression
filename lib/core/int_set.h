@@ -262,12 +262,6 @@ class IntSet {
     }
   }
 
-  int64_t AddSize(const IntSet& other) const {
-    int64_t size = 0;
-    Add(other, [&](T) { size++; });
-    return size;
-  }
-
   IntSet Add(const IntSet& other) const {
     std::vector<T> v;
     Add(other, [&](T i) { v.push_back(i); });
