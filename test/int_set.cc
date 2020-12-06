@@ -85,7 +85,7 @@ TEST(IntSet, IntersectionAddSub) {
 
   {
     std::vector<int> expected{3, 7};
-    ASSERT_EQ(IntSet(v1).Add(IntSet(v2)).Decode(), expected);
+    ASSERT_EQ(IntSet(v1).Sub(IntSet(v2)).Decode(), expected);
   }
 }
 
