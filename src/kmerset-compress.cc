@@ -1,19 +1,13 @@
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <mutex>
 #include <string>
-#include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
-#include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
-#include "core/kmer_set_set.h"
 #include "flags.h"
 #include "log.h"
 #include "spdlog/spdlog.h"

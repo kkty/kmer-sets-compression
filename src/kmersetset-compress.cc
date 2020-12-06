@@ -1,7 +1,5 @@
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -10,7 +8,6 @@
 #include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"

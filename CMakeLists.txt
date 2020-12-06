@@ -37,9 +37,9 @@ link_libraries(
 
 foreach(
   NAME
-  compress
-  decompress
-  kmersetset
+  kmerset-compress
+  kmerset-decompress
+  kmersetset-compress
   search
   spss
 )

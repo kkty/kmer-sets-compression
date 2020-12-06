@@ -4,7 +4,6 @@
 
 #include "absl/flags/flag.h"
 #include "absl/status/statusor.h"
-#include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
 #include "flags.h"
