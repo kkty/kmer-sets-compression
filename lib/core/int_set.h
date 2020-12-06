@@ -2,6 +2,7 @@
 #define CORE_INT_SET_H_
 
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "streamvbyte.h"
