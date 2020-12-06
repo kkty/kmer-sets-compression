@@ -28,6 +28,7 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
+#include "core/kmer_set_immutable.h"
 #include "core/range.h"
 #include "core/unitigs.h"
 #include "spdlog/spdlog.h"
@@ -40,13 +41,20 @@ class KmerSetSet {
 
   KmerSetSet(std::vector<KmerSet<K, KeyType>> kmer_sets, int n_iterations,
              int n_workers)
-      : kmer_sets_(std::move(kmer_sets)) {
+      : kmer_sets_immutable_(kmer_sets.size()) {
+    for (size_t i = 0; i < kmer_sets.size(); i++) {
+      kmer_sets_immutable_[i] =
+          KmerSetImmutable<K, KeyType>(kmer_sets[i], n_workers);
+      kmer_sets[i].Clear();
+    }
+
     // Considers a non-directed complete graph where ith node represents
-    // kmer_sets_[i].
+    // kmer_sets_immutable_[i].
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
-      return kmer_sets_[i].CommonEstimate(kmer_sets_[j], 0.1);
+      return kmer_sets_immutable_[i].IntersectionSizeEstimate(
+          kmer_sets_immutable_[j], 0.1);
     };
 
     // weights[{i, j}] (i < j) is the weight between the ith node and jth node.
@@ -54,7 +62,7 @@ class KmerSetSet {
 
     spdlog::debug("calculating initial weights");
     {
-      const int n = kmer_sets_.size();
+      const int n = kmer_sets_immutable_.size();
       boost::asio::thread_pool pool(n_workers);
       std::mutex mu;
 
@@ -75,13 +83,14 @@ class KmerSetSet {
     }
     spdlog::debug("calculated initial weights");
 
-    // For each i, calculates the size of kmer_sets_[i] and sums them up.
-    // This value will be updated in the main loop accordingly.
+    // For each i, calculates the size of kmer_sets_immutable_[i] and sums them
+    // up. This value will be updated in the main loop accordingly.
     std::atomic_int64_t total_size = 0;
     {
       boost::asio::thread_pool pool(n_workers);
-      for (size_t i = 0; i < kmer_sets_.size(); i++) {
-        boost::asio::post(pool, [&, i] { total_size += kmer_sets_[i].Size(); });
+      for (size_t i = 0; i < kmer_sets_immutable_.size(); i++) {
+        boost::asio::post(
+            pool, [&, i] { total_size += kmer_sets_immutable_[i].Size(); });
       }
       pool.join();
     }
@@ -90,7 +99,7 @@ class KmerSetSet {
     while (n_iterations--) {
       spdlog::debug("n_iterations = {}", n_iterations);
 
-      const int n = kmer_sets_.size();
+      const int n = kmer_sets_immutable_.size();
 
       // Finds i, j such that the weight between ith node and jth node is
       // maximized.
@@ -108,26 +117,34 @@ class KmerSetSet {
 
       spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
 
-      // Constructs kmer_set by intersecting kmer_sets_[i] and kmer_sets_[j].
-      KmerSet<K, KeyType> kmer_set =
-          Intersection(kmer_sets_[i], kmer_sets_[j], n_workers);
+      // Constructs kmer_set by intersecting kmer_sets_immutable_[i] and
+      // kmer_sets_immutable_[j].
+      KmerSetImmutable<K, KeyType> kmer_set_immutable =
+          kmer_sets_immutable_[i].Intersection(kmer_sets_immutable_[j],
+                                               n_workers);
 
-      const int64_t original_size = kmer_sets_[i].Size() + kmer_sets_[j].Size();
+      const int64_t original_size =
+          kmer_sets_immutable_[i].Size() + kmer_sets_immutable_[j].Size();
 
-      // Moves kmer_set to kmer_sets_[n].
-      kmer_sets_.push_back(std::move(kmer_set));
+      // Moves kmer_set to kmer_sets_immutable_[n].
+      kmer_sets_immutable_.push_back(std::move(kmer_set_immutable));
 
-      // Updates kmer_sets_[i] and kmer_sets_[j] and adds metadata so that the
-      // original kmer_sets_[i] and kmer_sets_[j] can be reconstructed.
-      kmer_sets_[i].Sub(kmer_sets_[n], n_workers);
-      kmer_sets_[j].Sub(kmer_sets_[n], n_workers);
+      // Updates kmer_sets_immutable_[i] and kmer_sets_immutable_[j] and adds
+      // metadata so that the original kmer_sets_immutable_[i] and
+      // kmer_sets_immutable_[j] can be reconstructed.
+      kmer_sets_immutable_[i] =
+          kmer_sets_immutable_[i].Sub(kmer_sets_immutable_[n], n_workers);
+      kmer_sets_immutable_[j] =
+          kmer_sets_immutable_[j].Sub(kmer_sets_immutable_[n], n_workers);
+
       children_[i].push_back(n);
       children_[j].push_back(n);
 
-      // The change in the number of kmers that are stored in kmer_sets_.
-      // It should be negative.
-      const int64_t size_diff = kmer_sets_[n].Size() + kmer_sets_[i].Size() +
-                                kmer_sets_[j].Size() - original_size;
+      // The change in the number of kmers that are stored in
+      // kmer_sets_immutable_. It should be negative.
+      const int64_t size_diff = kmer_sets_immutable_[n].Size() +
+                                kmer_sets_immutable_[i].Size() +
+                                kmer_sets_immutable_[j].Size() - original_size;
 
       total_size += size_diff;
       spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);
@@ -177,7 +194,7 @@ class KmerSetSet {
   }
 
   // Returns the number of kmer sets in the structure.
-  int Size() const { return kmer_sets_.size(); }
+  int Size() const { return kmer_sets_immutable_.size(); }
 
   // Reconstructs the ith kmer set.
   KmerSet<K, KeyType> Get(int i, int n_workers) const {
@@ -190,7 +207,8 @@ class KmerSetSet {
       int current = queue.front();
       queue.pop();
 
-      kmer_set.Add(kmer_sets_[current], n_workers);
+      kmer_set.Add(kmer_sets_immutable_[current].ToKmerSet(n_workers),
+                   n_workers);
       auto it = children_.find(current);
       if (it != children_.end()) {
         for (int child : it->second) {
@@ -228,33 +246,33 @@ class KmerSetSet {
       absl::flat_hash_map<int, std::vector<int>>().swap(children_);
     }
 
-    // Dumps "kmer_sets_".
+    // Dumps "kmer_sets_immutable_".
 
     {
       std::stringstream ss;
-      ss << kmer_sets_.size();
+      ss << kmer_sets_immutable_.size();
       v.push_back(ss.str());
     }
 
     const int n = v.size();
 
-    v.resize(n + kmer_sets_.size());
+    v.resize(n + kmer_sets_immutable_.size());
 
     {
       boost::asio::thread_pool pool(n_workers);
 
-      for (size_t i = 0; i < kmer_sets_.size(); i++) {
+      for (size_t i = 0; i < kmer_sets_immutable_.size(); i++) {
         boost::asio::post(pool, [&, i] {
           spdlog::debug("dumping kmer set: i = {}", i);
 
           const KmerSetCompact<K, KeyType> kmer_set_compact =
-              KmerSetCompact<K, KeyType>::FromKmerSet(kmer_sets_[i], canonical,
-                                                      1);
+              KmerSetCompact<K, KeyType>::FromKmerSet(
+                  kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
 
           v[n + i] = absl::StrJoin(kmer_set_compact.Dump(), " ");
 
           if (clear) {
-            kmer_sets_[i].Clear();
+            kmer_sets_immutable_[i].Clear();
           }
 
           spdlog::debug("dumped kmer set: i = {}", i);
@@ -296,7 +314,7 @@ class KmerSetSet {
 
       {
         std::stringstream ss;
-        ss << kmer_sets_.size();
+        ss << kmer_sets_immutable_.size();
         v.push_back(ss.str());
       }
 
@@ -319,15 +337,15 @@ class KmerSetSet {
     boost::asio::thread_pool pool(n_workers);
     std::atomic_int fail_count = 0;
 
-    for (size_t i = 0; i < kmer_sets_.size(); i++) {
+    for (size_t i = 0; i < kmer_sets_immutable_.size(); i++) {
       boost::asio::post(pool, [&, i] {
         spdlog::debug("dumping kmer set: i = {}", i);
 
         const KmerSetCompact<K, KeyType> kmer_set_compact =
-            KmerSetCompact<K, KeyType>::FromKmerSet(kmer_sets_[i], canonical,
-                                                    1);
+            KmerSetCompact<K, KeyType>::FromKmerSet(
+                kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
         if (clear) {
-          kmer_sets_[i].Clear();
+          kmer_sets_immutable_[i].Clear();
         }
 
         const absl::Status status =
@@ -384,7 +402,7 @@ class KmerSetSet {
   static KmerSetSet Load(std::vector<std::string> v, bool canonical,
                          int n_workers) {
     absl::flat_hash_map<int, std::vector<int>> children;
-    std::vector<KmerSet<K, KeyType>> kmer_sets;
+    std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable;
 
     // Loads "children".
 
@@ -412,23 +430,24 @@ class KmerSetSet {
     // We are concerned with {v[offset] ... v[v.size() - 1]}.
     const int offset = children_size + 1;
 
-    int kmer_sets_size;
+    int kmer_sets_immutable_size;
     {
       std::stringstream ss(v[offset]);
-      ss >> kmer_sets_size;
+      ss >> kmer_sets_immutable_size;
     }
 
-    kmer_sets.resize(kmer_sets_size);
+    kmer_sets_immutable.resize(kmer_sets_immutable_size);
 
     {
       boost::asio::thread_pool pool(n_workers);
 
-      for (int i = 0; i < kmer_sets_size; i++) {
+      for (int i = 0; i < kmer_sets_immutable_size; i++) {
         boost::asio::post(pool, [&, i] {
           std::string& s = v[offset + 1 + i];
           KmerSetCompact<K, KeyType> kmer_set_compact =
               KmerSetCompact<K, KeyType>::Load(absl::StrSplit(s, ' '));
-          kmer_sets[i] = kmer_set_compact.ToKmerSet(canonical, n_workers);
+          kmer_sets_immutable[i] = KmerSetImmutable<K, KeyType>(
+              kmer_set_compact.ToKmerSet(canonical, n_workers), 1);
           std::string().swap(s);
         });
       }
@@ -436,7 +455,7 @@ class KmerSetSet {
       pool.join();
     }
 
-    return KmerSetSet(children, kmer_sets);
+    return KmerSetSet(children, kmer_sets_immutable);
   }
 
   static absl::StatusOr<KmerSetSet> Load(const std::string& file_name,
@@ -460,11 +479,12 @@ class KmerSetSet {
 
  private:
   KmerSetSet(absl::flat_hash_map<int, std::vector<int>> children,
-             std::vector<KmerSet<K, KeyType>> kmer_sets)
-      : children_(std::move(children)), kmer_sets_(std::move(kmer_sets)) {}
+             std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable)
+      : children_(std::move(children)),
+        kmer_sets_immutable_(std::move(kmer_sets_immutable)) {}
 
   absl::flat_hash_map<int, std::vector<int>> children_;
-  std::vector<KmerSet<K, KeyType>> kmer_sets_;
+  std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable_;
 };
 
 #endif
