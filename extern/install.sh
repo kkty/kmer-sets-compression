@@ -4,7 +4,7 @@
 
 set -eu
 
-for DIR in abseil-cpp googletest lemon mimalloc spdlog
+for DIR in abseil-cpp googletest lemon mimalloc spdlog streamvbyte
 do
   pushd $DIR
     mkdir -p build

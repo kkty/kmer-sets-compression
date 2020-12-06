@@ -16,3 +16,6 @@
 [submodule "extern/lemon"]
 	path = extern/lemon
 	url = https://github.com/kkty/lemon
+[submodule "extern/streamvbyte"]
+	path = extern/streamvbyte
+	url = https://github.com/lemire/streamvbyte
