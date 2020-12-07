@@ -8,6 +8,9 @@
 #include "streamvbyte.h"
 
 // IntSet can be used to store an immutable set of integers.
+// It is not possible to add or remove elements from the structure, but, fast
+// operations are provided for adding two IntSets, intersecting two IntSets, and
+// subtracting one IntSet from another.
 template <typename T>
 class IntSet {
  public:
@@ -22,7 +25,7 @@ class IntSet {
                 compressed_diff_size_);
   }
 
-  IntSet(IntSet&& other)
+  IntSet(IntSet&& other) noexcept
       : first_(other.first_),
         n_(other.n_),
         compressed_diff_(other.compressed_diff_),
@@ -32,6 +35,8 @@ class IntSet {
   }
 
   IntSet& operator=(const IntSet& other) {
+    if (this == &other) return *this;
+
     delete[] compressed_diff_;
 
     first_ = other.first_;
@@ -45,7 +50,7 @@ class IntSet {
     return *this;
   }
 
-  IntSet& operator=(IntSet&& other) {
+  IntSet& operator=(IntSet&& other) noexcept {
     delete[] compressed_diff_;
 
     first_ = other.first_;
@@ -59,7 +64,7 @@ class IntSet {
     return *this;
   }
 
-  IntSet(const std::vector<T>& v) : n_(v.size()) {
+  explicit IntSet(const std::vector<T>& v) : n_(v.size()) {
     if (n_ == 0) {
       return;
     }
@@ -90,14 +95,17 @@ class IntSet {
     delete[] compressed_diff_;
   }
 
+  // Reconstructs the original vector.
   std::vector<T> Decode() const {
     std::vector<T> v;
     ForEach([&](T i) { v.push_back(i); });
     return v;
   }
 
+  // Returns the number of elements in the set.
   int64_t Size() const { return n_; }
 
+  // Executes "func" for each element in the set.
   template <typename FuncType>
   void ForEach(FuncType func) const {
     if (n_ == 0) return;
@@ -114,6 +122,8 @@ class IntSet {
     }
   }
 
+  // Executes "func" for each element that is present in both of the two
+  // IntSets.
   template <typename FuncType>
   void Intersection(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
@@ -155,18 +165,22 @@ class IntSet {
     }
   }
 
+  // Returns the size of the overlap between the two IntSets.
   int64_t IntersectionSize(const IntSet& other) const {
     int64_t size = 0;
     Intersection(other, [&](T) { size++; });
     return size;
   }
 
+  // Returns the overlap between the two IntSets.
   IntSet Intersection(const IntSet& other) const {
     std::vector<T> v;
     Intersection(other, [&](T i) { v.push_back(i); });
     return IntSet(v);
   }
 
+  // Executes "func" for each element that is present in either of the two
+  // IntSets.
   template <typename FuncType>
   void Add(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
@@ -262,12 +276,15 @@ class IntSet {
     }
   }
 
+  // Adds two IntSets.
   IntSet Add(const IntSet& other) const {
     std::vector<T> v;
     Add(other, [&](T i) { v.push_back(i); });
     return IntSet(v);
   }
 
+  // Executes "func" for each element that is present in one IntSet, but not in
+  // the other.
   template <typename FuncType>
   void Sub(const IntSet& other, FuncType func) const {
     const IntSet& lhs = *this;
@@ -334,6 +351,7 @@ class IntSet {
     }
   }
 
+  // Subtracts between two IntSets.
   IntSet Sub(const IntSet& other) const {
     std::vector<T> v;
     Sub(other, [&](T i) { v.push_back(i); });
@@ -345,6 +363,7 @@ class IntSet {
   int64_t n_ = 0;
 
   std::vector<uint32_t> Diff() const {
+    assert(n_ > 0);
     std::vector<uint32_t> diff(n_ - 1);
     streamvbyte_decode(compressed_diff_, diff.data(), n_ - 1);
     return diff;
