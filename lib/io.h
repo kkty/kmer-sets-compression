@@ -44,42 +44,6 @@ absl::StatusOr<KmerSet<K, KeyType>> GetKmerSetFromCompressedKmersFile(
   return kmer_set;
 }
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> GetKmerSetFromFASTQFile(const std::string& file_name,
-                                            const std::string& decompressor,
-                                            bool canonical, int cutoff,
-                                            int n_workers) {
-  spdlog::info("constructing kmer_counter");
-
-  const KmerCounter<K, KeyType> kmer_counter = [&] {
-    absl::StatusOr<KmerCounter<K, KeyType>> statusor =
-        decompressor != "" ? KmerCounter<K, KeyType>::FromFASTQ(
-                                 file_name, decompressor, canonical, n_workers)
-                           : KmerCounter<K, KeyType>::FromFASTQ(
-                                 file_name, canonical, n_workers);
-
-    if (!statusor.ok()) {
-      spdlog::error("failed to parse FASTQ file: {}",
-                    statusor.status().ToString());
-      std::exit(1);
-    }
-
-    return *statusor;
-  }();
-
-  spdlog::info("constructed kmer_counter");
-
-  spdlog::info("constructing kmer_set");
-
-  KmerSet<K, KeyType> kmer_set;
-  int64_t cutoff_count;
-  std::tie(kmer_set, cutoff_count) = kmer_counter.ToKmerSet(cutoff, n_workers);
-
-  spdlog::info("constructed kmer_set");
-
-  return kmer_set;
-}
-
 // Returns a list of reads in a FASTA file.
 absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
     const std::string& file_name, const std::string& decompressor,
