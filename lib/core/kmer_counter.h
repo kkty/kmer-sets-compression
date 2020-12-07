@@ -47,7 +47,7 @@ T MultiplyWithMax(T x, T y) {
 }
 
 // KmerCounter can be used to count kmers.
-template <int K, typename KeyType, typename ValueType = uint8_t>
+template <int K, int N, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
  public:
   KmerCounter() : buckets_(kBucketsNum) {}
@@ -83,7 +83,7 @@ class KmerCounter {
               int bucket;
               KeyType key;
 
-              std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(
+              std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(
                   canonical ? kmer.Canonical() : kmer);
 
               buf[bucket][key] = AddWithMax<ValueType>(buf[bucket][key], 1);
@@ -180,9 +180,9 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear less often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, KeyType>, int64_t> ToKmerSet(ValueType cutoff,
-                                                    int n_workers) const {
-    KmerSet<K, KeyType> set;
+  std::pair<KmerSet<K, N, KeyType>, int64_t> ToKmerSet(ValueType cutoff,
+                                                       int n_workers) const {
+    KmerSet<K, N, KeyType> set;
     std::mutex mu;
 
     std::vector<std::thread> threads;
@@ -221,7 +221,7 @@ class KmerCounter {
   ValueType Get(const Kmer<K>& kmer) const {
     int bucket;
     KeyType key;
-    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
     auto it = buckets_[bucket].find(key);
     if (it == buckets_[bucket].end()) return 0;
@@ -232,7 +232,7 @@ class KmerCounter {
   KmerCounter& Add(const Kmer<K>& kmer, ValueType v) {
     int bucket;
     KeyType key;
-    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
     buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], v);
     return *this;
@@ -272,12 +272,13 @@ class KmerCounter {
   }
 
   // Constructs a KmerCounter from a KmerSet. The counts are set to 1.
-  static KmerCounter FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
+  static KmerCounter FromKmerSet(const KmerSet<K, N, KeyType>& kmer_set,
                                  int n_workers) {
     KmerCounter kmer_counter;
 
     kmer_set.ForEachBucket(
-        [&](const typename KmerSet<K, KeyType>::Bucket& bucket, int bucket_id) {
+        [&](const typename KmerSet<K, N, KeyType>::Bucket& bucket,
+            int bucket_id) {
           kmer_counter.buckets_[bucket_id].reserve(bucket.size());
 
           for (const KeyType& key : bucket) {
@@ -290,7 +291,7 @@ class KmerCounter {
   }
 
  private:
-  static constexpr int kBucketsNum = 1 << (2 * K - sizeof(KeyType) * 8);
+  static constexpr int kBucketsNum = 1 << N;
 
   using Bucket = absl::flat_hash_map<KeyType, ValueType>;
 

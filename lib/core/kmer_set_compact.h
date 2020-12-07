@@ -19,21 +19,21 @@
 #include "core/unitigs.h"
 
 // Represents a set of kmers with SPSS, thereby reducing space.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 class KmerSetCompact {
  public:
   KmerSetCompact() = default;
 
   // Constructs KmerSetCompact from a kmer set. If the kmer set is for
   // storing canonical kmers, "canonical" should be true.
-  static KmerSetCompact FromKmerSet(const KmerSet<K, KeyType>& kmer_set,
+  static KmerSetCompact FromKmerSet(const KmerSet<K, N, KeyType>& kmer_set,
                                     bool canonical, int n_workers) {
     std::vector<std::string> spss;
 
     if (canonical) {
-      spss = GetSPSSCanonical<K, KeyType>(kmer_set, n_workers);
+      spss = GetSPSSCanonical<K, N, KeyType>(kmer_set, n_workers);
     } else {
-      spss = GetUnitigs<K, KeyType>(kmer_set, n_workers);
+      spss = GetUnitigs<K, N, KeyType>(kmer_set, n_workers);
     }
 
     return KmerSetCompact(std::move(spss));
@@ -41,7 +41,7 @@ class KmerSetCompact {
 
   // Constructs a KmerSet.
   // If we are considering canonical kmers, "canonical" should be true.
-  KmerSet<K, KeyType> ToKmerSet(bool canonical, int n_workers) const {
+  KmerSet<K, N, KeyType> ToKmerSet(bool canonical, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::vector<std::thread> threads;
     std::mutex mu;
@@ -65,7 +65,7 @@ class KmerSetCompact {
 
     for (std::thread& t : threads) t.join();
 
-    return KmerSet<K, KeyType>(kmers, n_workers);
+    return KmerSet<K, N, KeyType>(kmers, n_workers);
   }
 
   // Dumps data to a file.

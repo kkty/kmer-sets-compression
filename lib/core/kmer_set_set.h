@@ -34,12 +34,12 @@
 #include "spdlog/spdlog.h"
 
 // KmerSetSet can be used to represent multiple kmer sets efficiently.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 class KmerSetSet {
  public:
   KmerSetSet() = default;
 
-  KmerSetSet(std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable,
+  KmerSetSet(std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable,
              int n_iterations, int n_workers)
       : kmer_sets_immutable_(std::move(kmer_sets_immutable)) {
     // Considers a non-directed complete graph where ith node represents
@@ -113,7 +113,7 @@ class KmerSetSet {
 
       // Constructs kmer_set by intersecting kmer_sets_immutable_[i] and
       // kmer_sets_immutable_[j].
-      KmerSetImmutable<K, KeyType> kmer_set_immutable =
+      KmerSetImmutable<K, N, KeyType> kmer_set_immutable =
           kmer_sets_immutable_[i].Intersection(kmer_sets_immutable_[j],
                                                n_workers);
 
@@ -191,8 +191,8 @@ class KmerSetSet {
   int Size() const { return kmer_sets_immutable_.size(); }
 
   // Reconstructs the ith kmer set.
-  KmerSet<K, KeyType> Get(int i, int n_workers) const {
-    KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> Get(int i, int n_workers) const {
+    KmerSet<K, N, KeyType> kmer_set;
 
     std::queue<int> queue;
     queue.push(i);
@@ -259,8 +259,8 @@ class KmerSetSet {
         boost::asio::post(pool, [&, i] {
           spdlog::debug("dumping kmer set: i = {}", i);
 
-          const KmerSetCompact<K, KeyType> kmer_set_compact =
-              KmerSetCompact<K, KeyType>::FromKmerSet(
+          const KmerSetCompact<K, N, KeyType> kmer_set_compact =
+              KmerSetCompact<K, N, KeyType>::FromKmerSet(
                   kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
 
           v[n + i] = absl::StrJoin(kmer_set_compact.Dump(), " ");
@@ -335,8 +335,8 @@ class KmerSetSet {
       boost::asio::post(pool, [&, i] {
         spdlog::debug("dumping kmer set: i = {}", i);
 
-        const KmerSetCompact<K, KeyType> kmer_set_compact =
-            KmerSetCompact<K, KeyType>::FromKmerSet(
+        const KmerSetCompact<K, N, KeyType> kmer_set_compact =
+            KmerSetCompact<K, N, KeyType>::FromKmerSet(
                 kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
         if (clear) {
           kmer_sets_immutable_[i].Clear();
@@ -396,7 +396,7 @@ class KmerSetSet {
   static KmerSetSet Load(std::vector<std::string> v, bool canonical,
                          int n_workers) {
     absl::flat_hash_map<int, std::vector<int>> children;
-    std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable;
+    std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable;
 
     // Loads "children".
 
@@ -438,9 +438,9 @@ class KmerSetSet {
       for (int i = 0; i < kmer_sets_immutable_size; i++) {
         boost::asio::post(pool, [&, i] {
           std::string& s = v[offset + 1 + i];
-          KmerSetCompact<K, KeyType> kmer_set_compact =
-              KmerSetCompact<K, KeyType>::Load(absl::StrSplit(s, ' '));
-          kmer_sets_immutable[i] = KmerSetImmutable<K, KeyType>(
+          KmerSetCompact<K, N, KeyType> kmer_set_compact =
+              KmerSetCompact<K, N, KeyType>::Load(absl::StrSplit(s, ' '));
+          kmer_sets_immutable[i] = KmerSetImmutable<K, N, KeyType>(
               kmer_set_compact.ToKmerSet(canonical, n_workers), 1);
           std::string().swap(s);
         });
@@ -473,12 +473,12 @@ class KmerSetSet {
 
  private:
   KmerSetSet(absl::flat_hash_map<int, std::vector<int>> children,
-             std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable)
+             std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable)
       : children_(std::move(children)),
         kmer_sets_immutable_(std::move(kmer_sets_immutable)) {}
 
   absl::flat_hash_map<int, std::vector<int>> children_;
-  std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable_;
+  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable_;
 };
 
 #endif

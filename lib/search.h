@@ -64,8 +64,8 @@ std::pair<Kmer<K>, Kmer<K>> SampleConnectedPair(const KmerGraph<K>& g, int n) {
   }
 }
 
-template <int K, typename KeyType>
-KmerGraph<K> ConstructKmerGraph(const KmerSet<K, KeyType>& kmer_set,
+template <int K, int N, typename KeyType>
+KmerGraph<K> ConstructKmerGraph(const KmerSet<K, N, KeyType>& kmer_set,
                                 int n_workers) {
   const auto GetNexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
@@ -187,9 +187,9 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
 // Calculates all-pair shortest distances in dBG.
 // If GetAllPairDistances(...)[{kmer1, kmer2}] = i, the distance from kmer1 to
 // kmer2 is i.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> GetAllPairDistances(
-    const KmerSet<K, KeyType>& kmer_set, int n_workers) {
+    const KmerSet<K, N, KeyType>& kmer_set, int n_workers) {
   const std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
 
   absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> distances;
@@ -239,7 +239,7 @@ absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, int64_t> GetAllPairDistances(
 
 // Executes A* search using the all-pair shortest distances for the dBG
 // represented by L-mers.
-template <int K, int L>
+template <int K, int N, int L>
 SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
                          const Kmer<K>& goal,
                          const absl::flat_hash_map<std::pair<Kmer<L>, Kmer<L>>,

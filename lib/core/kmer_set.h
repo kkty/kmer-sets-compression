@@ -18,21 +18,25 @@
 #include "core/kmer.h"
 #include "core/range.h"
 
-// The last sizeof(KeyType) * 8 bits are used as keys.
-// The other bits are used to select buckets.
-template <int K, typename KeyType>
+// The first N bits are used to select buckets.
+// The last K * 2 - N bits are used as keys.
+template <int K, int N, typename KeyType>
 std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
+  const int n_key_bits = K * 2 - N;
+  static_assert(n_key_bits <= sizeof(KeyType) * 8);
+
   const std::bitset<2 * K> bits = kmer.Bits();
-  const unsigned key_bits = sizeof(KeyType) * 8;
-  const int bucket_id = bits.to_ullong() >> key_bits;
-  const KeyType key = bits.to_ullong() % (1ull << key_bits);
+  const int bucket_id = bits.to_ullong() >> n_key_bits;
+  const KeyType key = bits.to_ullong() % (1ull << n_key_bits);
   return {bucket_id, key};
 }
 
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
-  const unsigned key_bits = sizeof(KeyType) * 8;
-  std::bitset<K * 2> bits{((uint64_t)bucket_id << key_bits) + (uint64_t)key};
+  const int n_key_bits = K * 2 - N;
+  static_assert(n_key_bits <= sizeof(KeyType) * 8);
+
+  std::bitset<K * 2> bits{((uint64_t)bucket_id << n_key_bits) + (uint64_t)key};
   return Kmer<K>{bits};
 }
 
@@ -40,7 +44,7 @@ Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
 // As data are divided into multiple buckets, some operations can be done
 // efficiently in parallel. E.g., it supports multi-threaded operations for
 // merging 2 KmerSets and finding all the kmers that match a condition.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 class KmerSet {
  public:
   KmerSet() : buckets_(kBucketsNum) {}
@@ -57,7 +61,8 @@ class KmerSet {
         range.ForEach([&](int64_t i) {
           int bucket;
           KeyType key;
-          std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmers[i]);
+          std::tie(bucket, key) =
+              GetBucketAndKeyFromKmer<K, N, KeyType>(kmers[i]);
           buf[bucket].insert(key);
         });
 
@@ -106,7 +111,7 @@ class KmerSet {
   void Add(const Kmer<K>& kmer) {
     int bucket;
     KeyType key;
-    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
     buckets_[bucket].insert(key);
   }
@@ -115,7 +120,7 @@ class KmerSet {
   void Remove(const Kmer<K>& kmer) {
     int bucket;
     KeyType key;
-    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
     buckets_[bucket].erase(key);
   }
@@ -124,7 +129,7 @@ class KmerSet {
   bool Contains(const Kmer<K>& kmer) const {
     int bucket;
     KeyType key;
-    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+    std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
@@ -141,7 +146,7 @@ class KmerSet {
 
           for (const KeyType& key : bucket) {
             const Kmer<K> kmer =
-                GetKmerFromBucketAndKey<K, KeyType>(bucket_id, key);
+                GetKmerFromBucketAndKey<K, N, KeyType>(bucket_id, key);
             if (pred(kmer)) buf.push_back(kmer);
           }
 
@@ -292,10 +297,10 @@ class KmerSet {
 
   // Extracts K2-mers from the K-mer set.
   // K2 should be equal to or less than K.
-  template <int K2, typename KeyType2>
-  KmerSet<K2, KeyType2> Extract(int n_workers) const {
+  template <int K2, int N2, typename KeyType2>
+  KmerSet<K2, N2, KeyType2> Extract(int n_workers) const {
     std::vector<Kmer<K>> kmers = Find(n_workers);
-    KmerSet<K2, KeyType2> extracted;
+    KmerSet<K2, N2, KeyType2> extracted;
 
     std::vector<std::thread> threads;
     int done = 0;
@@ -303,7 +308,7 @@ class KmerSet {
 
     for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        KmerSet<K2, KeyType2> buf;
+        KmerSet<K2, N2, KeyType2> buf;
 
         range.ForEach([&](int64_t i) {
           const std::string s = kmers[i].String();
@@ -356,7 +361,7 @@ class KmerSet {
 
           for (KeyType key : bucket) {
             const Kmer<K> kmer =
-                GetKmerFromBucketAndKey<K, KeyType>(bucket_id, key);
+                GetKmerFromBucketAndKey<K, N, KeyType>(bucket_id, key);
             buf ^= kmer.Hash();
           }
 
@@ -408,7 +413,7 @@ class KmerSet {
  private:
   using Bucket = absl::flat_hash_set<KeyType>;
 
-  static constexpr int kBucketsNum = 1ull << (2 * K - sizeof(KeyType) * 8);
+  static constexpr int kBucketsNum = 1u << N;
 
   std::vector<Bucket> buckets_;
 
@@ -438,16 +443,16 @@ class KmerSet {
     pool.join();
   }
 
-  template <int, typename, typename>
+  template <int, int, typename, typename>
   friend class KmerCounter;
 
-  template <int, typename>
+  template <int, int, typename>
   friend class KmerSetImmutable;
 };
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
-                        int begin, int end, int n_workers) {
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> Add(const std::vector<KmerSet<K, N, KeyType>>& kmer_sets,
+                           int begin, int end, int n_workers) {
   if (end - begin == 1) return kmer_sets[begin];
 
   const int mid = (begin + end) / 2;
@@ -456,8 +461,8 @@ KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
     return Add(Add(kmer_sets, begin, mid, 1), Add(kmer_sets, mid, end, 1), 1);
   }
 
-  KmerSet<K, KeyType> lhs;
-  KmerSet<K, KeyType> rhs;
+  KmerSet<K, N, KeyType> lhs;
+  KmerSet<K, N, KeyType> rhs;
 
   std::vector<std::thread> threads;
 
@@ -472,28 +477,28 @@ KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
   return Add(std::move(lhs), rhs, n_workers);
 }
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> Add(const std::vector<KmerSet<K, KeyType>>& kmer_sets,
-                        int n_workers) {
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> Add(const std::vector<KmerSet<K, N, KeyType>>& kmer_sets,
+                           int n_workers) {
   return Add(kmer_sets, n_workers, 0, kmer_sets.size(), n_workers);
 }
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> Add(KmerSet<K, KeyType> lhs, const KmerSet<K, KeyType>& rhs,
-                        int n_workers) {
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> Add(KmerSet<K, N, KeyType> lhs,
+                           const KmerSet<K, N, KeyType>& rhs, int n_workers) {
   return lhs.Add(rhs, n_workers);
 }
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> Sub(KmerSet<K, KeyType> lhs, const KmerSet<K, KeyType>& rhs,
-                        int n_workers) {
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> Sub(KmerSet<K, N, KeyType> lhs,
+                           const KmerSet<K, N, KeyType>& rhs, int n_workers) {
   return lhs.Sub(rhs, n_workers);
 }
 
-template <int K, typename KeyType>
-KmerSet<K, KeyType> Intersection(KmerSet<K, KeyType> lhs,
-                                 const KmerSet<K, KeyType>& rhs,
-                                 int n_workers) {
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> Intersection(KmerSet<K, N, KeyType> lhs,
+                                    const KmerSet<K, N, KeyType>& rhs,
+                                    int n_workers) {
   return lhs.Sub(Sub(lhs, rhs, n_workers), n_workers);
 }
 

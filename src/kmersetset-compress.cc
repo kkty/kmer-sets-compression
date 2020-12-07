@@ -31,7 +31,7 @@ ABSL_FLAG(std::string, out_folder, "", "folder to save dumped files");
 ABSL_FLAG(std::string, out_extension, "bin", "extension for output files");
 ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
 
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 void Main(const std::vector<std::string>& files) {
   InitDefaultLogger();
 
@@ -43,7 +43,7 @@ void Main(const std::vector<std::string>& files) {
 
   const int n_datasets = files.size();
 
-  std::vector<KmerSetImmutable<K, KeyType>> kmer_sets_immutable(n_datasets);
+  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n_datasets);
 
   // Reads the ith file and constructs kmer_sets[i].
   const auto ReadFile = [&](int i, int n_workers) {
@@ -52,18 +52,27 @@ void Main(const std::vector<std::string>& files) {
 
     spdlog::info("reading {}", file);
 
-    absl::StatusOr<KmerSet<K, KeyType>> statusor =
-        GetKmerSetFromCompressedKmersFile<K, KeyType>(file, decompressor,
-                                                      canonical, n_workers);
+    spdlog::info("constructing kmer_set");
+
+    absl::StatusOr<KmerSet<K, N, KeyType>> statusor =
+        GetKmerSetFromCompressedKmersFile<K, N, KeyType>(file, decompressor,
+                                                         canonical, n_workers);
 
     if (!statusor.ok()) {
       spdlog::error("failed to read file: {}", statusor.status().ToString());
       std::exit(1);
     }
 
-    KmerSet<K, KeyType> kmer_set = std::move(statusor).value();
+    KmerSet<K, N, KeyType> kmer_set = std::move(statusor).value();
 
-    kmer_sets_immutable[i] = KmerSetImmutable<K, KeyType>(kmer_set, n_workers);
+    spdlog::info("constructed kmer_set");
+
+    spdlog::info("constructing kmer_sets_immutable[{}]", i);
+
+    kmer_sets_immutable[i] =
+        KmerSetImmutable<K, N, KeyType>(kmer_set, n_workers);
+
+    spdlog::info("constructed kmer_sets_immutable[{}]", i);
 
     if (check) {
       if (kmer_set.Equals(kmer_sets_immutable[i].ToKmerSet(n_workers),
@@ -111,18 +120,18 @@ void Main(const std::vector<std::string>& files) {
 
   spdlog::info("constructing kmer_set_set");
 
-  KmerSetSet<K, KeyType> kmer_set_set;
+  KmerSetSet<K, N, KeyType> kmer_set_set;
 
   {
     const int n_iterations = absl::GetFlag(FLAGS_iteration);
 
     // If --check is specified, kmer_sets_immutable should be copied.
     if (check) {
-      kmer_set_set =
-          KmerSetSet<K, KeyType>(kmer_sets_immutable, n_iterations, n_workers);
+      kmer_set_set = KmerSetSet<K, N, KeyType>(kmer_sets_immutable,
+                                               n_iterations, n_workers);
     } else {
-      kmer_set_set = KmerSetSet<K, KeyType>(std::move(kmer_sets_immutable),
-                                            n_iterations, n_workers);
+      kmer_set_set = KmerSetSet<K, N, KeyType>(std::move(kmer_sets_immutable),
+                                               n_iterations, n_workers);
     }
   }
 
@@ -181,8 +190,8 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("dumped kmer_set_set");
 
     spdlog::info("loading");
-    KmerSetSet<K, KeyType> loaded =
-        KmerSetSet<K, KeyType>::Load(std::move(dumped), canonical, n_workers);
+    KmerSetSet<K, N, KeyType> loaded = KmerSetSet<K, N, KeyType>::Load(
+        std::move(dumped), canonical, n_workers);
     spdlog::info("loaded");
 
     for (int i = 0; i < n_datasets; i++) {
@@ -205,20 +214,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      // 15 * 2 - 16 = 14 bits are used to select buckets.
-      Main<15, uint16_t>(files);
+      Main<15, 14, uint16_t>(files);
       break;
     case 19:
-      // 19 * 2 - 16 = 22 bits are used to select buckets.
-      Main<19, uint16_t>(files);
+      Main<19, 10, uint32_t>(files);
       break;
     case 23:
-      // 23 * 2 - 32 = 14 bits are used to select buckets.
-      Main<23, uint32_t>(files);
-      break;
-    case 27:
-      // 27 * 2 - 32 = 22 bits are used to select buckets.
-      Main<27, uint32_t>(files);
+      Main<23, 14, uint32_t>(files);
       break;
     default:
       spdlog::error("unsupported k value");

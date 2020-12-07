@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "absl/flags/flag.h"
@@ -12,7 +11,6 @@
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
-#include "core/range.h"
 #include "flags.h"
 #include "io.h"
 #include "log.h"
@@ -25,7 +23,7 @@ ABSL_FLAG(int, n, 1, "number of iterations");
 ABSL_FLAG(std::string, decompressor, "", "decompressor for input files");
 ABSL_FLAG(int, cutoff, 1, "cutoff threshold");
 
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 void Main(const std::string& file1, const std::string& file2) {
   InitDefaultLogger();
   if (absl::GetFlag(FLAGS_debug)) EnableDebugLogs();
@@ -73,18 +71,18 @@ void Main(const std::string& file1, const std::string& file2) {
 
   spdlog::info("n_reads = {}", n_reads);
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
 
   {
     const int cutoff = absl::GetFlag(FLAGS_cutoff);
 
-    KmerSet<K, KeyType> kmer_set1;
-    KmerSet<K, KeyType> kmer_set2;
+    KmerSet<K, N, KeyType> kmer_set1;
+    KmerSet<K, N, KeyType> kmer_set2;
 
-    const KmerCounter<K, KeyType> kmer_counter1 =
-        KmerCounter<K, KeyType>::FromReads(reads1, false, n_workers);
-    const KmerCounter<K, KeyType> kmer_counter2 =
-        KmerCounter<K, KeyType>::FromReads(reads2, false, n_workers);
+    const KmerCounter<K, N, KeyType> kmer_counter1 =
+        KmerCounter<K, N, KeyType>::FromReads(reads1, false, n_workers);
+    const KmerCounter<K, N, KeyType> kmer_counter2 =
+        KmerCounter<K, N, KeyType>::FromReads(reads2, false, n_workers);
 
     std::tie(kmer_set1, std::ignore) =
         kmer_counter1.ToKmerSet(cutoff, n_workers);
@@ -105,7 +103,7 @@ void Main(const std::string& file1, const std::string& file2) {
 
   int n = absl::GetFlag(FLAGS_n);
 
-  while (true) {
+  while (n--) {
     Kmer<K> start, goal;
 
     // Finds start and goal.
@@ -121,7 +119,7 @@ void Main(const std::string& file1, const std::string& file2) {
           const std::string s = read1.substr(i, K);
 
           // "N" should not be contained.
-          if (s.find("N") == std::string::npos) continue;
+          if (s.find('N') == std::string::npos) continue;
 
           const Kmer<K> kmer(s);
 
@@ -145,7 +143,7 @@ void Main(const std::string& file1, const std::string& file2) {
           const std::string s = read2.substr(i, K);
 
           // "N" should not be contained.
-          if (s.find("N") == std::string::npos) continue;
+          if (s.find('N') == std::string::npos) continue;
 
           const Kmer<K> kmer(s);
 
@@ -194,8 +192,6 @@ void Main(const std::string& file1, const std::string& file2) {
     }
 
     std::cout << std::endl;
-
-    n--;
   }
 }
 
@@ -206,20 +202,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      // 15 * 2 - 16 = 14 bits are used to select buckets.
-      Main<15, uint16_t>(files[0], files[1]);
+      Main<15, 14, uint16_t>(files[0], files[1]);
       break;
     case 19:
-      // 19 * 2 - 16 = 22 bits are used to select buckets.
-      Main<19, uint16_t>(files[0], files[1]);
+      Main<19, 10, uint32_t>(files[0], files[1]);
       break;
     case 23:
-      // 23 * 2 - 32 = 14 bits are used to select buckets.
-      Main<23, uint32_t>(files[0], files[1]);
-      break;
-    case 27:
-      // 27 * 2 - 32 = 22 bits are used to select buckets.
-      Main<27, uint32_t>(files[0], files[1]);
+      Main<23, 14, uint32_t>(files[0], files[1]);
       break;
     default:
       spdlog::error("unsupported k value");

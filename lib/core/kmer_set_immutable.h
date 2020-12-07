@@ -13,12 +13,12 @@
 // It is not possible to add or remove kmers, but fast operations are supported
 // for adding two KmerSetImmutables, intersecting two KmerSetImmutables, and
 // subtracting one KmerSetImmutable from another.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 class KmerSetImmutable {
  public:
   KmerSetImmutable() : buckets_(kBucketsNum) {}
 
-  KmerSetImmutable(const KmerSet<K, KeyType>& kmer_set, int n_workers)
+  KmerSetImmutable(const KmerSet<K, N, KeyType>& kmer_set, int n_workers)
       : buckets_(kBucketsNum) {
     boost::asio::thread_pool pool(n_workers);
 
@@ -50,8 +50,8 @@ class KmerSetImmutable {
   }
 
   // Reconstructs a KmerSet.
-  KmerSet<K, KeyType> ToKmerSet(int n_workers) const {
-    KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> ToKmerSet(int n_workers) const {
+    KmerSet<K, N, KeyType> kmer_set;
 
     boost::asio::thread_pool pool(n_workers);
 

@@ -17,7 +17,7 @@ ABSL_FLAG(std::string, decompressor, "",
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
 
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 void Main(const std::string& file) {
   InitDefaultLogger();
 
@@ -27,11 +27,14 @@ void Main(const std::string& file) {
   const bool canonical = absl::GetFlag(FLAGS_canonical);
   const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
-  KmerSetSet<K, KeyType> kmer_set_set;
+  KmerSetSet<K, N, KeyType> kmer_set_set;
 
   {
-    absl::StatusOr<KmerSetSet<K, KeyType>> statusor =
-        KmerSetSet<K, KeyType>::Load(file, decompressor, canonical, n_workers);
+    spdlog::info("loading kmer_set_set");
+
+    absl::StatusOr<KmerSetSet<K, N, KeyType>> statusor =
+        KmerSetSet<K, N, KeyType>::Load(file, decompressor, canonical,
+                                        n_workers);
 
     if (!statusor.ok()) {
       spdlog::error("failed to load data: {}", statusor.status().ToString());
@@ -39,11 +42,13 @@ void Main(const std::string& file) {
     }
 
     kmer_set_set = std::move(statusor).value();
+
+    spdlog::info("loaded kmer_set_set");
   }
 
   for (int i = 0; i < kmer_set_set.Size(); i++) {
     spdlog::info("i = {}", i);
-    const KmerSet<K, KeyType> kmer_set = kmer_set_set.Get(i, n_workers);
+    const KmerSet<K, N, KeyType> kmer_set = kmer_set_set.Get(i, n_workers);
     spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
     spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
   }
@@ -67,20 +72,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      // 15 * 2 - 16 = 14 bits are used to select buckets.
-      Main<15, uint16_t>(file);
+      Main<15, 14, uint16_t>(file);
       break;
     case 19:
-      // 19 * 2 - 16 = 22 bits are used to select buckets.
-      Main<19, uint16_t>(file);
+      Main<19, 10, uint32_t>(file);
       break;
     case 23:
-      // 23 * 2 - 32 = 14 bits are used to select buckets.
-      Main<23, uint32_t>(file);
-      break;
-    case 27:
-      // 27 * 2 - 32 = 22 bits are used to select buckets.
-      Main<27, uint32_t>(file);
+      Main<23, 14, uint32_t>(file);
       break;
     default:
       spdlog::error("unsupported k value");

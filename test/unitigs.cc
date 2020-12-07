@@ -9,9 +9,10 @@
 
 TEST(Unitigs, GetUnitigs) {
   const int K = 9;
+  const int N = 10;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
 
   // Adding random kmers.
   for (int i = 0; i < 10000; i++) {
@@ -29,7 +30,7 @@ TEST(Unitigs, GetUnitigs) {
 
   std::vector<std::string> unitigs = GetUnitigs(kmer_set, 1);
 
-  KmerSet<K, KeyType> reconstructed;
+  KmerSet<K, N, KeyType> reconstructed;
 
   for (const std::string& s : unitigs) {
     const int n = s.length();
@@ -47,9 +48,10 @@ TEST(Unitigs, GetUnitigs) {
 
 TEST(Unitigs, GetUnitigsCanonical) {
   const int K = 9;
+  const int N = 10;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
 
   // Adding random kmers.
   for (int i = 0; i < 10000; i++) {
@@ -67,7 +69,7 @@ TEST(Unitigs, GetUnitigsCanonical) {
 
   std::vector<std::string> unitigs = GetUnitigsCanonical(kmer_set, 1);
 
-  KmerSet<K, KeyType> reconstructed;
+  KmerSet<K, N, KeyType> reconstructed;
 
   for (const std::string& s : unitigs) {
     const int n = s.length();

@@ -1,34 +1,34 @@
 #include "core/kmer_set.h"
 
-#include <bitset>
 #include <tuple>
 #include <vector>
 
 #include "core/kmer.h"
-#include "core/kmer_counter.h"
 #include "gtest/gtest.h"
 
 TEST(KmerSet, BucketAndKey) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
   Kmer<K> kmer("AGCTG");
 
   int bucket;
   KeyType key;
-  std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, KeyType>(kmer);
+  std::tie(bucket, key) = GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
 
   ASSERT_EQ(kmer.String(),
-            (GetKmerFromBucketAndKey<K, KeyType>(bucket, key)).String());
+            (GetKmerFromBucketAndKey<K, N, KeyType>(bucket, key)).String());
 }
 
 TEST(KmerSet, AddRemove) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
   Kmer<K> kmer("AAAAA");
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
 
   ASSERT_EQ(kmer_set.Size(), 0);
   ASSERT_FALSE(kmer_set.Contains(kmer));
@@ -46,9 +46,10 @@ TEST(KmerSet, AddRemove) {
 
 TEST(KmerSet, Find) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
   kmer_set.Add(Kmer<K>("AAAAA"));
   kmer_set.Add(Kmer<K>("CCCCC"));
 
@@ -69,10 +70,11 @@ TEST(KmerSet, Find) {
 
 TEST(KmerSet, Operators) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set1;
-  KmerSet<K, KeyType> kmer_set2;
+  KmerSet<K, N, KeyType> kmer_set1;
+  KmerSet<K, N, KeyType> kmer_set2;
 
   kmer_set1.Add(Kmer<K>("AAAAA"));
   kmer_set1.Add(Kmer<K>("TTTTT"));
@@ -92,11 +94,12 @@ TEST(KmerSet, Operators) {
 
 TEST(KmerSet, EqualsAndDiff) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set1;
-  KmerSet<K, KeyType> kmer_set2;
-  KmerSet<K, KeyType> kmer_set3;
+  KmerSet<K, N, KeyType> kmer_set1;
+  KmerSet<K, N, KeyType> kmer_set2;
+  KmerSet<K, N, KeyType> kmer_set3;
 
   kmer_set1.Add(Kmer<K>("AAAAA"));
   kmer_set1.Add(Kmer<K>("TTTTT"));
@@ -130,16 +133,19 @@ TEST(KmerSet, EqualsAndDiff) {
 
 TEST(KmerSet, Extract) {
   const int K = 5;
+  const int N = 3;
   using KeyType = uint8_t;
 
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
   kmer_set.Add(Kmer<K>("ACGTA"));
   kmer_set.Add(Kmer<K>("CGTAC"));
 
   const int K2 = 4;
+  const int N2 = 3;
   using KeyType2 = uint8_t;
 
-  KmerSet<K2, KeyType2> extracted = kmer_set.template Extract<K2, KeyType2>(1);
+  KmerSet<K2, N2, KeyType2> extracted =
+      kmer_set.template Extract<K2, N2, KeyType2>(1);
   ASSERT_EQ(extracted.Size(), 3);
   ASSERT_TRUE(extracted.Contains(Kmer<K2>("ACGT")));
   ASSERT_TRUE(extracted.Contains(Kmer<K2>("CGTA")));

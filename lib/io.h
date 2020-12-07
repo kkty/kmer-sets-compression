@@ -13,17 +13,17 @@
 #include "core/kmer_set_compact.h"
 #include "spdlog/spdlog.h"
 
-template <int K, typename KeyType>
-absl::StatusOr<KmerSet<K, KeyType>> GetKmerSetFromCompressedKmersFile(
+template <int K, int N, typename KeyType>
+absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromCompressedKmersFile(
     const std::string& file_name, const std::string& decompressor,
     bool canonical, int n_workers) {
-  KmerSetCompact<K, KeyType> kmer_set_compact;
+  KmerSetCompact<K, N, KeyType> kmer_set_compact;
 
   {
     spdlog::info("constructing kmer_set_compact");
 
-    absl::StatusOr<KmerSetCompact<K, KeyType>> statusor =
-        KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+    absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
+        KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
 
     if (!statusor.ok()) {
       return statusor.status();
@@ -36,7 +36,7 @@ absl::StatusOr<KmerSet<K, KeyType>> GetKmerSetFromCompressedKmersFile(
 
   spdlog::info("constructing kmer_set");
 
-  const KmerSet<K, KeyType> kmer_set =
+  const KmerSet<K, N, KeyType> kmer_set =
       kmer_set_compact.ToKmerSet(canonical, n_workers);
 
   spdlog::info("constructed kmer_set");

@@ -3,7 +3,6 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
 #include "core/unitigs.h"
@@ -16,7 +15,7 @@ ABSL_FLAG(std::string, decompressor, "cat", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, buckets, 1, "number of buckets for SPSSS calculation");
 
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 void Main(const std::string& file_name) {
   InitDefaultLogger();
 
@@ -25,15 +24,15 @@ void Main(const std::string& file_name) {
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const int n_buckets = absl::GetFlag(FLAGS_buckets);
 
-  KmerSetCompact<K, KeyType> kmer_set_compact;
+  KmerSetCompact<K, N, KeyType> kmer_set_compact;
 
   {
     spdlog::info("constructing kmer_set_compact");
 
     const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
-    absl::StatusOr<KmerSetCompact<K, KeyType>> statusor =
-        KmerSetCompact<K, KeyType>::Load(file_name, decompressor);
+    absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
+        KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
 
     if (!statusor.ok()) {
       spdlog::error("failed to load kmer_set_compact from file: {}",
@@ -47,7 +46,7 @@ void Main(const std::string& file_name) {
   }
 
   spdlog::info("constructing kmer_set");
-  const KmerSet<K, KeyType> kmer_set =
+  const KmerSet<K, N, KeyType> kmer_set =
       kmer_set_compact.ToKmerSet(true, n_workers);
   spdlog::info("constructed kmer_set");
 
@@ -68,20 +67,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      // 15 * 2 - 16 = 14 bits are used to select buckets.
-      Main<15, uint16_t>(file_name);
+      Main<15, 14, uint16_t>(file_name);
       break;
     case 19:
-      // 19 * 2 - 16 = 22 bits are used to select buckets.
-      Main<19, uint16_t>(file_name);
+      Main<19, 10, uint32_t>(file_name);
       break;
     case 23:
-      // 23 * 2 - 32 = 14 bits are used to select buckets.
-      Main<23, uint32_t>(file_name);
-      break;
-    case 27:
-      // 27 * 2 - 32 = 22 bits are used to select buckets.
-      Main<27, uint32_t>(file_name);
+      Main<23, 14, uint32_t>(file_name);
       break;
     default:
       spdlog::error("unsupported k value");

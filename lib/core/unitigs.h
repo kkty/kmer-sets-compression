@@ -57,9 +57,9 @@ std::string Complement(std::string s) {
 }
 
 // Constructs unitigs from a set of canonical kmers.
-template <int K, typename KeyType>
+template <int K, int N, typename KeyType>
 std::vector<std::string> GetUnitigsCanonical(
-    const KmerSet<K, KeyType>& kmer_set, int n_workers) {
+    const KmerSet<K, N, KeyType>& kmer_set, int n_workers) {
   // If the second element is true, the edge connects the same side of two
   // kmers.
   using Neighbor = std::pair<Kmer<K>, bool>;
@@ -366,9 +366,9 @@ std::vector<std::string> GetUnitigsCanonical(
 }
 
 // Constructs a small-weight SPSS from a set of canonical kmers.
-template <int K, typename KeyType>
-std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
-                                          int n_workers, int n_buckets = 64) {
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSSCanonical(
+    const KmerSet<K, N, KeyType>& kmer_set, int n_workers, int n_buckets = 64) {
   spdlog::debug("constructing unitigs");
   const std::vector<std::string> unitigs =
       GetUnitigsCanonical(kmer_set, n_workers);
@@ -919,8 +919,8 @@ std::vector<std::string> GetSPSSCanonical(const KmerSet<K, KeyType>& kmer_set,
 }
 
 // Constructs unitigs from a kmer set.
-template <int K, typename KeyType>
-std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
                                     int n_workers) {
   const auto GetNexts = [&](const Kmer<K>& kmer) {
     std::vector<Kmer<K>> v;
@@ -995,7 +995,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
   }();
 
   std::vector<std::string> unitigs;
-  KmerSet<K, KeyType> visited;
+  KmerSet<K, N, KeyType> visited;
 
   // For each kmer in start_kmers, finds the unitig from it.
   {
@@ -1007,7 +1007,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, KeyType>& kmer_set,
     for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
         std::vector<std::string> buf_unitigs;
-        KmerSet<K, KeyType> buf_visited;
+        KmerSet<K, N, KeyType> buf_visited;
 
         range.ForEach([&](int64_t i) {
           const Kmer<K>& start_kmer = start_kmers[i];

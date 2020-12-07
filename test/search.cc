@@ -9,8 +9,9 @@
 
 TEST(search, ConstructGraphCanonical) {
   const int K = 7;
+  const int N = 10;
   using KeyType = uint8_t;
-  KmerSet<K, KeyType> kmer_set;
+  KmerSet<K, N, KeyType> kmer_set;
 
   kmer_set.Add(Kmer<K>("AAAAAAA"));
   kmer_set.Add(Kmer<K>("AAAAAAT"));  // branching
