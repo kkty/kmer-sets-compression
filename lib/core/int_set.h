@@ -4,9 +4,11 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include "streamvbyte.h"
+#include "streamvbyte_zigzag.h"
 
 // IntSet can be used to store an immutable set of integers.
 // It is not possible to add or remove elements from the structure, but, fast
@@ -20,46 +22,50 @@ class IntSet {
   IntSet(const IntSet& other)
       : first_(other.first_),
         n_(other.n_),
-        compressed_diff_(new uint8_t[other.compressed_diff_size_]),
-        compressed_diff_size_(other.compressed_diff_size_) {
-    std::memcpy(compressed_diff_, other.compressed_diff_,
-                compressed_diff_size_);
+        offset_(other.offset_),
+        diff_compressed_(new uint8_t[other.diff_compressed_size_]),
+        diff_compressed_size_(other.diff_compressed_size_) {
+    std::memcpy(diff_compressed_, other.diff_compressed_,
+                diff_compressed_size_);
   }
 
   IntSet(IntSet&& other) noexcept
       : first_(other.first_),
         n_(other.n_),
-        compressed_diff_(other.compressed_diff_),
-        compressed_diff_size_(other.compressed_diff_size_) {
+        offset_(other.offset_),
+        diff_compressed_(other.diff_compressed_),
+        diff_compressed_size_(other.diff_compressed_size_) {
     other.n_ = 0;
-    other.compressed_diff_ = nullptr;
+    other.diff_compressed_ = nullptr;
   }
 
   IntSet& operator=(const IntSet& other) {
     if (this == &other) return *this;
 
-    delete[] compressed_diff_;
+    delete[] diff_compressed_;
 
     first_ = other.first_;
     n_ = other.n_;
-    compressed_diff_size_ = other.compressed_diff_size_;
-    compressed_diff_ = new uint8_t[compressed_diff_size_];
+    offset_ = other.offset_;
+    diff_compressed_size_ = other.diff_compressed_size_;
+    diff_compressed_ = new uint8_t[diff_compressed_size_];
 
-    std::memcpy(compressed_diff_, other.compressed_diff_,
-                compressed_diff_size_);
+    std::memcpy(diff_compressed_, other.diff_compressed_,
+                diff_compressed_size_);
 
     return *this;
   }
 
   IntSet& operator=(IntSet&& other) noexcept {
-    delete[] compressed_diff_;
+    delete[] diff_compressed_;
 
     first_ = other.first_;
     n_ = other.n_;
-    compressed_diff_ = other.compressed_diff_;
-    compressed_diff_size_ = other.compressed_diff_size_;
+    offset_ = other.offset_;
+    diff_compressed_ = other.diff_compressed_;
+    diff_compressed_size_ = other.diff_compressed_size_;
 
-    other.compressed_diff_ = nullptr;
+    other.diff_compressed_ = nullptr;
     other.n_ = 0;
 
     return *this;
@@ -76,25 +82,24 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff(n_ - 1);
+    offset_ = std::numeric_limits<uint32_t>::max() / (n_ + 1);
+
+    std::vector<int32_t> diff(n_ - 1);
 
     for (int64_t i = 0; i < n_ - 1; i++) {
-      diff[i] = v[i + 1] - v[i];
+      diff[i] = static_cast<int32_t>(v[i + 1] - v[i]) - offset_;
     }
 
-    compressed_diff_ = new uint8_t[streamvbyte_max_compressedbytes(n_ - 1)];
+    std::vector<uint32_t> buf(n_ - 1);
+    zigzag_encode(diff.data(), buf.data(), n_ - 1);
 
-    compressed_diff_size_ =
-        streamvbyte_encode(diff.data(), n_ - 1, compressed_diff_);
+    diff_compressed_ = new uint8_t[streamvbyte_max_compressedbytes(n_ - 1)];
+
+    diff_compressed_size_ =
+        streamvbyte_encode(buf.data(), n_ - 1, diff_compressed_);
   }
 
-  ~IntSet() {
-    if (compressed_diff_ == nullptr) {
-      return;
-    }
-
-    delete[] compressed_diff_;
-  }
+  ~IntSet() { delete[] diff_compressed_; }
 
   // Reconstructs the original vector.
   std::vector<T> Decode() const {
@@ -107,7 +112,7 @@ class IntSet {
   int64_t Size() const { return n_; }
 
   // Returns the number of used bytes.
-  int64_t Bytes() const { return compressed_diff_size_; }
+  int64_t Bytes() const { return diff_compressed_size_; }
 
   // Executes "func" for each element in the set.
   template <typename FuncType>
@@ -115,13 +120,13 @@ class IntSet {
     if (n_ == 0) return;
 
     T current = first_;
-    std::vector<uint32_t> diff = Diff();
+    std::vector<int32_t> diff = Diff();
     auto it = diff.begin();
 
     while (true) {
       func(current);
       if (it == diff.end()) return;
-      current += *it;
+      current += *it + offset_;
       it++;
     }
   }
@@ -135,8 +140,8 @@ class IntSet {
 
     if (lhs.n_ == 0 || rhs.n_ == 0) return;
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<int32_t> diff_lhs = lhs.Diff();
+    std::vector<int32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -148,22 +153,22 @@ class IntSet {
       if (current_lhs < current_rhs) {
         if (it_lhs == diff_lhs.end()) return;
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
       } else if (current_lhs > current_rhs) {
         if (it_rhs == diff_rhs.end()) return;
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       } else {
         func(current_lhs);
 
         if (it_lhs == diff_lhs.end() || it_rhs == diff_rhs.end()) return;
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       }
     }
@@ -202,8 +207,8 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<int32_t> diff_lhs = lhs.Diff();
+    std::vector<int32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -221,12 +226,12 @@ class IntSet {
 
             if (it_rhs == diff_rhs.end()) return;
 
-            current_rhs += *it_rhs;
+            current_rhs += *it_rhs + rhs.offset_;
             it_rhs++;
           }
         }
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
       } else if (current_lhs > current_rhs) {
         func(current_rhs);
@@ -237,12 +242,12 @@ class IntSet {
 
             if (it_lhs == diff_lhs.end()) return;
 
-            current_lhs += *it_lhs;
+            current_lhs += *it_lhs + lhs.offset_;
             it_lhs++;
           }
         }
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       } else {
         func(current_lhs);
@@ -253,7 +258,7 @@ class IntSet {
           while (true) {
             if (it_rhs == diff_rhs.end()) return;
 
-            current_rhs += *it_rhs;
+            current_rhs += *it_rhs + rhs.offset_;
             it_rhs++;
 
             func(current_rhs);
@@ -264,17 +269,17 @@ class IntSet {
           while (true) {
             if (it_lhs == diff_lhs.end()) return;
 
-            current_lhs += *it_lhs;
+            current_lhs += *it_lhs + lhs.offset_;
             it_lhs++;
 
             func(current_lhs);
           }
         }
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       }
     }
@@ -301,8 +306,8 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<int32_t> diff_lhs = lhs.Diff();
+    std::vector<int32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -316,7 +321,7 @@ class IntSet {
 
         if (it_lhs == diff_lhs.end()) return;
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
       } else if (current_lhs > current_rhs) {
         if (it_rhs == diff_rhs.end()) {
@@ -325,12 +330,12 @@ class IntSet {
 
             if (it_lhs == diff_lhs.end()) return;
 
-            current_lhs += *it_lhs;
+            current_lhs += *it_lhs + lhs.offset_;
             it_lhs++;
           }
         }
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       } else {
         if (it_lhs == diff_lhs.end()) return;
@@ -339,17 +344,17 @@ class IntSet {
           while (true) {
             if (it_lhs == diff_lhs.end()) return;
 
-            current_lhs += *it_lhs;
+            current_lhs += *it_lhs + lhs.offset_;
             it_lhs++;
 
             func(current_lhs);
           }
         }
 
-        current_lhs += *it_lhs;
+        current_lhs += *it_lhs + lhs.offset_;
         it_lhs++;
 
-        current_rhs += *it_rhs;
+        current_rhs += *it_rhs + rhs.offset_;
         it_rhs++;
       }
     }
@@ -365,16 +370,19 @@ class IntSet {
  private:
   T first_;
   int64_t n_ = 0;
+  uint32_t offset_ = 0;
 
-  std::vector<uint32_t> Diff() const {
+  std::vector<int32_t> Diff() const {
     assert(n_ > 0);
-    std::vector<uint32_t> diff(n_ - 1);
-    streamvbyte_decode(compressed_diff_, diff.data(), n_ - 1);
+    std::vector<uint32_t> buf(n_ - 1);
+    streamvbyte_decode(diff_compressed_, buf.data(), n_ - 1);
+    std::vector<int32_t> diff(n_ - 1);
+    zigzag_decode(buf.data(), diff.data(), n_ - 1);
     return diff;
   }
 
-  uint8_t* compressed_diff_ = nullptr;
-  int64_t compressed_diff_size_ = 0;
+  uint8_t* diff_compressed_ = nullptr;
+  int64_t diff_compressed_size_ = 0;
 };
 
 #endif
