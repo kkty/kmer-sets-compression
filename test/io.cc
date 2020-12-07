@@ -24,12 +24,13 @@ TEST(io, WriteAndRead) {
   const std::vector<std::string> lines = GetTestData();
 
   {
-    absl::Status status = WriteLines(file_name, lines);
+    absl::Status status = WriteLines(file_name, "", lines);
     ASSERT_TRUE(status.ok());
   }
 
   {
-    absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name);
+    absl::StatusOr<std::vector<std::string>> statusor =
+        ReadLines(file_name, "");
 
     ASSERT_TRUE(statusor.ok());
     ASSERT_EQ(statusor.value(), lines);

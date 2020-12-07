@@ -32,22 +32,23 @@ void WriteLines(std::ostream& os, const std::vector<std::string>& lines) {
 
 }  // namespace internal
 
-// Opens a file and reads lines in it.
-absl::StatusOr<std::vector<std::string>> ReadLines(
-    const std::string& file_name) {
-  std::ifstream file(file_name);
-
-  if (file.fail()) {
-    return absl::InternalError("failed to open file");
-  }
-
-  return internal::ReadLines(file);
-}
-
-// Opens a file, decompresses it, and reads lines in it.
-// Example: ReadLines("foo.gz", "gzcat")
+// Opens a file and reads lines in it. If "decompressor" is not empty, it will
+// be used to decompress the file.
+// Example:
+//   ... = ReadLiens("foo.txt", "");
+//   ... = ReadLines("foo.txt.bz2", "bzip2 -d");
 absl::StatusOr<std::vector<std::string>> ReadLines(
     const std::string& file_name, const std::string& decompressor) {
+  if (decompressor.empty()) {
+    std::ifstream file(file_name);
+
+    if (file.fail()) {
+      return absl::InternalError("failed to open file");
+    }
+
+    return internal::ReadLines(file);
+  }
+
   boost::process::ipstream out;
 
   boost::process::child child(
@@ -69,22 +70,26 @@ absl::StatusOr<std::vector<std::string>> ReadLines(
   return lines;
 }
 
-absl::Status WriteLines(const std::string& file_name,
-                        const std::vector<std::string>& lines) {
-  std::ofstream file(file_name);
-
-  if (file.fail()) {
-    return absl::InternalError("failed to open file");
-  }
-
-  internal::WriteLines(file, lines);
-
-  return absl::OkStatus();
-}
-
+// Writes lines to a file. If "compressor" is not empty, it will be used to
+// compress the file.
+// Example:
+//   ... = WriteLines("foo.txt", "", lines);
+//   ... = WriteLines("foo.txt.bz2", "bzip2", lines);
 absl::Status WriteLines(const std::string& file_name,
                         const std::string& compressor,
                         const std::vector<std::string>& lines) {
+  if (compressor.empty()) {
+    std::ofstream file(file_name);
+
+    if (file.fail()) {
+      return absl::InternalError("failed to open file");
+    }
+
+    internal::WriteLines(file, lines);
+
+    return absl::OkStatus();
+  }
+
   boost::process::opstream in;
 
   boost::process::child child(

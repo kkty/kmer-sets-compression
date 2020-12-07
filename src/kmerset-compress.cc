@@ -48,11 +48,8 @@ void Main(const std::string& file_name) {
       spdlog::info("constructing kmer_counter");
 
       absl::StatusOr<KmerCounter<K, KeyType>> statusor =
-          decompressor != ""
-              ? KmerCounter<K, KeyType>::FromFASTA(file_name, decompressor,
-                                                   canonical, n_workers)
-              : KmerCounter<K, KeyType>::FromFASTA(file_name, canonical,
-                                                   n_workers);
+          KmerCounter<K, KeyType>::FromFASTA(file_name, decompressor, canonical,
+                                             n_workers);
 
       if (!statusor.ok()) {
         spdlog::error("failed to parse FASTA file: {}",

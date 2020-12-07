@@ -77,8 +77,8 @@ class KmerCounter {
           std::vector<std::string> fragments = absl::StrSplit(read, "N");
 
           for (const std::string& fragment : fragments) {
-            for (size_t i = 0; i + K <= fragment.length(); i++) {
-              const Kmer<K> kmer(fragment.substr(i, K));
+            for (size_t j = 0; j + K <= fragment.length(); j++) {
+              const Kmer<K> kmer(fragment.substr(j, K));
 
               int bucket;
               KeyType key;
@@ -124,26 +124,12 @@ class KmerCounter {
     return kmer_counter;
   }
 
-  // Counts kmers in a FASTA file.
-  static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
-                                               bool canonical, int n_workers) {
-    std::vector<std::string> lines;
-
-    {
-      absl::StatusOr<std::vector<std::string>> statusor = ReadLines(file_name);
-
-      if (!statusor.ok()) {
-        return statusor.status();
-      }
-
-      lines = std::move(statusor).value();
-    }
-
-    return FromFASTA(std::move(lines), canonical, n_workers);
-  }
-
   // Counts kmers in a FASTA file. "decompressor" is used to decompress the
   // file.
+  // Example:
+  //   ... = KmerCounter::FromFASTA("foo.fasta", "", canonical, n_workers)
+  //   ... = KmerCounter::FromFASTA("foo.fasta.bz2", "bzip2 -d", canonical,
+  //                                n_workers)
   static absl::StatusOr<KmerCounter> FromFASTA(const std::string& file_name,
                                                const std::string& decompressor,
                                                bool canonical, int n_workers) {
