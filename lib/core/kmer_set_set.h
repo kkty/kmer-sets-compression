@@ -389,7 +389,7 @@ class KmerSetSet {
 
     lines.emplace_back("}");
 
-    return WriteLines(file_name, lines);
+    return WriteLines(file_name, "", lines);
   }
 
   // Loads data from a vector of strings.
