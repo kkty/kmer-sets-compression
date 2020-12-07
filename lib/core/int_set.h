@@ -1,6 +1,7 @@
 #ifndef CORE_INT_SET_H_
 #define CORE_INT_SET_H_
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
