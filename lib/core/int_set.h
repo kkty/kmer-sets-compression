@@ -106,6 +106,9 @@ class IntSet {
   // Returns the number of elements in the set.
   int64_t Size() const { return n_; }
 
+  // Returns the number of used bytes.
+  int64_t Bytes() const { return compressed_diff_size_; }
+
   // Executes "func" for each element in the set.
   template <typename FuncType>
   void ForEach(FuncType func) const {

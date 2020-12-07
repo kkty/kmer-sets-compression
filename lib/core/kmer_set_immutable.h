@@ -34,6 +34,15 @@ class KmerSetImmutable {
     pool.join();
   }
 
+  // Returns the number of bytes used by buckets.
+  int64_t Bytes() const {
+    int64_t bytes = 0;
+    for (const Bucket& bucket : buckets_) {
+      bytes += bucket.Bytes();
+    }
+    return bytes;
+  }
+
   void Clear() {
     for (int i = 0; i < kBucketsNum; i++) {
       buckets_[i] = IntSet<KeyType>();
@@ -147,7 +156,7 @@ class KmerSetImmutable {
  private:
   using Bucket = IntSet<KeyType>;
 
-  static constexpr int kBucketsNum = 1ull << (2 * K - sizeof(KeyType) * 8);
+  static constexpr int kBucketsNum = 1u << N;
 
   std::vector<Bucket> buckets_;
 };

@@ -66,6 +66,7 @@ void Main(const std::vector<std::string>& files) {
     KmerSet<K, N, KeyType> kmer_set = std::move(statusor).value();
 
     spdlog::info("constructed kmer_set");
+    spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
 
     spdlog::info("constructing kmer_sets_immutable[{}]", i);
 
@@ -73,6 +74,8 @@ void Main(const std::vector<std::string>& files) {
         KmerSetImmutable<K, N, KeyType>(kmer_set, n_workers);
 
     spdlog::info("constructed kmer_sets_immutable[{}]", i);
+    spdlog::info("kmer_sets_immutable[{}].Bytes() = {}", i,
+                 kmer_sets_immutable[i].Bytes());
 
     if (check) {
       if (kmer_set.Equals(kmer_sets_immutable[i].ToKmerSet(n_workers),
