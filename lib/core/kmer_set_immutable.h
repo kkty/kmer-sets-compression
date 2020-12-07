@@ -9,6 +9,10 @@
 #include "boost/asio/thread_pool.hpp"
 #include "core/int_set.h"
 
+// KmerSetImmutable can be used to hold an immutable set of kmers.
+// It is not possible to add or remove kmers, but fast operations are supported
+// for adding two KmerSetImmutables, intersecting two KmerSetImmutables, and
+// subtracting one KmerSetImmutable from another.
 template <int K, typename KeyType>
 class KmerSetImmutable {
  public:
@@ -45,6 +49,7 @@ class KmerSetImmutable {
     return sum;
   }
 
+  // Reconstructs a KmerSet.
   KmerSet<K, KeyType> ToKmerSet(int n_workers) const {
     KmerSet<K, KeyType> kmer_set;
 
@@ -62,6 +67,8 @@ class KmerSetImmutable {
     return kmer_set;
   }
 
+  // Returns an estimate of the intersection size of two KmerSetImmutables.
+  // "n_buckets" buckets are used for estimation.
   int64_t IntersectionSizeEstimate(const KmerSetImmutable& other,
                                    int n_buckets) const {
     int64_t count = 0;
@@ -77,6 +84,8 @@ class KmerSetImmutable {
     return count * kBucketsNum / n_buckets;
   }
 
+  // Returns an estimate of the intersection size of two KmerSetImmutables.
+  // "(n_buckets_factor * 100)" % of buckets are used for estimation.
   int64_t IntersectionSizeEstimate(const KmerSetImmutable& other,
                                    double n_buckets_factor) const {
     return IntersectionSizeEstimate(
@@ -101,6 +110,7 @@ class KmerSetImmutable {
     return kmer_set_immutable;
   }
 
+  // Adds two KmerSetImmutables.
   KmerSetImmutable Add(const KmerSetImmutable& other, int n_workers) const {
     KmerSetImmutable kmer_set_immutable;
 
@@ -117,6 +127,7 @@ class KmerSetImmutable {
     return kmer_set_immutable;
   }
 
+  // Subtracts two KmerSetImmutables.
   KmerSetImmutable Sub(const KmerSetImmutable& other, int n_workers) const {
     KmerSetImmutable kmer_set_immutable;
 
