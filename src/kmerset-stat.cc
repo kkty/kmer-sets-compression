@@ -6,7 +6,6 @@
 #include "absl/flags/parse.h"
 #include "absl/status/statusor.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compact.h"
 #include "core/kmer_set_immutable.h"
 #include "flags.h"
 #include "io.h"
@@ -86,28 +85,6 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("all.Bytes() = {}", all.Bytes());
   }
 
-  const auto GetSizeAfterCompaction =
-      [canonical,
-       n_workers](const KmerSetImmutable<K, N, KeyType>& kmer_set_immutable) {
-        return KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                   kmer_set_immutable.ToKmerSet(n_workers), canonical,
-                   n_workers)
-            .Size(n_workers);
-      };
-
-  std::vector<int64_t> sizes_after_compaction(n_files);
-
-  for (int i = 0; i < n_files; i++) {
-    spdlog::info("i = {}", i);
-    const KmerSetImmutable<K, N, KeyType>& kmer_set_immutable =
-        kmer_sets_immutable[i];
-    spdlog::info("kmer_set_immutable.Size() = {}", kmer_set_immutable.Size());
-    int64_t size_after_compaction =
-        GetSizeAfterCompaction(kmer_sets_immutable[i]);
-    spdlog::info("size_after_compaction = {}", size_after_compaction);
-    sizes_after_compaction[i] = size_after_compaction;
-  }
-
   for (int i = 0; i < n_files; i++) {
     for (int j = i + 1; j < n_files; j++) {
       spdlog::info("i = {}, j = {}", i, j);
@@ -132,16 +109,11 @@ void Main(const std::vector<std::string>& files) {
       spdlog::info("sub_i.Size() = {}", sub_i.Size());
       spdlog::info("sub_j.Size() = {}", sub_j.Size());
 
-      const int64_t original_size =
-          sizes_after_compaction[i] + sizes_after_compaction[j];
+      const double similarity =
+          static_cast<double>(intersection.Size()) /
+          (sub_i.Size() + sub_j.Size() + intersection.Size());
 
-      spdlog::info("original_size = {}", original_size);
-
-      const int64_t diff_size = GetSizeAfterCompaction(intersection) +
-                                GetSizeAfterCompaction(sub_i) +
-                                GetSizeAfterCompaction(sub_j) - original_size;
-
-      spdlog::info("diff_size = {}", diff_size);
+      spdlog::info("similarity = {}", similarity);
     }
   }
 }
