@@ -8,7 +8,7 @@
 
 #include "streamvbyte.h"
 
-// IntSet can be used to store an immutable set of integers.
+// IntSet can be used to efficiently store an immutable set of integers.
 // It is not possible to add or remove elements from the structure, but, fast
 // operations are provided for adding two IntSets, intersecting two IntSets, and
 // subtracting one IntSet from another.
@@ -88,17 +88,12 @@ class IntSet {
         streamvbyte_encode(diff.data(), n_ - 1, compressed_diff_);
   }
 
-  ~IntSet() {
-    if (compressed_diff_ == nullptr) {
-      return;
-    }
-
-    delete[] compressed_diff_;
-  }
+  ~IntSet() { delete[] compressed_diff_; }
 
   // Reconstructs the original vector.
   std::vector<T> Decode() const {
     std::vector<T> v;
+    v.reserve(n_);
     ForEach([&](T i) { v.push_back(i); });
     return v;
   }
@@ -283,6 +278,7 @@ class IntSet {
   // Adds two IntSets.
   IntSet Add(const IntSet& other) const {
     std::vector<T> v;
+    v.reserve(std::max(Size(), other.Size()));
     Add(other, [&](T i) { v.push_back(i); });
     return IntSet(v);
   }
