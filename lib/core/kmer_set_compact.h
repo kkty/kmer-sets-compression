@@ -1,14 +1,11 @@
 #ifndef CORE_KMER_SET_COMPACT_H_
 #define CORE_KMER_SET_COMPACT_H_
 
-#include <algorithm>
 #include <atomic>
-#include <cassert>
 #include <mutex>
 #include <thread>
 #include <vector>
 
-#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
@@ -18,14 +15,16 @@
 #include "core/range.h"
 #include "core/unitigs.h"
 
-// Represents a set of kmers with SPSS, thereby reducing space.
+// KmerSetCompact can store a set of kmers efficiently by using SPSS.
+// It is not possible to add or remove kmers from the structure, but it is
+// possible to dump data to a file or load data from a file.
 template <int K, int N, typename KeyType>
 class KmerSetCompact {
  public:
   KmerSetCompact() = default;
 
-  // Constructs KmerSetCompact from a kmer set. If the kmer set is for
-  // storing canonical kmers, "canonical" should be true.
+  // Constructs KmerSetCompact from a kmer set. If the kmer set only contains
+  // canonical kmers, "canonical" should be true for better compression.
   static KmerSetCompact FromKmerSet(const KmerSet<K, N, KeyType>& kmer_set,
                                     bool canonical, int n_workers) {
     std::vector<std::string> spss;
@@ -40,7 +39,8 @@ class KmerSetCompact {
   }
 
   // Constructs a KmerSet.
-  // If we are considering canonical kmers, "canonical" should be true.
+  // If the structure was created with "canonical == true", "canonical" should
+  // be true here as well.
   KmerSet<K, N, KeyType> ToKmerSet(bool canonical, int n_workers) const {
     std::vector<Kmer<K>> kmers;
     std::vector<std::thread> threads;
@@ -70,6 +70,9 @@ class KmerSetCompact {
 
   // Dumps data to a file.
   // Dumped data can be read by Load().
+  // Example:
+  //   ... = Dump("foo.kmersetcompact.bz2", "bzip2");
+  //   ... = Dump("foo.kmersetcompact", "");
   absl::Status Dump(const std::string& file_name,
                     const std::string& compressor) const {
     return WriteLines(file_name, compressor, spss_);
@@ -81,6 +84,9 @@ class KmerSetCompact {
   std::vector<std::string> Dump() const { return spss_; }
 
   // Loads data from a file.
+  // Example:
+  //   ... = Load("foo.kmersetcompact.bz2", "bzip2 -d");
+  //   ... = Load("foo.kmersetcompact", "");
   static absl::StatusOr<KmerSetCompact> Load(const std::string& file_name,
                                              const std::string& decompressor) {
     std::vector<std::string> lines;
@@ -105,6 +111,8 @@ class KmerSetCompact {
   }
 
   // Returns the total length of stored strings.
+  // If the data is dumped to a file without compression, the estimated file
+  // size is Size() bytes.
   int64_t Size(int n_workers) const {
     std::vector<std::thread> threads;
     std::atomic_int64_t size = 0;
