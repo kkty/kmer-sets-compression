@@ -38,6 +38,7 @@ foreach (
         NAME
         kmerset-compress
         kmerset-decompress
+        kmerset-stat
         kmersetset-compress
         kmersetset-decompress
         search
