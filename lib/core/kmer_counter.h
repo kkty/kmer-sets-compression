@@ -4,7 +4,6 @@
 #include <atomic>
 #include <limits>
 #include <mutex>
-#include <random>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -28,25 +27,16 @@ template <typename T>
 T AddWithMax(T x, T y) {
   if (std::is_integral<T>::value) {
     T max = std::numeric_limits<T>::max();
-    return std::min((int64_t)max, (int64_t)x + (int64_t)y);
+    return std::min(static_cast<int64_t>(max),
+                    static_cast<int64_t>(x) + static_cast<int64_t>(y));
   }
 
   return x + y;
 }
 
-// Multiplies two numerical values. If the result exceeds the max value for the
-// type, the latter is returned.
-template <typename T>
-T MultiplyWithMax(T x, T y) {
-  if (std::is_integral<T>::value) {
-    T max = std::numeric_limits<T>::max();
-    return std::min((int64_t)max, (int64_t)x * (int64_t)y);
-  }
-
-  return x * y;
-}
-
 // KmerCounter can be used to count kmers.
+// Data is divided to 1 << N buckets so that some operations can be done
+// efficiently in parallel.
 template <int K, int N, typename KeyType, typename ValueType = uint8_t>
 class KmerCounter {
  public:
@@ -61,6 +51,8 @@ class KmerCounter {
     return sum;
   }
 
+  // Constructs KmerCounter from a list of reads.
+  // Each read should only contain 'A', 'C', 'G', 'T', or 'N'.
   static KmerCounter FromReads(std::vector<std::string> reads, bool canonical,
                                int n_workers) {
     KmerCounter kmer_counter;
@@ -74,7 +66,7 @@ class KmerCounter {
 
         range.ForEach([&](int64_t i) {
           std::string& read = reads[i];
-          std::vector<std::string> fragments = absl::StrSplit(read, "N");
+          std::vector<std::string> fragments = absl::StrSplit(read, 'N');
 
           for (const std::string& fragment : fragments) {
             for (size_t j = 0; j + K <= fragment.length(); j++) {
@@ -178,7 +170,7 @@ class KmerCounter {
     return FromReads(std::move(reads), canonical, n_workers);
   }
 
-  // Returns a KmerSet, ignoring ones that appear less often.
+  // Returns a KmerSet, ignoring ones that appear not often.
   // The number of ignored k-mers is also returned.
   std::pair<KmerSet<K, N, KeyType>, int64_t> ToKmerSet(ValueType cutoff,
                                                        int n_workers) const {
@@ -214,7 +206,7 @@ class KmerCounter {
         },
         n_workers);
 
-    return {set, (int64_t)cutoff_count};
+    return {set, static_cast<int64_t>(cutoff_count)};
   }
 
   // Returns the count for a kmer.
@@ -228,7 +220,7 @@ class KmerCounter {
     return it->second;
   }
 
-  // Increments the count for a kmer.
+  // Increments the count for a kmer by "v".
   KmerCounter& Add(const Kmer<K>& kmer, ValueType v) {
     int bucket;
     KeyType key;
@@ -238,6 +230,7 @@ class KmerCounter {
     return *this;
   }
 
+  // For each kmer in "other", increments the count for that kmer.
   KmerCounter& Add(const KmerCounter& other, int n_workers) {
     other.ForEachBucket(
         [&](const Bucket& other_bucket, int bucket_id) {
@@ -248,22 +241,6 @@ class KmerCounter {
 
             buckets_[bucket_id][key] =
                 AddWithMax(buckets_[bucket_id][key], value);
-          }
-        },
-        n_workers);
-
-    return *this;
-  }
-
-  KmerCounter& Multiply(ValueType v, int n_workers) {
-    ForEachBucket(
-        [&](const Bucket& bucket, int bucket_id) {
-          for (const std::pair<const KeyType, ValueType>& p : bucket) {
-            KeyType key;
-            ValueType value;
-            std::tie(key, value) = p;
-
-            buckets_[bucket_id][key] = MultiplyWithMax(value, v);
           }
         },
         n_workers);
