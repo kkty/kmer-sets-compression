@@ -11,9 +11,9 @@
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(std::string, decompressor, "cat", "specify decompressor");
+ABSL_FLAG(std::string, decompressor, "", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
-ABSL_FLAG(int, buckets, 1, "number of buckets for SPSSS calculation");
+ABSL_FLAG(int, buckets, 1, "number of buckets for SPSS calculation");
 
 template <int K, int N, typename KeyType>
 void Main(const std::string& file_name) {

@@ -14,9 +14,9 @@
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(std::string, decompressor, "cat",
-          "specify decompressor for FASTQ files");
-ABSL_FLAG(std::string, compressor, "cat", "specify compressor for output");
+ABSL_FLAG(std::string, decompressor, "",
+          "specify decompressor for FASTA files");
+ABSL_FLAG(std::string, compressor, "", "specify compressor for output");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, cutoff, 1, "cut off threshold");
 ABSL_FLAG(int, workers, 1, "number of workers");
@@ -86,8 +86,11 @@ void Main(const std::string& file_name) {
   if (check) {
     const KmerSet<K, N, KeyType> decompressed =
         kmer_set_compact.ToKmerSet(canonical, n_workers);
-    if (!kmer_set.Equals(decompressed, n_workers)) {
-      spdlog::error("decompressed is not equal to kmer_set");
+
+    if (kmer_set.Equals(decompressed, n_workers)) {
+      spdlog::info("kmer_set_compact -> KmerSet: ok");
+    } else {
+      spdlog::error("kmer_set_compact -> KmerSet: failed");
       std::exit(1);
     }
   }
@@ -103,7 +106,14 @@ void Main(const std::string& file_name) {
 }
 
 int main(int argc, char** argv) {
-  const std::string file_name = ParseFlags(argc, argv)[0];
+  const std::vector<std::string> args = ParseFlags(argc, argv);
+
+  if (args.size() != 1) {
+    spdlog::error("file name should be provided");
+    std::exit(1);
+  }
+
+  const std::string file_name = args.front();
 
   const int k = absl::GetFlag(FLAGS_k);
 

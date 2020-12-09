@@ -15,7 +15,7 @@
 ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "",
-          "specify decompressor for FASTQ files");
+          "specify decompressor for input files");
 ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
 
