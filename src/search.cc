@@ -119,7 +119,7 @@ void Main(const std::string& file1, const std::string& file2) {
           const std::string s = read.substr(i, K);
 
           // "N" should not be contained.
-          if (s.find('N') == std::string::npos) continue;
+          if (s.find('N') != std::string::npos) continue;
 
           const Kmer<K> kmer(s);
 
