@@ -42,6 +42,7 @@ foreach (
         kmersetset-compress
         kmersetset-decompress
         search
+        search-allpair
         spss
 )
     add_executable(${NAME} src/${NAME}.cc)

@@ -211,7 +211,7 @@ GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set, int n_workers) {
 
 // Executes A* search using the all-pair shortest distances for the dBG
 // represented by L-mers.
-template <int K, int N, int L>
+template <int K, int L>
 SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
                          const Kmer<K>& goal,
                          const absl::flat_hash_map<std::pair<Kmer<L>, Kmer<L>>,
