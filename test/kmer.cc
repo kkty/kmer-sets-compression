@@ -3,7 +3,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "absl/container/flat_hash_map.h"
 #include "gtest/gtest.h"
 
 TEST(kmer, String) {
@@ -34,16 +33,7 @@ TEST(kmer, Prev) {
   ASSERT_EQ(kmer.Prev('C').String(), "CAGCT");
 }
 
-TEST(kmer, UnorderedMapKey) {
-  Kmer<5> kmer("AGCTG");
-  std::unordered_map<Kmer<5>, int> m;
-  m[kmer] = 1;
-  ASSERT_EQ(m[kmer], 1);
-}
-
-TEST(kmer, FlatHashMapKey) {
-  Kmer<5> kmer("AGCTG");
-  absl::flat_hash_map<Kmer<5>, int> m;
-  m[kmer] = 1;
-  ASSERT_EQ(m[kmer], 1);
+TEST(kmer, Hash) {
+  std::hash<Kmer<5>> h;
+  ASSERT_EQ(h(Kmer<5>("ACGTA")), h(Kmer<5>("ACGTA")));
 }
