@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <stack>
 #include <string>
@@ -160,7 +161,8 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
 // kmer2 is i.
 template <int K, int N, typename KeyType>
 absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t>
-GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set, int n_workers) {
+GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
+                    std::optional<int> max_distance, int n_workers) {
   const std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
 
   absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t> distances;
@@ -187,8 +189,17 @@ GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set, int n_workers) {
           queue.pop();
 
           for (const Kmer<K>& next : current.Nexts()) {
+            // If "next" is not in kmer_set, skips it.
             if (!kmer_set.Contains(next)) continue;
+
+            // If "next" has been visited already, skips it.
             if (d.find(next) != d.end()) continue;
+
+            // If "next" is too far away from "start", skips it.
+            if (max_distance.has_value() &&
+                d[current] + 1 > max_distance.value())
+              continue;
+
             d[next] = d[current] + 1;
             queue.push(next);
           }
