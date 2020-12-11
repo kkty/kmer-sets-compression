@@ -1,7 +1,12 @@
 #include "search.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "absl/flags/flag.h"
@@ -35,36 +40,28 @@ void Main(const std::string& file1, const std::string& file2) {
   std::vector<std::string> reads2;
 
   {
-    spdlog::info("reading file: {}", file1);
+    // Get reads from a FASTA file.
+    const auto Read = [&](const std::string& file) {
+      spdlog::info("reading file: {}", file);
 
-    absl::StatusOr<std::vector<std::string>> statusor =
-        ReadFASTAFile(file1, decompressor, n_workers);
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadFASTAFile(file, decompressor, n_workers);
 
-    if (!statusor.ok()) {
-      spdlog::error("failed to read file: {}", statusor.status().ToString());
-      std::exit(1);
-    }
+      if (!statusor.ok()) {
+        spdlog::error("failed to read file: {}", statusor.status().ToString());
+        std::exit(1);
+      }
 
-    reads1 = std::move(statusor).value();
+      return std::move(statusor).value();
+    };
+
+    reads1 = Read(file1);
+    reads2 = Read(file2);
   }
 
-  {
-    spdlog::info("reading file: {}", file2);
+  const std::int64_t n_reads = reads1.size();
 
-    absl::StatusOr<std::vector<std::string>> statusor =
-        ReadFASTAFile(file2, decompressor, n_workers);
-
-    if (!statusor.ok()) {
-      spdlog::error("failed to read file: {}", statusor.status().ToString());
-      std::exit(1);
-    }
-
-    reads2 = std::move(statusor).value();
-  }
-
-  const int64_t n_reads = reads1.size();
-
-  if (n_reads != (int64_t)reads2.size()) {
+  if (n_reads != static_cast<std::int64_t>(reads2.size())) {
     spdlog::error("invalid file");
     std::exit(1);
   }
@@ -76,21 +73,20 @@ void Main(const std::string& file1, const std::string& file2) {
   {
     const int cutoff = absl::GetFlag(FLAGS_cutoff);
 
-    KmerSet<K, N, KeyType> kmer_set1;
-    KmerSet<K, N, KeyType> kmer_set2;
+    // Constructs a KmerSet from reads.
+    const auto GetKmerSet = [&](const std::vector<std::string>& reads) {
+      KmerSet<K, N, KeyType> kmer_set;
 
-    const KmerCounter<K, N, KeyType> kmer_counter1 =
-        KmerCounter<K, N, KeyType>::FromReads(reads1, false, n_workers);
-    const KmerCounter<K, N, KeyType> kmer_counter2 =
-        KmerCounter<K, N, KeyType>::FromReads(reads2, false, n_workers);
+      const KmerCounter<K, N, KeyType> kmer_counter =
+          KmerCounter<K, N, KeyType>::FromReads(reads, false, n_workers);
 
-    std::tie(kmer_set1, std::ignore) =
-        kmer_counter1.ToKmerSet(cutoff, n_workers);
-    std::tie(kmer_set2, std::ignore) =
-        kmer_counter2.ToKmerSet(cutoff, n_workers);
+      std::tie(kmer_set, std::ignore) =
+          kmer_counter.ToKmerSet(cutoff, n_workers);
 
-    kmer_set = std::move(kmer_set1);
-    kmer_set.Add(kmer_set2, n_workers);
+      return kmer_set;
+    };
+
+    kmer_set = GetKmerSet(reads1).Add(GetKmerSet(reads2), n_workers);
   }
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
@@ -104,43 +100,23 @@ void Main(const std::string& file1, const std::string& file2) {
   int n = absl::GetFlag(FLAGS_n);
 
   while (n--) {
+    spdlog::info("n = {}", n);
+
     Kmer<K> start, goal;
 
-    // Finds start and goal.
-    {
-      int64_t j = absl::Uniform(bitgen, 0, n_reads);
+    // Finds start and goal randomly.
+    while (true) {
+      std::int64_t j = absl::Uniform(bitgen, 0, n_reads);
+
+      spdlog::info("finding goal and start: j = {}", j);
+
       const std::string& read1 = reads1[j];
       const std::string& read2 = reads2[j];
 
-      {
-        bool found = false;
-
-        for (size_t i = 0; i < read1.length() - K + 1; i++) {
-          const std::string s = read1.substr(i, K);
-
-          // "N" should not be contained.
-          if (s.find('N') == std::string::npos) continue;
-
-          const Kmer<K> kmer(s);
-
-          // "kmer" should be in the graph.
-          if (kmer_graph.ids.find(kmer) == kmer_graph.ids.end()) continue;
-
-          found = true;
-          start = kmer;
-          break;
-        }
-
-        if (!found) {
-          continue;
-        }
-      }
-
-      {
-        bool found = false;
-
-        for (size_t i = 0; i < read2.length() - K + 1; i++) {
-          const std::string s = read2.substr(i, K);
+      // Finds a kmer in "read" that exists in "kmer_graph".
+      const auto FindKmer = [&](const std::string& read) {
+        for (std::size_t i = 0; i < read.length() - K + 1; i++) {
+          const std::string s = read.substr(i, K);
 
           // "N" should not be contained.
           if (s.find('N') == std::string::npos) continue;
@@ -150,15 +126,25 @@ void Main(const std::string& file1, const std::string& file2) {
           // "kmer" should be in the graph.
           if (kmer_graph.ids.find(kmer) == kmer_graph.ids.end()) continue;
 
-          found = true;
-          goal = kmer;
-          break;
+          return std::make_optional(kmer);
         }
 
-        if (!found) {
-          continue;
-        }
+        return std::optional<Kmer<K>>();
+      };
+
+      {
+        std::optional<Kmer<K>> optional = FindKmer(read1);
+        if (!optional.has_value()) continue;
+        start = std::move(optional).value();
       }
+
+      {
+        std::optional<Kmer<K>> optional = FindKmer(read2);
+        if (!optional.has_value()) continue;
+        goal = std::move(optional).value();
+      }
+
+      break;
     }
 
     spdlog::info("start = {}, goal = {}", start.String(), goal.String());
@@ -170,16 +156,6 @@ void Main(const std::string& file1, const std::string& file2) {
       spdlog::info("found = {}, distance = {}, visited_nodes = {}",
                    result.found, result.distance, result.visited_nodes);
       std::cout << result.distance << ' ' << result.visited_nodes;
-    }
-
-    for (int l = 2; l < 10; l++) {
-      spdlog::info("l = {}", l);
-      spdlog::info("executing A*");
-      const SearchResult result = AStarSearch<K>(kmer_graph, start, goal, l);
-      spdlog::info("executed A*");
-      spdlog::info("found = {}, distance = {}, visited_nodes = {}",
-                   result.found, result.distance, result.visited_nodes);
-      std::cout << ' ' << result.visited_nodes;
     }
 
     {
@@ -202,13 +178,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      Main<15, 14, uint16_t>(files[0], files[1]);
+      Main<15, 14, std::uint16_t>(files[0], files[1]);
       break;
     case 19:
-      Main<19, 10, uint32_t>(files[0], files[1]);
+      Main<19, 10, std::uint32_t>(files[0], files[1]);
       break;
     case 23:
-      Main<23, 14, uint32_t>(files[0], files[1]);
+      Main<23, 14, std::uint32_t>(files[0], files[1]);
       break;
     default:
       spdlog::error("unsupported k value");
