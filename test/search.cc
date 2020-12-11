@@ -1,16 +1,18 @@
 #include "search.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <tuple>
 #include <vector>
 
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "gtest/gtest.h"
 
-TEST(search, ConstructGraphCanonical) {
+TEST(Search, ConstructGraphCanonical) {
   const int K = 7;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
   KmerSet<K, N, KeyType> kmer_set;
 
   kmer_set.Add(Kmer<K>("AAAAAAA"));
@@ -32,11 +34,11 @@ TEST(search, ConstructGraphCanonical) {
   KmerGraph<K> g = ConstructKmerGraph(kmer_set, 1);
 
   {
-    std::vector<std::pair<int64_t, int64_t>> edges =
+    std::vector<std::pair<std::int64_t, std::int64_t>> edges =
         g.edges[g.ids[Kmer<K>("AAAAAAT")]];
 
     int i = std::find_if(edges.begin(), edges.end(),
-                         [&](const std::pair<int64_t, int64_t>& p) {
+                         [&](const std::pair<std::int64_t, std::int64_t>& p) {
                            return p.first == g.ids[Kmer<K>("AAATCCC")];
                          })
                 ->second;
@@ -45,11 +47,11 @@ TEST(search, ConstructGraphCanonical) {
   }
 
   {
-    std::vector<std::pair<int64_t, int64_t>> edges =
+    std::vector<std::pair<std::int64_t, std::int64_t>> edges =
         g.edges[g.ids[Kmer<K>("AAAAAAT")]];
 
     int i = std::find_if(edges.begin(), edges.end(),
-                         [&](const std::pair<int64_t, int64_t>& p) {
+                         [&](const std::pair<std::int64_t, std::int64_t>& p) {
                            return p.first == g.ids[Kmer<K>("AATGGGG")];
                          })
                 ->second;
@@ -67,7 +69,7 @@ TEST(search, ConstructGraphCanonical) {
 
   {
     SearchResult result =
-        AStarSearch<K>(g, Kmer<K>("AAAAAAT"), Kmer<K>("AAATCCC"), 3);
+        AStarSearch<K>(g, Kmer<K>("AAAAAAT"), Kmer<K>("AAATCCC"));
 
     ASSERT_TRUE(result.found);
     ASSERT_EQ(result.distance, 3);
