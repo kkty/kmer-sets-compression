@@ -100,7 +100,7 @@ class Kmer {
   Kmer<K> Complement() const {
     Kmer<K> complement;
     for (int i = 0; i < K; i++) {
-      complement.Set(K - 1 - i, this->Get(i));
+      complement.Set(K - 1 - i, Get(i));
     }
     complement.bits_.flip();
     return complement;
@@ -108,7 +108,7 @@ class Kmer {
 
   // Returns the minimum of the kmer and the complement of the kmer.
   // The dictionary ordering is used to get the minimum.
-  Kmer<K> Canonical() const { return std::min(*this, this->Complement()); }
+  Kmer<K> Canonical() const { return std::min(*this, Complement()); }
 
   Kmer<K> Next(char c) const {
     Kmer<K> next = *this;
@@ -190,6 +190,11 @@ bool operator!=(const Kmer<K>& lhs, const Kmer<K>& rhs) {
 template <int K>
 bool operator<(const Kmer<K>& lhs, const Kmer<K>& rhs) {
   return lhs.Bits().to_ullong() < rhs.Bits().to_ullong();
+}
+
+template <int K>
+bool operator>(const Kmer<K>& lhs, const Kmer<K>& rhs) {
+  return lhs.Bits().to_ullong() > rhs.Bits().to_ullong();
 }
 
 namespace std {
