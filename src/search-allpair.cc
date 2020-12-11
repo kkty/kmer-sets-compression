@@ -99,6 +99,8 @@ void Main(const std::string& file1, const std::string& file2) {
         kmer_set.template Extract<K2, N2, KeyType2>(n_workers);
     spdlog::info("constructed small_kmer_set");
 
+    spdlog::info("small_kmer_set.Size() = {}", small_kmer_set.Size());
+
     spdlog::info("constructing all_pair_distances");
     all_pair_distances = GetAllPairDistances(small_kmer_set, n_workers);
     spdlog::info("constructed all_pair_distances");
@@ -201,6 +203,16 @@ int main(int argc, char** argv) {
     const int N1 = 14;
     using KeyType1 = std::uint32_t;
 
+    if (k2 == 7) {
+      Main<K1, N1, KeyType1, 7, 6, std::uint8_t>(files[0], files[1]);
+      return 0;
+    }
+
+    if (k2 == 8) {
+      Main<K1, N1, KeyType1, 8, 8, std::uint8_t>(files[0], files[1]);
+      return 0;
+    }
+
     if (k2 == 9) {
       Main<K1, N1, KeyType1, 9, 10, std::uint8_t>(files[0], files[1]);
       return 0;
@@ -208,16 +220,6 @@ int main(int argc, char** argv) {
 
     if (k2 == 10) {
       Main<K1, N1, KeyType1, 10, 12, std::uint8_t>(files[0], files[1]);
-      return 0;
-    }
-
-    if (k2 == 11) {
-      Main<K1, N1, KeyType1, 11, 14, std::uint8_t>(files[0], files[1]);
-      return 0;
-    }
-
-    if (k2 == 12) {
-      Main<K1, N1, KeyType1, 12, 8, std::uint16_t>(files[0], files[1]);
       return 0;
     }
   }
