@@ -175,7 +175,7 @@ GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
       absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t>
           buf_distances;
 
-      range.ForEach([&](std::int64_t i) {
+      for (std::int64_t i : range) {
         const Kmer<K>& start = kmers[i];
 
         absl::flat_hash_map<Kmer<K>, std::int64_t> d;
@@ -208,7 +208,7 @@ GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
         for (const std::pair<const Kmer<K>, std::int64_t>& p : d) {
           buf_distances[{start, p.first}] = p.second;
         }
-      });
+      }
 
       std::lock_guard lck(mu);
       distances.insert(buf_distances.begin(), buf_distances.end());

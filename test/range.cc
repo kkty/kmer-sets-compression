@@ -25,9 +25,3 @@ TEST(Range, ForLoop) {
   }
   ASSERT_EQ(sum, 45);
 }
-
-TEST(Range, ForEach) {
-  int sum = 0;
-  Range(0, 10).ForEach([&](int i) { sum += i; });
-  ASSERT_EQ(sum, 45);
-}

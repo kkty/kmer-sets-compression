@@ -2,7 +2,10 @@
 #define CORE_KMER_SET_COMPACT_H_
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -50,13 +53,13 @@ class KmerSetCompact {
       threads.emplace_back([&, range] {
         std::vector<Kmer<K>> buf;
 
-        range.ForEach([&](int i) {
+        for (int i : range) {
           const std::string s = spss_[i];
-          for (size_t j = 0; j < s.size() + 1 - K; j++) {
+          for (std::size_t j = 0; j < s.size() + 1 - K; j++) {
             const Kmer<K> kmer(s.substr(j, K));
             buf.push_back(canonical ? kmer.Canonical() : kmer);
           }
-        });
+        }
 
         std::lock_guard lck(mu);
         for (Kmer<K>& kmer : buf) kmers.push_back(std::move(kmer));
@@ -113,13 +116,15 @@ class KmerSetCompact {
   // Returns the total length of stored strings.
   // If the data is dumped to a file without compression, the estimated file
   // size is Size() bytes.
-  int64_t Size(int n_workers) const {
+  std::int64_t Size(int n_workers) const {
     std::vector<std::thread> threads;
     std::atomic_int64_t size = 0;
 
     for (const Range& range : Range(0, spss_.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int i) { size += spss_[i].length(); });
+        for (int i : range) {
+          size += spss_[i].length();
+        }
       });
     }
 

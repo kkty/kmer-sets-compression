@@ -2,6 +2,8 @@
 #define CORE_KMER_COUNTER_H_
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -27,8 +29,9 @@ template <typename T>
 T AddWithMax(T x, T y) {
   if (std::is_integral<T>::value) {
     T max = std::numeric_limits<T>::max();
-    return std::min(static_cast<int64_t>(max),
-                    static_cast<int64_t>(x) + static_cast<int64_t>(y));
+    return std::min(
+        static_cast<std::int64_t>(max),
+        static_cast<std::int64_t>(x) + static_cast<std::int64_t>(y));
   }
 
   return x + y;
@@ -37,14 +40,14 @@ T AddWithMax(T x, T y) {
 // KmerCounter can be used to count kmers.
 // Data is divided to 1 << N buckets so that some operations can be done
 // efficiently in parallel.
-template <int K, int N, typename KeyType, typename ValueType = uint8_t>
+template <int K, int N, typename KeyType, typename ValueType = std::uint8_t>
 class KmerCounter {
  public:
   KmerCounter() : buckets_(kBucketsNum) {}
 
   // Returns the number of distinct k-mers.
-  int64_t Size() const {
-    int64_t sum = 0;
+  std::int64_t Size() const {
+    std::int64_t sum = 0;
     for (const Bucket& bucket : buckets_) {
       sum += bucket.size();
     }
@@ -64,12 +67,12 @@ class KmerCounter {
       threads.emplace_back([&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           std::string& read = reads[i];
           std::vector<std::string> fragments = absl::StrSplit(read, 'N');
 
           for (const std::string& fragment : fragments) {
-            for (size_t j = 0; j + K <= fragment.length(); j++) {
+            for (std::size_t j = 0; j + K <= fragment.length(); j++) {
               const Kmer<K> kmer(fragment.substr(j, K));
 
               int bucket;
@@ -84,7 +87,7 @@ class KmerCounter {
 
           // "read" is not needed anymore.
           std::string().swap(read);
-        });
+        }
 
         std::vector<bool> done(kBucketsNum);
         int done_count = 0;
@@ -152,7 +155,7 @@ class KmerCounter {
     std::vector<std::string> reads;
     reads.reserve(lines.size() / 2);
 
-    for (size_t i = 0; i < lines.size(); i++) {
+    for (std::size_t i = 0; i < lines.size(); i++) {
       if (i % 2 == 0 && lines[i][0] != '>') {
         return absl::FailedPreconditionError("invalid FASTA file");
       }
@@ -172,8 +175,8 @@ class KmerCounter {
 
   // Returns a KmerSet, ignoring ones that appear not often.
   // The number of ignored k-mers is also returned.
-  std::pair<KmerSet<K, N, KeyType>, int64_t> ToKmerSet(ValueType cutoff,
-                                                       int n_workers) const {
+  std::pair<KmerSet<K, N, KeyType>, std::int64_t> ToKmerSet(
+      ValueType cutoff, int n_workers) const {
     KmerSet<K, N, KeyType> set;
     std::mutex mu;
 
@@ -206,7 +209,7 @@ class KmerCounter {
         },
         n_workers);
 
-    return {set, static_cast<int64_t>(cutoff_count)};
+    return {set, static_cast<std::int64_t>(cutoff_count)};
   }
 
   // Returns the count for a kmer.

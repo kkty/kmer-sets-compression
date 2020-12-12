@@ -2,6 +2,8 @@
 #define CORE_UNITIGS_H_
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -21,7 +23,7 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
 
   s += kmers[0].String();
 
-  for (int64_t i = 1; i < (int64_t)kmers.size(); i++) {
+  for (std::int64_t i = 1; i < static_cast<std::int64_t>(kmers.size()); i++) {
     assert(kmers[i - 1].String().substr(1, K - 1) ==
            kmers[i].String().substr(0, K - 1));
 
@@ -36,7 +38,7 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
 std::string Complement(std::string s) {
   std::reverse(s.begin(), s.end());
 
-  for (size_t i = 0; i < s.length(); i++) {
+  for (std::size_t i = 0; i < s.length(); i++) {
     switch (s[i]) {
       case 'A':
         s[i] = 'T';
@@ -250,11 +252,11 @@ std::vector<std::string> GetUnitigsCanonical(
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const Kmer<K>& kmer = terminals_both[i];
           buf_unitigs.push_back(kmer.String());
           buf_visited.push_back(kmer);
-        });
+        }
 
         MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
       });
@@ -278,16 +280,16 @@ std::vector<std::string> GetUnitigsCanonical(
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           std::vector<Kmer<K>> path = FindPath(terminals_left[i], true);
 
-          if (path.front().Canonical() < path.back().Canonical()) return;
+          if (path.front().Canonical() < path.back().Canonical()) continue;
 
           for (const Kmer<K>& kmer : path)
             buf_visited.push_back(kmer.Canonical());
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
-        });
+        }
 
         MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
       });
@@ -311,16 +313,16 @@ std::vector<std::string> GetUnitigsCanonical(
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           std::vector<Kmer<K>> path = FindPath(terminals_right[i], false);
 
-          if (path.front().Canonical() < path.back().Canonical()) return;
+          if (path.front().Canonical() < path.back().Canonical()) continue;
 
           for (const Kmer<K>& kmer : path)
             buf_visited.push_back(kmer.Canonical());
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
-        });
+        }
 
         MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
       });
@@ -374,17 +376,17 @@ std::vector<std::string> GetSPSSCanonical(
       GetUnitigsCanonical(kmer_set, n_workers);
   spdlog::debug("constructed unitigs");
 
-  const int64_t n = unitigs.size();
+  const std::int64_t n = unitigs.size();
 
   // Considers a graph where node i represents unitigs[i].
   // Each node has two sides just as the one considered in
   // GetUnitigsCanonical().
 
   // If i is in prefixes[kmer], the unitigs.substr(0, K) == kmer.String().
-  absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> prefixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
 
   // Similar to prefixes, but suffixes are considered.
-  absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> suffixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
 
   {
     spdlog::debug("constructing prefixes and suffixes");
@@ -395,16 +397,16 @@ std::vector<std::string> GetSPSSCanonical(
 
     for (const Range& range : Range(0, n).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> buf_prefixes;
-        absl::flat_hash_map<Kmer<K>, std::vector<int64_t>> buf_suffixes;
+        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf_prefixes;
+        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf_suffixes;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const std::string& unitig = unitigs[i];
           const Kmer<K> prefix(unitig.substr(0, K));
           const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
           buf_prefixes[prefix].push_back(i);
           buf_suffixes[suffix].push_back(i);
-        });
+        }
 
         // Moves from buffers.
 
@@ -434,13 +436,13 @@ std::vector<std::string> GetSPSSCanonical(
 
   // If the second element is true, the edge connects the same side of two
   // nodes.
-  using Edge = std::pair<int64_t, bool>;
+  using Edge = std::pair<std::int64_t, bool>;
 
   // edge_left[i] is the edge incident to the left side of i.
-  absl::flat_hash_map<int64_t, Edge> edges_left;
+  absl::flat_hash_map<std::int64_t, Edge> edges_left;
 
   // edge_right[i] is the edge incident to the right side of i.
-  absl::flat_hash_map<int64_t, Edge> edges_right;
+  absl::flat_hash_map<std::int64_t, Edge> edges_right;
 
   {
     spdlog::debug("constructing edges_left and edges_right");
@@ -449,11 +451,13 @@ std::vector<std::string> GetSPSSCanonical(
 
     std::vector<std::thread> threads;
     std::vector<std::mutex> mus(n_buckets);
-    std::vector<absl::flat_hash_map<int64_t, Edge>> buf_edges_left(n_buckets);
-    std::vector<absl::flat_hash_map<int64_t, Edge>> buf_edges_right(n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edges_left(
+        n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edges_right(
+        n_buckets);
 
     // Acquires locks for node i and j.
-    const auto AcquireLock = [&](int64_t i, int64_t j) {
+    const auto AcquireLock = [&](std::int64_t i, std::int64_t j) {
       int bucket_i = i % n_buckets;
       int bucket_j = j % n_buckets;
 
@@ -467,7 +471,7 @@ std::vector<std::string> GetSPSSCanonical(
     };
 
     // Releases locks for node i and j.
-    const auto ReleaseLock = [&](int64_t i, int64_t j) {
+    const auto ReleaseLock = [&](std::int64_t i, std::int64_t j) {
       int bucket_i = i % n_buckets;
       int bucket_j = j % n_buckets;
 
@@ -481,32 +485,34 @@ std::vector<std::string> GetSPSSCanonical(
     };
 
     // Returns true if an edge is incident to the left side of i.
-    const auto HasEdgeLeft = [&](int64_t i) {
+    const auto HasEdgeLeft = [&](std::int64_t i) {
       int bucket = i % n_buckets;
       return buf_edges_left[bucket].find(i) != buf_edges_left[bucket].end();
     };
 
     // Returns true if an edge is incident to the right side of i.
-    const auto HasEdgeRight = [&](int64_t i) {
+    const auto HasEdgeRight = [&](std::int64_t i) {
       int bucket = i % n_buckets;
       return buf_edges_right[bucket].find(i) != buf_edges_right[bucket].end();
     };
 
     // Adds an edge incident to the left side of i.
-    const auto AddEdgeLeft = [&](int64_t i, int64_t j, bool is_same_side) {
+    const auto AddEdgeLeft = [&](std::int64_t i, std::int64_t j,
+                                 bool is_same_side) {
       int bucket_i = i % n_buckets;
       buf_edges_left[bucket_i][i] = {j, is_same_side};
     };
 
     // Adds an edge incident to the right side of i.
-    const auto AddEdgeRight = [&](int64_t i, int64_t j, bool is_same_side) {
+    const auto AddEdgeRight = [&](std::int64_t i, std::int64_t j,
+                                  bool is_same_side) {
       int bucket_i = i % n_buckets;
       buf_edges_right[bucket_i][i] = {j, is_same_side};
     };
 
     for (const Range& range : Range(0, n).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const std::string& unitig = unitigs[i];
 
           const Kmer<K> prefix(unitig.substr(0, K));
@@ -514,7 +520,7 @@ std::vector<std::string> GetSPSSCanonical(
 
           for (const Kmer<K>& suffix_next : suffix.Nexts()) {
             if (prefixes.find(suffix_next) != prefixes.end()) {
-              for (int64_t j : prefixes[suffix_next]) {
+              for (std::int64_t j : prefixes[suffix_next]) {
                 if (i == j) continue;
 
                 // There is an edge from the right side from i to the left
@@ -534,7 +540,7 @@ std::vector<std::string> GetSPSSCanonical(
             const Kmer<K> suffix_next_complement = suffix_next.Complement();
 
             if (suffixes.find(suffix_next_complement) != suffixes.end()) {
-              for (int64_t j : suffixes[suffix_next_complement]) {
+              for (std::int64_t j : suffixes[suffix_next_complement]) {
                 if (i == j) continue;
 
                 // There is an edge from the right side from i to the right side
@@ -554,7 +560,7 @@ std::vector<std::string> GetSPSSCanonical(
 
           for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
             if (suffixes.find(prefix_prev) != suffixes.end()) {
-              for (int64_t j : suffixes[prefix_prev]) {
+              for (std::int64_t j : suffixes[prefix_prev]) {
                 if (i == j) continue;
 
                 // There is an edge from the left side of i to the right side of
@@ -574,7 +580,7 @@ std::vector<std::string> GetSPSSCanonical(
             const Kmer<K> prefix_prev_complement = prefix_prev.Complement();
 
             if (prefixes.find(prefix_prev_complement) != prefixes.end()) {
-              for (int64_t j : prefixes[prefix_prev_complement]) {
+              for (std::int64_t j : prefixes[prefix_prev_complement]) {
                 if (i == j) continue;
 
                 // There is an edge from the left side of i to the left side of
@@ -591,7 +597,7 @@ std::vector<std::string> GetSPSSCanonical(
               }
             }
           }
-        });
+        }
       });
     }
 
@@ -621,11 +627,11 @@ std::vector<std::string> GetSPSSCanonical(
   }
 
   // Nodes without edges on the left side.
-  std::vector<int64_t> terminals_left;
+  std::vector<std::int64_t> terminals_left;
   // Nodes without edges on the right side.
-  std::vector<int64_t> terminals_right;
+  std::vector<std::int64_t> terminals_right;
   // Nodes without edges on both sides.
-  std::vector<int64_t> terminals_both;
+  std::vector<std::int64_t> terminals_both;
 
   {
     spdlog::debug(
@@ -638,11 +644,11 @@ std::vector<std::string> GetSPSSCanonical(
 
     for (const Range& range : Range(0, n).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        std::vector<int64_t> buf_terminals_left;
-        std::vector<int64_t> buf_terminals_right;
-        std::vector<int64_t> buf_terminals_both;
+        std::vector<std::int64_t> buf_terminals_left;
+        std::vector<std::int64_t> buf_terminals_right;
+        std::vector<std::int64_t> buf_terminals_both;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const bool has_left = edges_left.find(i) != edges_left.end();
           const bool has_right = edges_right.find(i) != edges_right.end();
 
@@ -653,7 +659,7 @@ std::vector<std::string> GetSPSSCanonical(
           } else if (!has_right) {
             buf_terminals_right.push_back(i);
           }
-        });
+        }
 
         // Moves from buffers.
 
@@ -698,14 +704,14 @@ std::vector<std::string> GetSPSSCanonical(
 
   // If the second pair of a pair is true, the compliment of the unitig should
   // be considered when concatenating.
-  using Path = std::vector<std::pair<int64_t, bool>>;
+  using Path = std::vector<std::pair<std::int64_t, bool>>;
 
   // If is_right_side is true, finds a path from the right side of start.
   // If is_right_side is false, finds a path from the left side of start.
-  const auto FindPath = [&](int64_t start, bool is_right_side) {
+  const auto FindPath = [&](std::int64_t start, bool is_right_side) {
     Path path;
 
-    int64_t current = start;
+    std::int64_t current = start;
 
     while (true) {
       bool is_same_side;
@@ -732,7 +738,7 @@ std::vector<std::string> GetSPSSCanonical(
     std::string s;
     bool is_first = true;
 
-    for (const std::pair<int64_t, bool>& p : path) {
+    for (const std::pair<std::int64_t, bool>& p : path) {
       if (is_first) {
         s += p.second ? Complement(unitigs[p.first]) : unitigs[p.first];
         is_first = false;
@@ -748,14 +754,14 @@ std::vector<std::string> GetSPSSCanonical(
   };
 
   std::vector<std::string> spss;
-  absl::flat_hash_set<int64_t> visited;
+  absl::flat_hash_set<std::int64_t> visited;
 
   {
     spdlog::debug("constructing spss and visited");
 
     const auto MoveFromBuffer = [&](std::mutex& mu_spss, std::mutex& mu_visited,
                                     std::vector<std::string>& buf_spss,
-                                    std::vector<int64_t>& buf_visited) {
+                                    std::vector<std::int64_t>& buf_visited) {
       bool done_spss = false;
       bool done_visited = false;
 
@@ -784,19 +790,19 @@ std::vector<std::string> GetSPSSCanonical(
            Range(0, terminals_left.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<int64_t> buf_visited;
+          std::vector<std::int64_t> buf_visited;
 
-          range.ForEach([&](int64_t i) {
+          for (std::int64_t i : range) {
             Path path = FindPath(terminals_left[i], true);
 
-            if (path.front().first > path.back().first) return;
+            if (path.front().first > path.back().first) continue;
 
-            for (size_t j = 0; j < path.size(); j++) {
+            for (std::size_t j = 0; j < path.size(); j++) {
               buf_visited.push_back(path[j].first);
             }
 
             buf_spss.push_back(GetStringFromPath(path));
-          });
+          }
 
           MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
         });
@@ -815,19 +821,19 @@ std::vector<std::string> GetSPSSCanonical(
            Range(0, terminals_right.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<int64_t> buf_visited;
+          std::vector<std::int64_t> buf_visited;
 
-          range.ForEach([&](int64_t i) {
+          for (std::int64_t i : range) {
             Path path = FindPath(terminals_right[i], false);
 
-            if (path.front().first > path.back().first) return;
+            if (path.front().first > path.back().first) continue;
 
-            for (size_t j = 0; j < path.size(); j++) {
+            for (std::size_t j = 0; j < path.size(); j++) {
               buf_visited.push_back(path[j].first);
             }
 
             buf_spss.push_back(GetStringFromPath(path));
-          });
+          }
 
           MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
         });
@@ -846,12 +852,12 @@ std::vector<std::string> GetSPSSCanonical(
            Range(0, terminals_both.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<int64_t> buf_visited;
+          std::vector<std::int64_t> buf_visited;
 
-          range.ForEach([&](int64_t i) {
+          for (std::int64_t i : range) {
             buf_visited.push_back(terminals_both[i]);
             buf_spss.push_back(unitigs[terminals_both[i]]);
-          });
+          }
 
           MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
         });
@@ -866,7 +872,7 @@ std::vector<std::string> GetSPSSCanonical(
   {
     spdlog::debug("processing non-branching loops");
 
-    std::vector<int64_t> not_visited;
+    std::vector<std::int64_t> not_visited;
 
     // Constructs "not_visited".
     {
@@ -875,13 +881,13 @@ std::vector<std::string> GetSPSSCanonical(
 
       for (const Range& range : Range(0, n).Split(n_workers)) {
         threads.emplace_back([&, range] {
-          std::vector<int64_t> buf;
+          std::vector<std::int64_t> buf;
 
-          range.ForEach([&](int64_t i) {
+          for (std::int64_t i : range) {
             if (visited.find(i) == visited.end()) {
               buf.push_back(i);
             }
-          });
+          }
 
           std::lock_guard lck(mu);
           not_visited.insert(not_visited.end(), buf.begin(), buf.end());
@@ -891,11 +897,11 @@ std::vector<std::string> GetSPSSCanonical(
       for (std::thread& t : threads) t.join();
     }
 
-    for (int64_t start : not_visited) {
+    for (std::int64_t start : not_visited) {
       if (visited.find(start) != visited.end()) continue;
 
       Path path;
-      int64_t current = start;
+      std::int64_t current = start;
       bool is_right_side = true;
 
       while (visited.find(current) == visited.end()) {
@@ -1009,7 +1015,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
         std::vector<std::string> buf_unitigs;
         KmerSet<K, N, KeyType> buf_visited;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const Kmer<K>& start_kmer = start_kmers[i];
           std::vector<Kmer<K>> path;
 
@@ -1022,7 +1028,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
           }
 
           buf_unitigs.push_back(GetUnitigFromKmers(path));
-        });
+        }
 
         // 3 * n_workers threads are created in total, but no more than
         // n_workers threads are active at any point in time.

@@ -2,6 +2,8 @@
 #define CORE_KMER_SET_H_
 
 #include <bitset>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -36,7 +38,10 @@ Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
   const int n_key_bits = K * 2 - N;
   static_assert(n_key_bits <= sizeof(KeyType) * 8);
 
-  std::bitset<K * 2> bits{((uint64_t)bucket_id << n_key_bits) + (uint64_t)key};
+  std::bitset<K * 2> bits{
+      (static_cast<std::uint64_t>(bucket_id) << n_key_bits) +
+      static_cast<std::uint64_t>(key)};
+
   return Kmer<K>{bits};
 }
 
@@ -58,13 +63,13 @@ class KmerSet {
       threads.emplace_back([&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           int bucket;
           KeyType key;
           std::tie(bucket, key) =
               GetBucketAndKeyFromKmer<K, N, KeyType>(kmers[i]);
           buf[bucket].insert(key);
-        });
+        }
 
         // Moves data from buffer.
 
@@ -92,8 +97,8 @@ class KmerSet {
   }
 
   // Returns the total number of stored kmers.
-  int64_t Size() const {
-    int64_t sum = 0;
+  std::int64_t Size() const {
+    std::int64_t sum = 0;
     for (const Bucket& bucket : buckets_) {
       sum += bucket.size();
     }
@@ -191,7 +196,7 @@ class KmerSet {
 
   // Returns the number of kmers which is in only one of the
   // two sets.
-  int64_t Diff(const KmerSet& other, int n_workers) const {
+  std::int64_t Diff(const KmerSet& other, int n_workers) const {
     std::atomic_int64_t count = 0;
 
     other.ForEachBucket(
@@ -217,7 +222,7 @@ class KmerSet {
   }
 
   // Returns the number of kmers that is in the both of two sets.
-  int64_t Common(const KmerSet& other, int n_workers) const {
+  std::int64_t Common(const KmerSet& other, int n_workers) const {
     std::atomic_int64_t count = 0;
 
     other.ForEachBucket(
@@ -233,8 +238,8 @@ class KmerSet {
   }
 
   // Approximates the number of common kmers by using some buckets.
-  int64_t CommonEstimate(const KmerSet& other, int n_buckets) const {
-    int64_t count = 0;
+  std::int64_t CommonEstimate(const KmerSet& other, int n_buckets) const {
+    std::int64_t count = 0;
 
     absl::InsecureBitGen bitgen;
 
@@ -252,23 +257,24 @@ class KmerSet {
 
   // Approximates the number of common kmers by using some buckets.
   // If "n_buckets_factor" is 0.3, 30% of buckets are used.
-  int64_t CommonEstimate(const KmerSet& other, double n_buckets_factor) const {
+  std::int64_t CommonEstimate(const KmerSet& other,
+                              double n_buckets_factor) const {
     return CommonEstimate(other,
                           static_cast<int>(kBucketsNum * n_buckets_factor));
   }
 
   // Returns the Jaccard similarity of two sets.
   double Similarity(const KmerSet& other, int n_workers) const {
-    int64_t diff = Diff(other, n_workers);
-    int64_t common = Common(other, n_workers);
+    std::int64_t diff = Diff(other, n_workers);
+    std::int64_t common = Common(other, n_workers);
 
     return (double)common / (double)(diff + common);
   }
 
   // Estimates the difference between two sets using some buckets.
   // n_buckets should be no more than kBucketsNum.
-  int64_t DiffEstimate(const KmerSet& other, int n_buckets) const {
-    int64_t count = 0;
+  std::int64_t DiffEstimate(const KmerSet& other, int n_buckets) const {
+    std::int64_t count = 0;
 
     absl::InsecureBitGen bitgen;
 
@@ -310,12 +316,12 @@ class KmerSet {
       threads.emplace_back([&, range] {
         KmerSet<K2, N2, KeyType2> buf;
 
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const std::string s = kmers[i].String();
           for (int j = 0; j < (int)s.size() - K2 + 1; j++) {
             buf.Add(Kmer<K2>(s.substr(j, K2)));
           }
-        });
+        }
 
         std::lock_guard lck(mu);
         extracted.Add(buf, 1 + done);
@@ -339,7 +345,9 @@ class KmerSet {
 
     for (const Range& range : Range(0, kmers.size()).Split(1)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int64_t i) { lines[i] = kmers[i].String(); });
+        for (std::int64_t i : range) {
+          lines[i] = kmers[i].String();
+        }
       });
     }
 
@@ -351,13 +359,13 @@ class KmerSet {
   // Returns the hash value.
   // If two KmerSets contain the same set of kmers, they will produce the same
   // hash value.
-  size_t Hash(int n_workers) const {
-    size_t hash = 0;
+  std::size_t Hash(int n_workers) const {
+    std::size_t hash = 0;
     std::mutex mu;
 
     ForEachBucket(
         [&](const Bucket& bucket, int bucket_id) {
-          size_t buf = 0;
+          std::size_t buf = 0;
 
           for (KeyType key : bucket) {
             const Kmer<K> kmer =
@@ -396,12 +404,12 @@ class KmerSet {
 
     for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int i) {
+        for (int i : range) {
           kmers[i] = Kmer<K>(lines[i]);
 
           // lines[i] is not needed anymore.
           std::string().swap(lines[i]);
-        });
+        }
       });
     }
 

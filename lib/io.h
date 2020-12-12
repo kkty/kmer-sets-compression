@@ -2,11 +2,13 @@
 #define IO_H_
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
@@ -76,7 +78,7 @@ absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
 
     for (const Range& range : Range(0, n_lines).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        range.ForEach([&](int64_t i) {
+        for (std::int64_t i : range) {
           const std::string& line = lines[i];
           if (i % 2 == 0) {
             if (line[0] != '>') {
@@ -87,7 +89,7 @@ absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
           } else {
             reads[i / 2] = std::move(lines[i]);
           }
-        });
+        }
       });
     }
 

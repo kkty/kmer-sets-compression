@@ -66,15 +66,6 @@ class Range {
     return ranges;
   }
 
-  // Executes a function for each integer in the range.
-  // Range(...).ForEach([&](std::int64_t i) { ... });
-  template <typename F>
-  void ForEach(F f) const {
-    for (std::int64_t i = begin_; i < end_; i++) {
-      f(i);
-    }
-  }
-
  private:
   const std::int64_t begin_;
   const std::int64_t end_;
