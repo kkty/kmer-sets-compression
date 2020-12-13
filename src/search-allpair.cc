@@ -27,8 +27,8 @@ ABSL_FLAG(int, n, 1, "number of iterations");
 ABSL_FLAG(std::string, decompressor, "", "decompressor for input files");
 ABSL_FLAG(int, cutoff, 1, "cutoff threshold");
 ABSL_FLAG(int, k2, 9, "the length of kmers used for A* search");
-ABSL_FLAG(int, max_distance, 100,
-          "distances larger than this value are not calculated");
+ABSL_FLAG(int, max_nodes, 1000,
+          "limit the number of nodes to visit for all-pair search");
 
 template <int K1, int N1, typename KeyType1, int K2, int N2, typename KeyType2>
 void Main(const std::string& file1, const std::string& file2) {
@@ -96,7 +96,7 @@ void Main(const std::string& file1, const std::string& file2) {
   absl::flat_hash_map<std::pair<Kmer<K2>, Kmer<K2>>, std::int64_t>
       all_pair_distances;
   {
-    const int max_distance = absl::GetFlag(FLAGS_max_distance);
+    const int max_nodes = absl::GetFlag(FLAGS_max_nodes);
 
     spdlog::info("constructing small_kmer_set");
     KmerSet<K2, N2, KeyType2> small_kmer_set =
@@ -107,7 +107,7 @@ void Main(const std::string& file1, const std::string& file2) {
 
     spdlog::info("constructing all_pair_distances");
     all_pair_distances = GetAllPairDistances(
-        small_kmer_set, std::make_optional(max_distance), n_workers);
+        small_kmer_set, std::make_optional(max_nodes), n_workers);
     spdlog::info("constructed all_pair_distances");
   }
 

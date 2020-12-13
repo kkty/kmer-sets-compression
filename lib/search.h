@@ -138,7 +138,8 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
     queue.pop();
 
     if (from == goal_id) {
-      return {true, distances[from], (std::int64_t)distances.size()};
+      return {true, distances[from],
+              static_cast<std::int64_t>(distances.size())};
     }
 
     for (const std::pair<std::int64_t, std::int64_t>& edge : g.edges[from]) {
@@ -159,10 +160,13 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
 // Calculates all-pair shortest distances in dBG.
 // If GetAllPairDistances(...)[{kmer1, kmer2}] = i, the distance from kmer1 to
 // kmer2 is i.
+//
+// If "max_nodes" is set, the number of nodes visited for each start gets
+// limited.
 template <int K, int N, typename KeyType>
 absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t>
 GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
-                    std::optional<int> max_distance, int n_workers) {
+                    std::optional<int> max_nodes, int n_workers) {
   const std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
 
   absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t> distances;
@@ -196,8 +200,8 @@ GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
             if (d.find(next) != d.end()) continue;
 
             // If "next" is too far away from "start", skips it.
-            if (max_distance.has_value() &&
-                d[current] + 1 > max_distance.value())
+            if (max_nodes.has_value() &&
+                static_cast<int>(d.size()) >= max_nodes.value())
               continue;
 
             d[next] = d[current] + 1;
