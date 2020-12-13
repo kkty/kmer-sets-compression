@@ -232,22 +232,29 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
                          const absl::flat_hash_map<std::pair<Kmer<L>, Kmer<L>>,
                                                    std::int64_t>& distances) {
   const auto h = [&](int i) {
-    std::int64_t max = 0;
-
     std::string s = g.kmers[i].String();
     std::string s_goal = goal.String();
 
-    for (int j = 0; j < K - L + 1; j++) {
-      max =
-          std::max(max, distances
-                            .find(std::make_pair(Kmer<L>(s.substr(j, L)),
-                                                 Kmer<L>(s_goal.substr(j, L))))
-                            ->second
+    std::int64_t estimate = K;
 
-          );
+    // Considers the overlap of the suffix of s and the prefix of s_goal.
+    for (int j = 0; j < K; j++) {
+      // If the (K-j)-suffix of s is equal to the (K-j)-prefix of s_goal, there
+      // may be a path whose distance is j that goes from s to s_goal.
+      if (s.substr(j, K - j) == s_goal.substr(0, K - j)) {
+        estimate = j;
+        break;
+      }
     }
 
-    return max;
+    const auto it = distances.find(std::make_pair(
+        Kmer<L>(s.substr(K - L, L)), Kmer<L>(s_goal.substr(0, L))));
+
+    if (it != distances.end()) {
+      estimate = std::max(estimate, it->second + (K - L));
+    }
+
+    return estimate;
   };
 
   const std::int64_t start_id = g.ids.find(start)->second;
