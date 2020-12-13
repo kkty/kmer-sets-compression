@@ -247,11 +247,13 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
       }
     }
 
-    const auto it = distances.find(std::make_pair(
-        Kmer<L>(s.substr(K - L, L)), Kmer<L>(s_goal.substr(0, L))));
+    for (int j = 0; j < K - L + 1; j++) {
+      const auto it = distances.find(std::make_pair(
+          Kmer<L>(s.substr(j, L)), Kmer<L>(s_goal.substr(j, L))));
 
-    if (it != distances.end()) {
-      estimate = std::max(estimate, it->second + (K - L));
+      if (it != distances.end()) {
+        estimate = std::max(estimate, it->second);
+      }
     }
 
     return estimate;
