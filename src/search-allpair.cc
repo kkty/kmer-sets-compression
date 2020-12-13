@@ -122,7 +122,8 @@ void Main(const std::string& file1, const std::string& file2) {
   while (n--) {
     spdlog::info("n = {}", n);
 
-    Kmer<K1> start, goal;
+    Kmer<K1> start;
+    Kmer<K1> goal;
 
     // Finds start and goal randomly.
     while (true) {
@@ -180,9 +181,18 @@ void Main(const std::string& file1, const std::string& file2) {
 
     {
       spdlog::info("executing A*");
+      const SearchResult result = AStarSearch<K1>(kmer_graph, start, goal);
+      spdlog::info("executed A*");
+      spdlog::info("found = {}, distance = {}, visited_nodes = {}",
+                   result.found, result.distance, result.visited_nodes);
+      std::cout << ' ' << result.visited_nodes;
+    }
+
+    {
+      spdlog::info("executing A* with all-pair distances");
       const SearchResult result =
           AStarSearch<K1, K2>(kmer_graph, start, goal, all_pair_distances);
-      spdlog::info("executed A*");
+      spdlog::info("executed A* with all-pair distances");
       spdlog::info("found = {}, distance = {}, visited_nodes = {}",
                    result.found, result.distance, result.visited_nodes);
       std::cout << ' ' << result.visited_nodes;
