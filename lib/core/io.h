@@ -28,6 +28,8 @@ void WriteLines(std::ostream& os, const std::vector<std::string>& lines) {
   for (const std::string& line : lines) {
     os << line << '\n';
   }
+
+  os << std::flush;
 }
 
 }  // namespace internal
