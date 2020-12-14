@@ -4,6 +4,16 @@
 #include <cstdint>
 #include <vector>
 
+// Range can be used to represent an interval of integers.
+// For example, Range(0, 100) represents a set of integers {0, 1, ..., 99}.
+//
+// It supports range-based for loops as follows.
+//   for (std::int64_t i : Range(0, 100)) { ... }
+// This is almost equivalent to the following code.
+//   for (std::int64_t i = 0; i < 100; i++) { ... }
+//
+// A Range can be split into multiple Ranges of similar sizes by using
+// Range::Split().
 class Range {
  public:
   class Iterator {
