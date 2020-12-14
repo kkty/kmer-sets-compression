@@ -23,7 +23,6 @@
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "boost/filesystem.hpp"
-#include "boost/format.hpp"
 #include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
@@ -312,12 +311,12 @@ class KmerSetSet {
         v.push_back(ss.str());
       }
 
-      absl::Status status =
-          WriteLines((boost::filesystem::path(folder_name) /
-                      boost::filesystem::path(
-                          (boost::format("meta.txt.%1%") % extension).str()))
-                         .string(),
-                     compressor, v);
+      const std::string file_name =
+          (boost::filesystem::path(folder_name) /
+           boost::filesystem::path(absl::StrFormat("meta.%s", extension)))
+              .string();
+
+      absl::Status status = WriteLines(file_name, compressor, v);
 
       if (!status.ok()) {
         return status;
@@ -342,10 +341,11 @@ class KmerSetSet {
           kmer_sets_immutable_[i].Clear();
         }
 
+        const std::string file_name = absl::StrFormat("%d.%s", i, extension);
+
         const absl::Status status =
             WriteLines((boost::filesystem::path(folder_name) /
-                        boost::filesystem::path(
-                            (boost::format("%1%.%2%") % i % extension).str()))
+                        boost::filesystem::path(file_name))
                            .string(),
                        compressor, kmer_set_compact.Dump());
 
@@ -361,7 +361,7 @@ class KmerSetSet {
 
     pool.join();
 
-    if (fail_count) {
+    if (fail_count > 0) {
       return absl::InternalError(
           absl::StrFormat("failed to write %d data", fail_count));
     }
@@ -383,7 +383,7 @@ class KmerSetSet {
 
     for (const std::pair<const int, std::vector<int>>& p : children_) {
       for (int i : p.second) {
-        lines.push_back((boost::format("v%1% -> v%2%;") % p.first % i).str());
+        lines.push_back(absl::StrFormat("v%d -> v%d", p.first, i));
       }
     }
 
