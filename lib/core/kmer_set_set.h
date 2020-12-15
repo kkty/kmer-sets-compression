@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -22,7 +23,6 @@
 #include "absl/strings/str_split.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "boost/filesystem.hpp"
 #include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
@@ -283,8 +283,8 @@ class KmerSetSet {
                             const std::string& compressor,
                             const std::string& extension, bool canonical,
                             bool clear, int n_workers) {
-    if (!boost::filesystem::exists(folder_name)) {
-      boost::filesystem::create_directories(folder_name);
+    if (!std::filesystem::create_directories(folder_name)) {
+      return absl::InternalError("failed to create folder");
     }
 
     {
@@ -312,8 +312,8 @@ class KmerSetSet {
       }
 
       const std::string file_name =
-          (boost::filesystem::path(folder_name) /
-           boost::filesystem::path(absl::StrFormat("meta.%s", extension)))
+          (std::filesystem::path(folder_name) /
+           std::filesystem::path(absl::StrFormat("meta.%s", extension)))
               .string();
 
       absl::Status status = WriteLines(file_name, compressor, v);
@@ -344,8 +344,8 @@ class KmerSetSet {
         const std::string file_name = absl::StrFormat("%d.%s", i, extension);
 
         const absl::Status status =
-            WriteLines((boost::filesystem::path(folder_name) /
-                        boost::filesystem::path(file_name))
+            WriteLines((std::filesystem::path(folder_name) /
+                        std::filesystem::path(file_name))
                            .string(),
                        compressor, kmer_set_compact.Dump());
 
