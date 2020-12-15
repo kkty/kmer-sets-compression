@@ -65,7 +65,13 @@ absl::StatusOr<std::vector<std::string>> ReadLines(
     }
   }
 
-  return absl::StrSplit(s, '\n');
+  std::vector<std::string> lines = absl::StrSplit(s, '\n');
+
+  if (!lines.empty()) {
+    lines.pop_back();
+  }
+
+  return lines;
 }
 
 // Writes lines to a file. If "compressor" is not empty, it will be used to
@@ -83,16 +89,8 @@ absl::Status WriteLines(const std::string& file_name,
       return absl::InternalError("failed to open file");
     }
 
-    bool is_first = true;
-
     for (const std::string& line : lines) {
-      if (is_first) {
-        is_first = false;
-      } else {
-        file << '\n';
-      }
-
-      file << line;
+      file << line << '\n';
     }
 
     return absl::OkStatus();
@@ -106,21 +104,13 @@ absl::Status WriteLines(const std::string& file_name,
   }
 
   // Writes data to the process.
-  {
-    bool is_first = true;
+  for (const std::string& line : lines) {
+    if (std::fputs(line.c_str(), f) == EOF) {
+      return absl::InternalError("failed to write to the process");
+    }
 
-    for (const std::string& line : lines) {
-      if (is_first) {
-        is_first = false;
-      } else {
-        if (std::fputc('\n', f) == EOF) {
-          return absl::InternalError("failed to write to the process");
-        }
-      }
-
-      if (std::fputs(line.c_str(), f) == EOF) {
-        return absl::InternalError("failed to write to the process");
-      }
+    if (std::fputc('\n', f) == EOF) {
+      return absl::InternalError("failed to write to the process");
     }
   }
 
