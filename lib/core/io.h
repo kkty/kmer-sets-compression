@@ -1,6 +1,7 @@
 #ifndef CORE_IO_H_
 #define CORE_IO_H_
 
+#include <cstdio>
 #include <fstream>
 #include <istream>
 #include <string>
@@ -9,30 +10,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
-#include "boost/process.hpp"
-
-namespace internal {
-
-std::vector<std::string> ReadLines(std::istream& is) {
-  std::vector<std::string> lines;
-
-  std::string s;
-  while (std::getline(is, s)) {
-    lines.push_back(s);
-  }
-
-  return lines;
-}
-
-void WriteLines(std::ostream& os, const std::vector<std::string>& lines) {
-  for (const std::string& line : lines) {
-    os << line << '\n';
-  }
-
-  os << std::flush;
-}
-
-}  // namespace internal
+#include "absl/strings/str_split.h"
 
 // Opens a file and reads lines in it. If "decompressor" is not empty, it will
 // be used to decompress the file.
@@ -48,28 +26,46 @@ absl::StatusOr<std::vector<std::string>> ReadLines(
       return absl::InternalError("failed to open file");
     }
 
-    return internal::ReadLines(file);
+    std::vector<std::string> lines;
+
+    std::string s;
+    while (std::getline(file, s)) {
+      lines.push_back(s);
+    }
+
+    return lines;
   }
 
-  boost::process::ipstream out;
+  std::FILE* f =
+      popen(absl::StrFormat("%s < %s", decompressor, file_name).c_str(), "r");
 
-  boost::process::child child(
-      decompressor,
-      boost::process::std_in<file_name, boost::process::std_out> out,
-      boost::process::std_err > boost::process::null);
-
-  std::vector<std::string> lines = internal::ReadLines(out);
-
-  child.wait();
-
-  const int exit_code = child.exit_code();
-
-  if (exit_code != 0) {
-    return absl::InternalError(absl::StrFormat(
-        "decompressor failed with non-zero exit code: %d", exit_code));
+  if (f == NULL) {
+    return absl::InternalError("failed to open a sub-process");
   }
 
-  return lines;
+  std::string s;
+
+  // Reads data from the process.
+  {
+    const int n = 8192;
+    char buf[n];
+
+    while (fgets(buf, n, f) != NULL) {
+      s += std::string(buf);
+    }
+  }
+
+  // Waits for the process to exit.
+  {
+    const int exit_status = pclose(f);
+
+    if (exit_status != 0) {
+      return absl::InternalError(absl::StrFormat(
+          "process failed with non-zero exit code: %d", exit_status));
+    }
+  }
+
+  return absl::StrSplit(s, '\n');
 }
 
 // Writes lines to a file. If "compressor" is not empty, it will be used to
@@ -87,29 +83,55 @@ absl::Status WriteLines(const std::string& file_name,
       return absl::InternalError("failed to open file");
     }
 
-    internal::WriteLines(file, lines);
+    bool is_first = true;
+
+    for (const std::string& line : lines) {
+      if (is_first) {
+        is_first = false;
+      } else {
+        file << '\n';
+      }
+
+      file << line;
+    }
 
     return absl::OkStatus();
   }
 
-  boost::process::opstream in;
+  std::FILE* f =
+      popen(absl::StrFormat("%s > %s", compressor, file_name).c_str(), "w");
 
-  boost::process::child child(
-      compressor, boost::process::std_in<in, boost::process::std_out> file_name,
-      boost::process::std_err > boost::process::null);
+  if (f == NULL) {
+    return absl::InternalError("failed to open a sub-process");
+  }
 
-  internal::WriteLines(in, lines);
+  // Writes data to the process.
+  {
+    bool is_first = true;
 
-  in.close();
-  in.pipe().close();
+    for (const std::string& line : lines) {
+      if (is_first) {
+        is_first = false;
+      } else {
+        if (std::fputc('\n', f) == EOF) {
+          return absl::InternalError("failed to write to the process");
+        }
+      }
 
-  child.wait();
+      if (std::fputs(line.c_str(), f) == EOF) {
+        return absl::InternalError("failed to write to the process");
+      }
+    }
+  }
 
-  const int exit_code = child.exit_code();
+  // Waits for the process to exit.
+  {
+    const int exit_status = pclose(f);
 
-  if (exit_code != 0) {
-    return absl::InternalError(absl::StrFormat(
-        "compressor failed with non-zero exit code: %d", exit_code));
+    if (exit_status != 0) {
+      return absl::InternalError(absl::StrFormat(
+          "process failed with non-zero exit code: %d", exit_status));
+    }
   }
 
   return absl::OkStatus();
