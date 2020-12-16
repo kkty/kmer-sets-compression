@@ -481,4 +481,173 @@ class KmerSetSet {
   std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable_;
 };
 
+// KmerSetSetReader can be used to reconstruct kmer sets from files in a folder.
+template <int K, int N, typename KeyType>
+class KmerSetSetReader {
+ public:
+  KmerSetSetReader() = default;
+
+  static absl::StatusOr<KmerSetSetReader> FromFolder(std::string folder_name,
+                                                     std::string extension,
+                                                     std::string decompressor,
+                                                     bool canonical) {
+    std::vector<std::string> v;
+
+    {
+      const std::string file_name =
+          (std::filesystem::path(folder_name) /
+           std::filesystem::path(absl::StrFormat("meta.%s", extension)))
+              .string();
+
+      absl::StatusOr<std::vector<std::string>> statusor =
+          ReadLines(file_name, decompressor);
+
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      v = std::move(statusor).value();
+    }
+
+    absl::flat_hash_map<int, std::vector<int>> children;
+
+    int children_size;
+
+    {
+      std::stringstream ss(v[0]);
+      ss >> children_size;
+    }
+    children.reserve(children_size);
+
+    for (int i = 0; i < children_size; i++) {
+      std::stringstream ss(v[i + 1]);
+      int key;
+      int size;
+      ss >> key >> size;
+      for (int j = 0; j < size; j++) {
+        int value;
+        ss >> value;
+        children[key].push_back(value);
+      }
+    }
+
+    int size;
+    {
+      std::stringstream ss(v[children_size + 1]);
+      ss >> size;
+    }
+
+    return KmerSetSetReader(folder_name, extension, decompressor, canonical,
+                            children, size);
+  }
+
+  // Returns the number of managed kmer sets.
+  int Size() const { return size_; }
+
+  // Loads data from files and reconstructs the ith kmer set.
+  absl::StatusOr<KmerSet<K, N, KeyType>> Get(int i, int n_workers) const {
+    std::vector<int> ids;
+
+    // BFS from i.
+    {
+      std::queue<int> queue;
+      queue.push(i);
+
+      while (!queue.empty()) {
+        int current = queue.front();
+        queue.pop();
+
+        ids.push_back(current);
+
+        auto it = children_.find(current);
+
+        if (it == children_.end()) continue;
+
+        for (int child : it->second) {
+          queue.push(child);
+        }
+      }
+    }
+
+    KmerSet<K, N, KeyType> to_return;
+
+    {
+      boost::asio::thread_pool pool(n_workers);
+      int n_done = 0;
+      int n_fail = 0;
+      std::mutex mu;
+
+      for (int id : ids) {
+        boost::asio::post(pool, [&, id] {
+          spdlog::debug("loading kmer_set: id = {}", id);
+
+          const std::string file_name =
+              (std::filesystem::path(folder_name_) /
+               std::filesystem::path(absl::StrFormat("%d.%s", id, extension_)))
+                  .string();
+
+          spdlog::debug("file_name = {}", file_name);
+
+          absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
+              KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor_);
+
+          if (!statusor.ok()) {
+            spdlog::debug("failed to load kmer_set: {}",
+                          statusor.status().ToString());
+
+            std::lock_guard lck(mu);
+
+            n_fail += 1;
+            return;
+          }
+
+          KmerSet<K, N, KeyType> kmer_set =
+              std::move(statusor).value().ToKmerSet(canonical_, 1);
+
+          spdlog::debug("loaded kmer_set: id = {}", id);
+
+          std::lock_guard lck(mu);
+
+          spdlog::debug("adding kmer_set: id = {}", id);
+
+          to_return.Add(kmer_set, 1 + n_done);
+
+          spdlog::debug("added kmer_set: id = {}", id);
+
+          n_done += 1;
+        });
+      }
+
+      pool.join();
+
+      if (n_fail > 0) {
+        const std::string message =
+            absl::StrFormat("failed to load data from %d files", n_fail);
+        return absl::InternalError(message);
+      }
+    }
+
+    return to_return;
+  }
+
+ private:
+  KmerSetSetReader(std::string folder_name, std::string extension,
+                   std::string decompressor, bool canonical,
+                   absl::flat_hash_map<int, std::vector<int>> children,
+                   int size)
+      : folder_name_(std::move(folder_name)),
+        extension_(std::move(extension)),
+        decompressor_(std::move(decompressor)),
+        canonical_(canonical),
+        children_(std::move(children)),
+        size_(size) {}
+
+  std::string folder_name_;
+  std::string extension_;
+  std::string decompressor_;
+  bool canonical_;
+  absl::flat_hash_map<int, std::vector<int>> children_;
+  int size_ = 0;
+};
+
 #endif
