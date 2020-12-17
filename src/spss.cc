@@ -52,14 +52,26 @@ void Main(const std::string& file_name) {
       kmer_set_compact.ToKmerSet(true, n_workers);
   spdlog::info("constructed kmer_set");
 
+  spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
+  spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
+
   spdlog::info("constructing spss");
   std::vector<std::string> spss =
       GetSPSSCanonical(kmer_set, fast, n_workers, n_buckets);
   spdlog::info("constructed spss");
 
-  int64_t total_size = 0;
-  for (const std::string& s : spss) total_size += s.length();
-  spdlog::info("total_size = {}", total_size);
+  {
+    int64_t total_size = 0;
+    for (const std::string& s : spss) total_size += s.length();
+    spdlog::info("total_size = {}", total_size);
+  }
+
+  {
+    const KmerSet<K, N, KeyType> reconstructed =
+        GetKmerSetFromSPSS<K, N, KeyType>(spss, true, n_workers);
+    spdlog::info("reconstructed.Size() = {}", reconstructed.Size());
+    spdlog::info("reconstructed.Hash() = {}", reconstructed.Hash(n_workers));
+  }
 }
 
 int main(int argc, char** argv) {
