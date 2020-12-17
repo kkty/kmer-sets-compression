@@ -85,3 +85,53 @@ TEST(Unitigs, GetUnitigsCanonicalRandom) {
 
   ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
 }
+
+TEST(Unitigs, GetSPSSCanonicalRandom) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = uint8_t;
+
+  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, false, 1);
+
+  KmerSet<K, N, KeyType> reconstructed;
+
+  for (const std::string& s : spss) {
+    const int n = s.length();
+    ASSERT_TRUE(n >= K);
+
+    for (int i = 0; i < n - K + 1; i++) {
+      const Kmer<K> kmer = Kmer<K>(s.substr(i, K)).Canonical();
+      ASSERT_FALSE(reconstructed.Contains(kmer));
+      reconstructed.Add(kmer);
+    }
+  }
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+}
+
+TEST(Unitigs, GetSPSSCanonicalFastRandom) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = uint8_t;
+
+  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, 1);
+
+  KmerSet<K, N, KeyType> reconstructed;
+
+  for (const std::string& s : spss) {
+    const int n = s.length();
+    ASSERT_TRUE(n >= K);
+
+    for (int i = 0; i < n - K + 1; i++) {
+      const Kmer<K> kmer = Kmer<K>(s.substr(i, K)).Canonical();
+      ASSERT_FALSE(reconstructed.Contains(kmer));
+      reconstructed.Add(kmer);
+    }
+  }
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+}
