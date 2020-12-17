@@ -580,9 +580,6 @@ std::vector<std::string> GetSPSSCanonical(
   if (!fast) {
     // Constructs SPSS with one thread.
 
-    // Nodes from which a path starts.
-    absl::flat_hash_set<std::int64_t> start;
-
     spdlog::debug("constructing start, edge_left, and edge_right");
 
     for (std::int64_t i = 0; i < n; i++) {
@@ -590,8 +587,6 @@ std::vector<std::string> GetSPSSCanonical(
       if (edge_left.find(i) != edge_left.end() ||
           edge_right.find(i) != edge_right.end())
         continue;
-
-      start.insert(i);
 
       std::int64_t current = i;
 
@@ -604,7 +599,7 @@ std::vector<std::string> GetSPSSCanonical(
         // Skips if the node is isolated.
         if (edges_right.empty() && edges_left.empty()) continue;
 
-        is_right_side = edges_left.empty();
+        is_right_side = !edges_right.empty();
       }
 
       while (true) {
@@ -632,8 +627,6 @@ std::vector<std::string> GetSPSSCanonical(
           }
 
           // Extends the path.
-
-          start.erase(next);
 
           edge_right[current] = std::make_pair(next, is_same_side);
 
@@ -671,8 +664,6 @@ std::vector<std::string> GetSPSSCanonical(
 
           // Extends the path.
 
-          start.erase(next);
-
           edge_left[current] = std::make_pair(next, is_same_side);
 
           if (is_same_side) {
@@ -689,16 +680,28 @@ std::vector<std::string> GetSPSSCanonical(
     }
 
     spdlog::debug("constructed start, edge_left, and edge_right");
-    spdlog::debug("start.size() = {}", start.size());
 
     std::vector<std::string> spss;
-    spss.reserve(start.size());
 
     spdlog::debug("constructing spss");
 
-    for (std::int64_t i : start) {
-      Path path = FindPath(i, edge_left.find(i) == edge_left.end());
-      spss.push_back(GetStringFromPath(std::move(path)));
+    for (std::int64_t i = 0; i < n; i++) {
+      const bool has_left = edge_left.find(i) != edge_left.end();
+      const bool has_right = edge_right.find(i) != edge_right.end();
+
+      if (has_left && has_right) continue;
+
+      Path path;
+
+      if (has_right) {
+        path = FindPath(i, true);
+      } else {
+        path = FindPath(i, false);
+      }
+
+      if (path.front().first <= path.back().first) {
+        spss.push_back(GetStringFromPath(path));
+      }
     }
 
     spdlog::debug("constructed spss");
@@ -1248,6 +1251,39 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
   }
 
   return unitigs;
+}
+
+template <int K, int N, typename KeyType>
+KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
+                                          bool canonical, int n_workers) {
+  std::vector<std::thread> threads;
+
+  KmerSet<K, N, KeyType> kmer_set;
+  std::mutex mu;
+  int done_count = 0;
+
+  for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
+    threads.emplace_back([&, range] {
+      KmerSet<K, N, KeyType> buf;
+
+      for (std::int64_t i : range) {
+        const std::string& s = spss[i];
+        for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
+          Kmer<K> kmer(s.substr(j, K));
+          if (canonical) kmer = kmer.Canonical();
+          buf.Add(kmer);
+        }
+      }
+
+      std::lock_guard lck(mu);
+      kmer_set.Add(buf, 1 + done_count);
+      done_count += 1;
+    });
+  }
+
+  for (std::thread& t : threads) t.join();
+
+  return kmer_set;
 }
 
 #endif
