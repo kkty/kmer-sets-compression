@@ -828,17 +828,35 @@ std::vector<std::string> GetSPSSCanonical(
 
     for (std::thread& t : threads) t.join();
 
+    spdlog::debug("moving from buffers");
+
     // Moves from buffers.
     {
       boost::asio::thread_pool pool(n_workers);
 
       boost::asio::post(pool, [&] {
+        {
+          std::int64_t size = 0;
+          for (int i = 0; i < n_buckets; i++) {
+            size += buf_edge_left[i].size();
+          }
+          edge_left.reserve(size);
+        }
+
         for (int i = 0; i < n_buckets; i++) {
           edge_left.insert(buf_edge_left[i].begin(), buf_edge_left[i].end());
         }
       });
 
       boost::asio::post(pool, [&] {
+        {
+          std::int64_t size = 0;
+          for (int i = 0; i < n_buckets; i++) {
+            size += buf_edge_right[i].size();
+          }
+          edge_right.reserve(size);
+        }
+
         for (int i = 0; i < n_buckets; i++) {
           edge_right.insert(buf_edge_right[i].begin(), buf_edge_right[i].end());
         }
