@@ -8,7 +8,7 @@
 #include "gtest/gtest.h"
 
 template <int K, int N, typename KeyType>
-KmerSet<K, N, KeyType> GetTestData() {
+KmerSet<K, N, KeyType> GetTestData(bool canonical) {
   absl::InsecureBitGen bitgen;
 
   KmerSet<K, N, KeyType> kmer_set;
@@ -26,7 +26,11 @@ KmerSet<K, N, KeyType> GetTestData() {
     }
 
     for (int j = 0; j < static_cast<int>(s.size()) - K + 1; j++) {
-      kmer_set.Add(Kmer<K>(s.substr(j, K)).Canonical());
+      if (canonical) {
+        kmer_set.Add(Kmer<K>(s.substr(j, K)).Canonical());
+      } else {
+        kmer_set.Add(Kmer<K>(s.substr(j, K)));
+      }
     }
   }
 
@@ -38,14 +42,31 @@ TEST(KmerSetCompact, FromAndToKmerSetRandom) {
   const int N = 10;
   using KeyType = uint8_t;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  // Canonical
+  {
+    KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>(true);
 
-  KmerSetCompact<K, N, KeyType> compressed =
-      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, false, 1);
+    KmerSetCompact<K, N, KeyType> compressed =
+        KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, false, 1);
 
-  KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(true, 1);
+    KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(true, 1);
 
-  ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+    ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+  }
+
+  // Non-canonical
+  {
+    {
+      KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>(false);
+
+      KmerSetCompact<K, N, KeyType> compressed =
+          KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, false, false, 1);
+
+      KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(false, 1);
+
+      ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+    }
+  }
 }
 
 TEST(KmerSetCompact, FromAndToKmerSetFastRandom) {
@@ -53,12 +74,27 @@ TEST(KmerSetCompact, FromAndToKmerSetFastRandom) {
   const int N = 10;
   using KeyType = uint8_t;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  // Canonical
+  {
+    KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>(true);
 
-  KmerSetCompact<K, N, KeyType> compressed =
-      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, true, 1);
+    KmerSetCompact<K, N, KeyType> compressed =
+        KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, true, 1);
 
-  KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(true, 1);
+    KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(true, 1);
 
-  ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+    ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+  }
+
+  // Non-canonical
+  {
+    KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>(false);
+
+    KmerSetCompact<K, N, KeyType> compressed =
+        KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, false, true, 1);
+
+    KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(false, 1);
+
+    ASSERT_TRUE(kmer_set.Equals(decompressed, 1));
+  }
 }
