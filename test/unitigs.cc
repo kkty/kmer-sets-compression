@@ -135,3 +135,18 @@ TEST(Unitigs, GetSPSSCanonicalFastRandom) {
 
   ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
 }
+
+TEST(Unitigs, GetKmerSetFromSPSSRandom) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = uint8_t;
+
+  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, 1);
+
+  KmerSet<K, N, KeyType> reconstructed =
+      GetKmerSetFromSPSS<K, N, KeyType>(spss, true, 4);
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+}
