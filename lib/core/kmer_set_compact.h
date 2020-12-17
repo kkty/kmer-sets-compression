@@ -45,30 +45,7 @@ class KmerSetCompact {
   // If the structure was created with "canonical == true", "canonical" should
   // be true here as well.
   KmerSet<K, N, KeyType> ToKmerSet(bool canonical, int n_workers) const {
-    std::vector<Kmer<K>> kmers;
-    std::vector<std::thread> threads;
-    std::mutex mu;
-
-    for (const Range& range : Range(0, spss_.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<Kmer<K>> buf;
-
-        for (int i : range) {
-          const std::string s = spss_[i];
-          for (std::size_t j = 0; j < s.size() + 1 - K; j++) {
-            const Kmer<K> kmer(s.substr(j, K));
-            buf.push_back(canonical ? kmer.Canonical() : kmer);
-          }
-        }
-
-        std::lock_guard lck(mu);
-        for (Kmer<K>& kmer : buf) kmers.push_back(std::move(kmer));
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    return KmerSet<K, N, KeyType>(kmers, n_workers);
+    return GetKmerSetFromSPSS<K, N, KeyType>(spss_, canonical, n_workers);
   }
 
   // Dumps data to a file.
