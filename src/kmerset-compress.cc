@@ -76,7 +76,7 @@ void Main(const std::string& file_name) {
 
   spdlog::info("constructing kmer_set_compact");
   const KmerSetCompact<K, N, KeyType> kmer_set_compact =
-      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, canonical,
+      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, canonical, true,
                                                  n_workers);
   spdlog::info("constructed kmer_set_compact");
 

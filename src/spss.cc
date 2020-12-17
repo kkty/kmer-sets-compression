@@ -14,6 +14,7 @@ ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, buckets, 1, "number of buckets for SPSS calculation");
+ABSL_FLAG(bool, fast, false, "enable fast construction");
 
 template <int K, int N, typename KeyType>
 void Main(const std::string& file_name) {
@@ -23,6 +24,7 @@ void Main(const std::string& file_name) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const int n_buckets = absl::GetFlag(FLAGS_buckets);
+  const bool fast = absl::GetFlag(FLAGS_fast);
 
   KmerSetCompact<K, N, KeyType> kmer_set_compact;
 
@@ -52,7 +54,7 @@ void Main(const std::string& file_name) {
 
   spdlog::info("constructing spss");
   std::vector<std::string> spss =
-      GetSPSSCanonical(kmer_set, n_workers, n_buckets);
+      GetSPSSCanonical(kmer_set, fast, n_workers, n_buckets);
   spdlog::info("constructed spss");
 
   int64_t total_size = 0;

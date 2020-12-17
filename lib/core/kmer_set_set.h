@@ -260,7 +260,7 @@ class KmerSetSet {
 
           const KmerSetCompact<K, N, KeyType> kmer_set_compact =
               KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                  kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
+                  kmer_sets_immutable_[i].ToKmerSet(1), canonical, true, 1);
 
           v[n + i] = absl::StrJoin(kmer_set_compact.Dump(), " ");
 
@@ -336,7 +336,7 @@ class KmerSetSet {
 
         const KmerSetCompact<K, N, KeyType> kmer_set_compact =
             KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                kmer_sets_immutable_[i].ToKmerSet(1), canonical, 1);
+                kmer_sets_immutable_[i].ToKmerSet(1), canonical, true, 1);
         if (clear) {
           kmer_sets_immutable_[i].Clear();
         }

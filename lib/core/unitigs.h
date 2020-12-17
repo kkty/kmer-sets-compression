@@ -38,20 +38,22 @@ std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
 std::string Complement(std::string s) {
   std::reverse(s.begin(), s.end());
 
-  for (std::size_t i = 0; i < s.length(); i++) {
-    switch (s[i]) {
+  for (char& c : s) {
+    switch (c) {
       case 'A':
-        s[i] = 'T';
+        c = 'T';
         break;
       case 'C':
-        s[i] = 'G';
+        c = 'G';
         break;
       case 'G':
-        s[i] = 'C';
+        c = 'C';
         break;
       case 'T':
-        s[i] = 'A';
+        c = 'A';
         break;
+      default:
+        assert(false);
     }
   }
 
@@ -370,7 +372,8 @@ std::vector<std::string> GetUnitigsCanonical(
 // Constructs a small-weight SPSS from a set of canonical kmers.
 template <int K, int N, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(
-    const KmerSet<K, N, KeyType>& kmer_set, int n_workers, int n_buckets = 64) {
+    const KmerSet<K, N, KeyType>& kmer_set, bool fast, int n_workers,
+    int n_buckets = 64) {
   spdlog::debug("constructing unitigs");
   const std::vector<std::string> unitigs =
       GetUnitigsCanonical(kmer_set, n_workers);
@@ -438,22 +441,281 @@ std::vector<std::string> GetSPSSCanonical(
   // nodes.
   using Edge = std::pair<std::int64_t, bool>;
 
-  // edge_left[i] is the edge incident to the left side of i.
-  absl::flat_hash_map<std::int64_t, Edge> edges_left;
+  // Returns all the edges incident to the right side of ith node.
+  // Self loops are ignored.
+  const auto GetEdgesRight = [&](std::int64_t i) {
+    std::vector<Edge> edges;
 
-  // edge_right[i] is the edge incident to the right side of i.
-  absl::flat_hash_map<std::int64_t, Edge> edges_right;
+    const std::string& unitig = unitigs[i];
+
+    const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+
+    for (const Kmer<K>& suffix_next : suffix.Nexts()) {
+      if (prefixes.find(suffix_next) != prefixes.end()) {
+        for (std::int64_t j : prefixes[suffix_next]) {
+          if (i == j) continue;
+
+          // There is an edge from the right side from i to the left
+          // side of j.
+
+          edges.emplace_back(j, false);
+        }
+      }
+
+      const Kmer<K> suffix_next_complement = suffix_next.Complement();
+
+      if (suffixes.find(suffix_next_complement) != suffixes.end()) {
+        for (std::int64_t j : suffixes[suffix_next_complement]) {
+          if (i == j) continue;
+
+          // There is an edge from the right side from i to the right side
+          // of j.
+
+          edges.emplace_back(j, true);
+        }
+      }
+    }
+
+    return edges;
+  };
+
+  // Returns all the edges incident to the left side of ith node.
+  // Self loops are ignored.
+  const auto GetEdgesLeft = [&](std::int64_t i) {
+    std::vector<Edge> edges;
+
+    const std::string& unitig = unitigs[i];
+
+    const Kmer<K> prefix(unitig.substr(0, K));
+
+    for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
+      if (suffixes.find(prefix_prev) != suffixes.end()) {
+        for (std::int64_t j : suffixes[prefix_prev]) {
+          if (i == j) continue;
+
+          // There is an edge from the left side of i to the right side of
+          // j.
+
+          edges.emplace_back(j, false);
+        }
+      }
+
+      const Kmer<K> prefix_prev_complement = prefix_prev.Complement();
+
+      if (prefixes.find(prefix_prev_complement) != prefixes.end()) {
+        for (std::int64_t j : prefixes[prefix_prev_complement]) {
+          if (i == j) continue;
+
+          // There is an edge from the left side of i to the left side of
+          // j.
+
+          edges.emplace_back(j, true);
+        }
+      }
+    }
+
+    return edges;
+  };
+
+  // edge_left[i] is the selected edge incident to the left side of i.
+  absl::flat_hash_map<std::int64_t, Edge> edge_left;
+
+  // edge_right[i] is the selected edge incident to the right side of i.
+  absl::flat_hash_map<std::int64_t, Edge> edge_right;
+
+  // If the second element of a pair is true, the compliment of the unitig
+  // should be considered in concatenation.
+  using Path = std::vector<std::pair<std::int64_t, bool>>;
+
+  // If is_right_side is true, finds a path from the right side of start.
+  // If is_right_side is false, finds a path from the left side of start.
+  const auto FindPath = [&](std::int64_t start, bool is_right_side) {
+    Path path;
+
+    std::int64_t current = start;
+
+    while (true) {
+      bool is_same_side;
+
+      if (is_right_side) {
+        path.emplace_back(current, false);
+        if (edge_right.find(current) == edge_right.end()) break;
+        std::tie(current, is_same_side) = edge_right[current];
+      } else {
+        path.emplace_back(current, true);
+        if (edge_left.find(current) == edge_left.end()) break;
+        std::tie(current, is_same_side) = edge_left[current];
+      }
+
+      if (is_same_side) {
+        is_right_side = !is_right_side;
+      }
+    }
+
+    return path;
+  };
+
+  // Constructs a string by concatenating the unitigs in the path.
+  const auto GetStringFromPath = [&](const Path& path) {
+    assert(!path.empty());
+
+    std::string s;
+    bool is_first = true;
+
+    for (const std::pair<std::int64_t, bool>& p : path) {
+      if (is_first) {
+        s += p.second ? Complement(unitigs[p.first]) : unitigs[p.first];
+        is_first = false;
+      } else {
+        s += p.second ? Complement(unitigs[p.first])
+                            .substr(K - 1, unitigs[p.first].length() - (K - 1))
+                      : unitigs[p.first].substr(
+                            K - 1, unitigs[p.first].length() - (K - 1));
+      }
+    }
+
+    return s;
+  };
+
+  if (!fast) {
+    // Constructs SPSS with one thread.
+
+    // Nodes from which a path starts.
+    absl::flat_hash_set<std::int64_t> start;
+
+    spdlog::debug("constructing start, edge_left, and edge_right");
+
+    for (std::int64_t i = 0; i < n; i++) {
+      // Skips if it has already been visited.
+      if (edge_left.find(i) != edge_left.end() ||
+          edge_right.find(i) != edge_right.end())
+        continue;
+
+      start.insert(i);
+
+      std::int64_t current = i;
+
+      bool is_right_side;
+
+      {
+        std::vector<Edge> edges_right = GetEdgesRight(current);
+        std::vector<Edge> edges_left = GetEdgesLeft(current);
+
+        // Skips if the node is isolated.
+        if (edges_right.empty() && edges_left.empty()) continue;
+
+        is_right_side = edges_left.empty();
+      }
+
+      while (true) {
+        if (is_right_side) {
+          // Stops if the right side of the node was already used.
+          if (edge_right.find(current) != edge_right.end()) break;
+
+          std::vector<Edge> edges_right = GetEdgesRight(current);
+
+          // Stops if there is no edges on the right side.
+          if (edges_right.empty()) break;
+
+          std::int64_t next;
+          bool is_same_side;
+          std::tie(next, is_same_side) = edges_right.front();
+
+          // A loop was found.
+          if (next == i) break;
+
+          // Stops if the side of the next node was already used.
+          if (is_same_side) {
+            if (edge_right.find(next) != edge_right.end()) break;
+          } else {
+            if (edge_left.find(next) != edge_left.end()) break;
+          }
+
+          // Extends the path.
+
+          start.erase(next);
+
+          edge_right[current] = std::make_pair(next, is_same_side);
+
+          if (is_same_side) {
+            edge_right[next] = std::make_pair(current, is_same_side);
+
+            is_right_side = !is_right_side;
+          } else {
+            edge_left[next] = std::make_pair(current, is_same_side);
+          }
+
+          current = next;
+        } else {
+          // Stops if the left side of the node was already used.
+          if (edge_left.find(current) != edge_left.end()) break;
+
+          std::vector<Edge> edges_left = GetEdgesLeft(current);
+
+          // Stops if there is no edges on the left side.
+          if (edges_left.empty()) break;
+
+          std::int64_t next;
+          bool is_same_side;
+          std::tie(next, is_same_side) = edges_left.front();
+
+          // A loop was found.
+          if (next == i) break;
+
+          // Stops if the side of the next node was already used.
+          if (is_same_side) {
+            if (edge_left.find(next) != edge_left.end()) break;
+          } else {
+            if (edge_right.find(next) != edge_right.end()) break;
+          }
+
+          // Extends the path.
+
+          start.erase(next);
+
+          edge_left[current] = std::make_pair(next, is_same_side);
+
+          if (is_same_side) {
+            edge_left[next] = std::make_pair(current, is_same_side);
+
+            is_right_side = !is_right_side;
+          } else {
+            edge_right[next] = std::make_pair(current, is_same_side);
+          }
+
+          current = next;
+        }
+      }
+    }
+
+    spdlog::debug("constructed start, edge_left, and edge_right");
+    spdlog::debug("start.size() = {}", start.size());
+
+    std::vector<std::string> spss;
+    spss.reserve(start.size());
+
+    spdlog::debug("constructing spss");
+
+    for (std::int64_t i : start) {
+      Path path = FindPath(i, edge_left.find(i) == edge_left.end());
+      spss.push_back(GetStringFromPath(std::move(path)));
+    }
+
+    spdlog::debug("constructed spss");
+
+    return spss;
+  }
 
   {
-    spdlog::debug("constructing edges_left and edges_right");
+    spdlog::debug("constructing edge_left and edge_right");
 
     // Nodes are divided into n_buckets buckets to allow parallel processing.
 
     std::vector<std::thread> threads;
     std::vector<std::mutex> mus(n_buckets);
-    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edges_left(
+    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edge_left(
         n_buckets);
-    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edges_right(
+    std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edge_right(
         n_buckets);
 
     // Acquires locks for node i and j.
@@ -487,115 +749,75 @@ std::vector<std::string> GetSPSSCanonical(
     // Returns true if an edge is incident to the left side of i.
     const auto HasEdgeLeft = [&](std::int64_t i) {
       int bucket = i % n_buckets;
-      return buf_edges_left[bucket].find(i) != buf_edges_left[bucket].end();
+      return buf_edge_left[bucket].find(i) != buf_edge_left[bucket].end();
     };
 
     // Returns true if an edge is incident to the right side of i.
     const auto HasEdgeRight = [&](std::int64_t i) {
       int bucket = i % n_buckets;
-      return buf_edges_right[bucket].find(i) != buf_edges_right[bucket].end();
+      return buf_edge_right[bucket].find(i) != buf_edge_right[bucket].end();
     };
 
     // Adds an edge incident to the left side of i.
     const auto AddEdgeLeft = [&](std::int64_t i, std::int64_t j,
                                  bool is_same_side) {
       int bucket_i = i % n_buckets;
-      buf_edges_left[bucket_i][i] = {j, is_same_side};
+      buf_edge_left[bucket_i][i] = {j, is_same_side};
     };
 
     // Adds an edge incident to the right side of i.
+    // NOLINTNEXTLINE
     const auto AddEdgeRight = [&](std::int64_t i, std::int64_t j,
                                   bool is_same_side) {
       int bucket_i = i % n_buckets;
-      buf_edges_right[bucket_i][i] = {j, is_same_side};
+      buf_edge_right[bucket_i][i] = {j, is_same_side};
     };
 
     for (const Range& range : Range(0, n).Split(n_workers)) {
       threads.emplace_back([&, range] {
         for (std::int64_t i : range) {
-          const std::string& unitig = unitigs[i];
+          for (const Edge& edge : GetEdgesRight(i)) {
+            std::int64_t j;
+            bool is_same_side;
+            std::tie(j, is_same_side) = edge;
 
-          const Kmer<K> prefix(unitig.substr(0, K));
-          const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+            AcquireLock(i, j);
 
-          for (const Kmer<K>& suffix_next : suffix.Nexts()) {
-            if (prefixes.find(suffix_next) != prefixes.end()) {
-              for (std::int64_t j : prefixes[suffix_next]) {
-                if (i == j) continue;
-
-                // There is an edge from the right side from i to the left
-                // side of j.
-
-                AcquireLock(i, j);
-
-                if (!HasEdgeRight(i) && !HasEdgeLeft(j)) {
-                  AddEdgeRight(i, j, false);
-                  AddEdgeLeft(j, i, false);
-                }
-
-                ReleaseLock(i, j);
+            if (is_same_side) {
+              if (!HasEdgeRight(i) && !HasEdgeRight(j)) {
+                AddEdgeRight(i, j, true);
+                AddEdgeRight(j, i, true);
+              }
+            } else {
+              if (!HasEdgeRight(i) && !HasEdgeLeft(j)) {
+                AddEdgeRight(i, j, false);
+                AddEdgeLeft(j, i, false);
               }
             }
 
-            const Kmer<K> suffix_next_complement = suffix_next.Complement();
-
-            if (suffixes.find(suffix_next_complement) != suffixes.end()) {
-              for (std::int64_t j : suffixes[suffix_next_complement]) {
-                if (i == j) continue;
-
-                // There is an edge from the right side from i to the right side
-                // of j.
-
-                AcquireLock(i, j);
-
-                if (!HasEdgeRight(i) && !HasEdgeRight(j)) {
-                  AddEdgeRight(i, j, true);
-                  AddEdgeRight(j, i, true);
-                }
-
-                ReleaseLock(i, j);
-              }
-            }
+            ReleaseLock(i, j);
           }
 
-          for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
-            if (suffixes.find(prefix_prev) != suffixes.end()) {
-              for (std::int64_t j : suffixes[prefix_prev]) {
-                if (i == j) continue;
+          for (const Edge& edge : GetEdgesLeft(i)) {
+            std::int64_t j;
+            bool is_same_side;
+            std::tie(j, is_same_side) = edge;
 
-                // There is an edge from the left side of i to the right side of
-                // j.
+            AcquireLock(i, j);
 
-                AcquireLock(i, j);
-
-                if (!HasEdgeLeft(i) && !HasEdgeRight(j)) {
-                  AddEdgeLeft(i, j, false);
-                  AddEdgeRight(j, i, false);
-                }
-
-                ReleaseLock(i, j);
+            if (is_same_side) {
+              if (!HasEdgeLeft(i) && !HasEdgeLeft(j)) {
+                AddEdgeLeft(i, j, true);
+                AddEdgeLeft(j, i, true);
+              }
+            } else {
+              if (!HasEdgeLeft(i) && !HasEdgeRight(j)) {
+                AddEdgeLeft(i, j, false);
+                AddEdgeRight(j, i, false);
               }
             }
 
-            const Kmer<K> prefix_prev_complement = prefix_prev.Complement();
-
-            if (prefixes.find(prefix_prev_complement) != prefixes.end()) {
-              for (std::int64_t j : prefixes[prefix_prev_complement]) {
-                if (i == j) continue;
-
-                // There is an edge from the left side of i to the left side of
-                // j.
-
-                AcquireLock(i, j);
-
-                if (!HasEdgeLeft(i) && !HasEdgeLeft(j)) {
-                  AddEdgeLeft(i, j, true);
-                  AddEdgeLeft(j, i, true);
-                }
-
-                ReleaseLock(i, j);
-              }
-            }
+            ReleaseLock(i, j);
           }
         }
       });
@@ -609,21 +831,20 @@ std::vector<std::string> GetSPSSCanonical(
 
       boost::asio::post(pool, [&] {
         for (int i = 0; i < n_buckets; i++) {
-          edges_left.insert(buf_edges_left[i].begin(), buf_edges_left[i].end());
+          edge_left.insert(buf_edge_left[i].begin(), buf_edge_left[i].end());
         }
       });
 
       boost::asio::post(pool, [&] {
         for (int i = 0; i < n_buckets; i++) {
-          edges_right.insert(buf_edges_right[i].begin(),
-                             buf_edges_right[i].end());
+          edge_right.insert(buf_edge_right[i].begin(), buf_edge_right[i].end());
         }
       });
 
       pool.join();
     }
 
-    spdlog::debug("constructed edges_left and edges_right");
+    spdlog::debug("constructed edge_left and edge_right");
   }
 
   // Nodes without edges on the left side.
@@ -649,8 +870,8 @@ std::vector<std::string> GetSPSSCanonical(
         std::vector<std::int64_t> buf_terminals_both;
 
         for (std::int64_t i : range) {
-          const bool has_left = edges_left.find(i) != edges_left.end();
-          const bool has_right = edges_right.find(i) != edges_right.end();
+          const bool has_left = edge_left.find(i) != edge_left.end();
+          const bool has_right = edge_right.find(i) != edge_right.end();
 
           if (!has_left && !has_right) {
             buf_terminals_both.push_back(i);
@@ -701,57 +922,6 @@ std::vector<std::string> GetSPSSCanonical(
     spdlog::debug(
         "constructed terminals_left, terminals_right, and terminals_both");
   }
-
-  // If the second pair of a pair is true, the compliment of the unitig should
-  // be considered when concatenating.
-  using Path = std::vector<std::pair<std::int64_t, bool>>;
-
-  // If is_right_side is true, finds a path from the right side of start.
-  // If is_right_side is false, finds a path from the left side of start.
-  const auto FindPath = [&](std::int64_t start, bool is_right_side) {
-    Path path;
-
-    std::int64_t current = start;
-
-    while (true) {
-      bool is_same_side;
-
-      if (is_right_side) {
-        path.emplace_back(current, false);
-        if (edges_right.find(current) == edges_right.end()) break;
-        std::tie(current, is_same_side) = edges_right[current];
-      } else {
-        path.emplace_back(current, true);
-        if (edges_left.find(current) == edges_left.end()) break;
-        std::tie(current, is_same_side) = edges_left[current];
-      }
-
-      if (is_same_side) is_right_side = !is_right_side;
-    }
-
-    return path;
-  };
-
-  const auto GetStringFromPath = [&](const Path& path) {
-    assert(!path.empty());
-
-    std::string s;
-    bool is_first = true;
-
-    for (const std::pair<std::int64_t, bool>& p : path) {
-      if (is_first) {
-        s += p.second ? Complement(unitigs[p.first]) : unitigs[p.first];
-        is_first = false;
-      } else {
-        s += p.second ? Complement(unitigs[p.first])
-                            .substr(K - 1, unitigs[p.first].length() - (K - 1))
-                      : unitigs[p.first].substr(
-                            K - 1, unitigs[p.first].length() - (K - 1));
-      }
-    }
-
-    return s;
-  };
 
   std::vector<std::string> spss;
   absl::flat_hash_set<std::int64_t> visited;
@@ -910,7 +1080,7 @@ std::vector<std::string> GetSPSSCanonical(
 
         bool is_same_side;
         std::tie(current, is_same_side) =
-            is_right_side ? edges_right[current] : edges_left[current];
+            is_right_side ? edge_right[current] : edge_left[current];
 
         if (is_same_side) is_right_side = !is_right_side;
       }

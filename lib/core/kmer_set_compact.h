@@ -29,11 +29,11 @@ class KmerSetCompact {
   // Constructs KmerSetCompact from a kmer set. If the kmer set only contains
   // canonical kmers, "canonical" should be true for better compression.
   static KmerSetCompact FromKmerSet(const KmerSet<K, N, KeyType>& kmer_set,
-                                    bool canonical, int n_workers) {
+                                    bool canonical, bool fast, int n_workers) {
     std::vector<std::string> spss;
 
     if (canonical) {
-      spss = GetSPSSCanonical<K, N, KeyType>(kmer_set, n_workers);
+      spss = GetSPSSCanonical<K, N, KeyType>(kmer_set, fast, n_workers);
     } else {
       spss = GetUnitigs<K, N, KeyType>(kmer_set, n_workers);
     }

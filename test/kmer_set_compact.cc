@@ -28,7 +28,7 @@ TEST(KmerSetCompact, FromAndToKmerSet) {
   }
 
   KmerSetCompact<K, N, KeyType> compressed =
-      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, 1);
+      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, false, 1);
 
   KmerSet<K, N, KeyType> decompressed = compressed.ToKmerSet(true, 1);
 
