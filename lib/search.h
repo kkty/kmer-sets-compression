@@ -19,6 +19,7 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
+#include "spdlog/spdlog.h"
 
 // A graph where each node represents a kmer and each edge has its distance.
 template <int K>
@@ -195,6 +196,8 @@ GetDistancesAmongBranchingKmers(const KmerSet<K, N, KeyType>& kmer_set,
     branching_kmers.insert(v.begin(), v.end());
   }
 
+  spdlog::debug("branching_kmers.size() = {}", branching_kmers.size());
+
   absl::flat_hash_map<Kmer<K>, absl::flat_hash_map<Kmer<K>, std::int64_t>>
       distances;
 
@@ -221,37 +224,47 @@ GetDistancesAmongBranchingKmers(const KmerSet<K, N, KeyType>& kmer_set,
     }
   }
 
+  boost::asio::thread_pool pool(n_workers);
+
+  spdlog::debug("calculating all-pair distances");
+
   for (auto it = distances.begin(); it != distances.end(); ++it) {
     const Kmer<K> start = it->first;
 
-    // Distances from "start".
-    absl::flat_hash_map<Kmer<K>, std::int64_t>& d = distances[start];
+    boost::asio::post(pool, [&, start] {
+      // Distances from "start".
+      absl::flat_hash_map<Kmer<K>, std::int64_t>& d = distances[start];
 
-    using Item = std::pair<Kmer<K>, std::int64_t>;
-    const auto cmp = [](const Item& lhs, const Item& rhs) {
-      return lhs.second > rhs.second;
-    };
-    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+      using Item = std::pair<Kmer<K>, std::int64_t>;
+      const auto cmp = [](const Item& lhs, const Item& rhs) {
+        return lhs.second > rhs.second;
+      };
+      std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
 
-    for (std::pair<const Kmer<K>, std::int64_t>& p : d) {
-      pq.emplace(p.first, p.second);
-    }
+      for (std::pair<const Kmer<K>, std::int64_t>& p : d) {
+        pq.emplace(p.first, p.second);
+      }
 
-    while (!pq.empty()) {
-      const Kmer<K> from = pq.top().first;
-      pq.pop();
+      while (!pq.empty()) {
+        const Kmer<K> from = pq.top().first;
+        pq.pop();
 
-      for (std::pair<const Kmer<K>, std::int64_t>& p : distances[from]) {
-        const Kmer<K> to = p.first;
-        const std::int64_t distance = p.second;
+        for (std::pair<const Kmer<K>, std::int64_t>& p : distances[from]) {
+          const Kmer<K> to = p.first;
+          const std::int64_t distance = p.second;
 
-        if (d.find(to) == d.end() || d[to] > d[from] + distance) {
-          d[to] = d[from] + distance;
-          pq.emplace(to, d[to]);
+          if (d.find(to) == d.end() || d[to] > d[from] + distance) {
+            d[to] = d[from] + distance;
+            pq.emplace(to, d[to]);
+          }
         }
       }
-    }
+    });
   }
+
+  pool.join();
+
+  spdlog::debug("calculated all-pair distances");
 
   absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t> flat;
   for (std::pair<const Kmer<K>, absl::flat_hash_map<Kmer<K>, std::int64_t>>&
