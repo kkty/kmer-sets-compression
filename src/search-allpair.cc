@@ -211,16 +211,6 @@ int main(int argc, char** argv) {
     const int N1 = 14;
     using KeyType1 = std::uint32_t;
 
-    if (k2 == 7) {
-      Main<K1, N1, KeyType1, 7, 6, std::uint8_t>(files[0], files[1]);
-      return 0;
-    }
-
-    if (k2 == 8) {
-      Main<K1, N1, KeyType1, 8, 8, std::uint8_t>(files[0], files[1]);
-      return 0;
-    }
-
     if (k2 == 9) {
       Main<K1, N1, KeyType1, 9, 10, std::uint8_t>(files[0], files[1]);
       return 0;
@@ -228,6 +218,16 @@ int main(int argc, char** argv) {
 
     if (k2 == 10) {
       Main<K1, N1, KeyType1, 10, 12, std::uint8_t>(files[0], files[1]);
+      return 0;
+    }
+
+    if (k2 == 11) {
+      Main<K1, N1, KeyType1, 11, 6, std::uint16_t>(files[0], files[1]);
+      return 0;
+    }
+
+    if (k2 == 12) {
+      Main<K1, N1, KeyType1, 12, 8, std::uint16_t>(files[0], files[1]);
       return 0;
     }
   }
