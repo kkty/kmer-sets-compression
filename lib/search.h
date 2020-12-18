@@ -157,102 +157,215 @@ SearchResult DijkstraSearch(const KmerGraph<K>& g, const Kmer<K>& start,
   return {false, 0, 0};
 }
 
-// Calculates all-pair shortest distances in dBG.
-// If GetAllPairDistances(...)[{kmer1, kmer2}] = i, the distance from kmer1 to
-// kmer2 is i.
-//
-// If "max_nodes" is set, the number of nodes visited for each start gets
-// limited.
+// Calculates the all-pair distances among the branching nodes.
 template <int K, int N, typename KeyType>
 absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t>
-GetAllPairDistances(const KmerSet<K, N, KeyType>& kmer_set,
-                    std::optional<int> max_nodes, int n_workers) {
-  const std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
-
-  absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t> distances;
-
-  std::vector<std::thread> threads;
-  std::mutex mu;
-
-  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
-      absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t>
-          buf_distances;
-
-      for (std::int64_t i : range) {
-        const Kmer<K>& start = kmers[i];
-
-        absl::flat_hash_map<Kmer<K>, std::int64_t> d;
-        d[start] = 0;
-
-        std::queue<Kmer<K>> queue;
-        queue.push(start);
-
-        while (!queue.empty()) {
-          const Kmer<K> current = queue.front();
-          queue.pop();
-
-          for (const Kmer<K>& next : current.Nexts()) {
-            // If "next" is not in kmer_set, skips it.
-            if (!kmer_set.Contains(next)) continue;
-
-            // If "next" has been visited already, skips it.
-            if (d.find(next) != d.end()) continue;
-
-            // If "next" is too far away from "start", skips it.
-            if (max_nodes.has_value() &&
-                static_cast<int>(d.size()) >= max_nodes.value())
-              continue;
-
-            d[next] = d[current] + 1;
-            queue.push(next);
-          }
-        }
-
-        for (const std::pair<const Kmer<K>, std::int64_t>& p : d) {
-          buf_distances[{start, p.first}] = p.second;
-        }
+GetDistancesAmongBranchingKmers(const KmerSet<K, N, KeyType>& kmer_set,
+                                int n_workers) {
+  const auto GetNexts = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (kmer_set.Contains(next)) {
+        v.push_back(kmer);
       }
+    }
+    return v;
+  };
 
-      std::lock_guard lck(mu);
-      distances.insert(buf_distances.begin(), buf_distances.end());
-    });
+  const auto GetPrevs = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (kmer_set.Contains(prev)) {
+        v.push_back(kmer);
+      }
+    }
+    return v;
+  };
+
+  absl::flat_hash_set<Kmer<K>> branching_kmers;
+
+  {
+    const std::vector<Kmer<K>> v = kmer_set.Find(
+        [&](const Kmer<K>& kmer) {
+          return GetNexts(kmer).size() >= 2 || GetPrevs(kmer).size() >= 2;
+        },
+        n_workers);
+
+    branching_kmers.reserve(v.size());
+    branching_kmers.insert(v.begin(), v.end());
   }
 
-  for (std::thread& t : threads) t.join();
+  absl::flat_hash_map<Kmer<K>, absl::flat_hash_map<Kmer<K>, std::int64_t>>
+      distances;
 
-  return distances;
+  for (const Kmer<K>& kmer : branching_kmers) {
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (!kmer_set.Contains(next)) continue;
+
+      Kmer<K> current = next;
+      int distance = 1;
+      while (true) {
+        const std::vector<Kmer<K>> nexts = GetNexts(current);
+        const std::vector<Kmer<K>> prevs = GetPrevs(current);
+
+        if (nexts.size() >= 2 || prevs.size() >= 2) {
+          distances[kmer][current] = distance;
+          break;
+        }
+
+        if (nexts.empty()) break;
+
+        current = nexts.front();
+        distance += 1;
+      }
+    }
+  }
+
+  for (auto it = distances.begin(); it != distances.end(); ++it) {
+    const Kmer<K> start = it->first;
+
+    // Distances from "start".
+    absl::flat_hash_map<Kmer<K>, std::int64_t>& d = distances[start];
+
+    using Item = std::pair<Kmer<K>, std::int64_t>;
+    const auto cmp = [](const Item& lhs, const Item& rhs) {
+      return lhs.second > rhs.second;
+    };
+    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+
+    for (std::pair<const Kmer<K>, std::int64_t>& p : d) {
+      pq.emplace(p.first, p.second);
+    }
+
+    while (!pq.empty()) {
+      const Kmer<K> from = pq.top().first;
+      pq.pop();
+
+      for (std::pair<const Kmer<K>, std::int64_t>& p : distances[from]) {
+        const Kmer<K> to = p.first;
+        const std::int64_t distance = p.second;
+
+        if (d.find(to) == d.end() || d[to] > d[from] + distance) {
+          d[to] = d[from] + distance;
+          pq.emplace(to, d[to]);
+        }
+      }
+    }
+  }
+
+  absl::flat_hash_map<std::pair<Kmer<K>, Kmer<K>>, std::int64_t> flat;
+  for (std::pair<const Kmer<K>, absl::flat_hash_map<Kmer<K>, std::int64_t>>&
+           p1 : distances) {
+    for (std::pair<const Kmer<K>, std::int64_t>& p2 : p1.second) {
+      flat[std::make_pair(p1.first, p2.first)] = p2.second;
+    }
+  }
+
+  return flat;
 }
 
-// Executes A* search using the all-pair shortest distances for the dBG
-// represented by L-mers.
-template <int K, int L>
-SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
-                         const Kmer<K>& goal,
-                         const absl::flat_hash_map<std::pair<Kmer<L>, Kmer<L>>,
-                                                   std::int64_t>& distances) {
+// Executes A* search using the all-pair shortest distances among branching
+// K2-kmers.
+template <int K1, int K2, int N2, typename KeyType2>
+SearchResult AStarSearch(
+    const KmerGraph<K1>& g, const Kmer<K1>& start, const Kmer<K1>& goal,
+    const KmerSet<K2, N2, KeyType2>& kmer_set,
+    const absl::flat_hash_map<std::pair<Kmer<K2>, Kmer<K2>>, std::int64_t>&
+        distances) {
+  const auto GetNexts = [&](const Kmer<K2>& kmer) {
+    std::vector<Kmer<K2>> v;
+    for (const Kmer<K2>& next : kmer.Nexts()) {
+      if (kmer_set.Contains(next)) {
+        v.push_back(kmer);
+      }
+    }
+    return v;
+  };
+
+  const auto GetPrevs = [&](const Kmer<K2>& kmer) {
+    std::vector<Kmer<K2>> v;
+    for (const Kmer<K2>& prev : kmer.Prevs()) {
+      if (kmer_set.Contains(prev)) {
+        v.push_back(kmer);
+      }
+    }
+    return v;
+  };
+
   const auto h = [&](int i) {
     std::string s = g.kmers[i].String();
     std::string s_goal = goal.String();
 
-    std::int64_t estimate = K;
+    std::int64_t estimate = K1;
 
     // Considers the overlap of the suffix of s and the prefix of s_goal.
-    for (int j = 0; j < K; j++) {
-      // If the (K-j)-suffix of s is equal to the (K-j)-prefix of s_goal, there
-      // may be a path whose distance is j that goes from s to s_goal.
-      if (s.substr(j, K - j) == s_goal.substr(0, K - j)) {
+    for (int j = 0; j < K1; j++) {
+      // If the (K1-j)-suffix of s is equal to the (K1-j)-prefix of s_goal,
+      // there may be a path whose distance is j that goes from s to s_goal.
+      if (s.substr(j, K1 - j) == s_goal.substr(0, K1 - j)) {
         estimate = j;
         break;
       }
     }
 
-    for (int j = 0; j < K - L + 1; j++) {
-      const auto it = distances.find(std::make_pair(
-          Kmer<L>(s.substr(j, L)), Kmer<L>(s_goal.substr(j, L))));
+    for (int j = 0; j < K1 - K2 + 1; j++) {
+      Kmer<K2> from = Kmer<K2>(s.substr(j, K2));
+      Kmer<K2> to = Kmer<K2>(s_goal.substr(j, K2));
+
+      // Calculates the distance from "from" to "to" if possible.
+
+      int distance = 0;
+
+      // Moves "from" so that it becomes a branching node.
+      {
+        bool is_valid = true;
+
+        while (true) {
+          if (GetNexts(from).size() >= 2 || GetPrevs(from).size() >= 2) {
+            break;
+          }
+
+          const std::vector<Kmer<K2>> nexts = GetNexts(from);
+
+          if (nexts.empty()) {
+            is_valid = false;
+            break;
+          }
+
+          from = nexts.front();
+          distance += 1;
+        }
+
+        if (!is_valid) continue;
+      }
+
+      // Moves "to" so that it becomes a branching node.
+      {
+        bool is_valid = true;
+
+        while (true) {
+          if (GetNexts(to).size() >= 2 || GetPrevs(to).size() >= 2) {
+            break;
+          }
+
+          const std::vector<Kmer<K2>> prevs = GetPrevs(to);
+
+          if (prevs.empty()) {
+            is_valid = false;
+            break;
+          }
+
+          to = prevs.front();
+          distance += 1;
+        }
+
+        if (!is_valid) continue;
+      }
+
+      const auto it = distances.find(std::make_pair(from, to));
 
       if (it != distances.end()) {
-        estimate = std::max(estimate, it->second);
+        estimate = std::max(estimate, distance + it->second);
       }
     }
 
@@ -269,7 +382,7 @@ SearchResult AStarSearch(const KmerGraph<K>& g, const Kmer<K>& start,
                       std::vector<std::pair<std::int64_t, std::int64_t>>,
                       std::greater<>>
       queue;
-  queue.push({f[start_id], start_id});
+  queue.emplace(f[start_id], start_id);
 
   while (!queue.empty()) {
     int from = queue.top().second;
