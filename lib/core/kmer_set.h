@@ -237,63 +237,12 @@ class KmerSet {
     return count;
   }
 
-  // Approximates the number of common kmers by using some buckets.
-  std::int64_t CommonEstimate(const KmerSet& other, int n_buckets) const {
-    std::int64_t count = 0;
-
-    absl::InsecureBitGen bitgen;
-
-    for (int i = 0; i < n_buckets; i++) {
-      int bucket_id = absl::Uniform(bitgen, 0, kBucketsNum);
-
-      for (const KeyType& key : other.buckets_[bucket_id]) {
-        if (buckets_[bucket_id].find(key) != buckets_[bucket_id].end())
-          count += 1;
-      }
-    }
-
-    return count * kBucketsNum / n_buckets;
-  }
-
-  // Approximates the number of common kmers by using some buckets.
-  // If "n_buckets_factor" is 0.3, 30% of buckets are used.
-  std::int64_t CommonEstimate(const KmerSet& other,
-                              double n_buckets_factor) const {
-    return CommonEstimate(other,
-                          static_cast<int>(kBucketsNum * n_buckets_factor));
-  }
-
   // Returns the Jaccard similarity of two sets.
   double Similarity(const KmerSet& other, int n_workers) const {
     std::int64_t diff = Diff(other, n_workers);
     std::int64_t common = Common(other, n_workers);
 
-    return (double)common / (double)(diff + common);
-  }
-
-  // Estimates the difference between two sets using some buckets.
-  // n_buckets should be no more than kBucketsNum.
-  std::int64_t DiffEstimate(const KmerSet& other, int n_buckets) const {
-    std::int64_t count = 0;
-
-    absl::InsecureBitGen bitgen;
-
-    for (int i = 0; i < n_buckets; i++) {
-      int bucket_id = absl::Uniform(bitgen, 0, kBucketsNum);
-
-      const Bucket& bucket = buckets_[bucket_id];
-      const Bucket& other_bucket = other.buckets_[bucket_id];
-
-      for (const KeyType& key : bucket) {
-        if (other_bucket.find(key) == other_bucket.end()) count += 1;
-      }
-
-      for (const KeyType& key : other_bucket) {
-        if (bucket.find(key) == bucket.end()) count += 1;
-      }
-    }
-
-    return count * kBucketsNum / n_buckets;
+    return static_cast<double>(common) / static_cast<double>(diff + common);
   }
 
   // Returns true if two sets are the same.
@@ -334,28 +283,6 @@ class KmerSet {
     return extracted;
   }
 
-  // Dumps kmers to a file.
-  absl::Status Dump(const std::string& file_name, const std::string& compressor,
-                    int n_workers) const {
-    std::vector<Kmer<K>> kmers = Find(n_workers);
-
-    std::vector<std::string> lines(kmers.size());
-
-    std::vector<std::thread> threads;
-
-    for (const Range& range : Range(0, kmers.size()).Split(1)) {
-      threads.emplace_back([&, range] {
-        for (std::int64_t i : range) {
-          lines[i] = kmers[i].String();
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    return WriteLines(file_name, compressor, lines);
-  }
-
   // Returns the hash value.
   // If two KmerSets contain the same set of kmers, they will produce the same
   // hash value.
@@ -379,43 +306,6 @@ class KmerSet {
         n_workers);
 
     return hash;
-  }
-
-  // Loads kmers from a file.
-  static absl::StatusOr<KmerSet> Load(const std::string& file_name,
-                                      const std::string& decompressor,
-                                      int n_workers) {
-    std::vector<std::string> lines;
-
-    {
-      absl::StatusOr<std::vector<std::string>> statusor =
-          ReadLines(file_name, decompressor);
-
-      if (!statusor.ok()) {
-        return statusor.status();
-      }
-
-      lines = std::move(statusor).value();
-    }
-
-    std::vector<Kmer<K>> kmers(lines.size());
-
-    std::vector<std::thread> threads;
-
-    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        for (int i : range) {
-          kmers[i] = Kmer<K>(lines[i]);
-
-          // lines[i] is not needed anymore.
-          std::string().swap(lines[i]);
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    return KmerSet(kmers, n_workers);
   }
 
  private:
