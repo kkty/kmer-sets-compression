@@ -58,7 +58,6 @@ foreach (
         int_set
         kmer
         kmer_counter
-        kmer_set_compact
         kmer_set
         range
         io
