@@ -63,7 +63,7 @@ foreach (
         range
         io
         search
-        unitigs
+        spss
 )
     add_executable(test_${NAME} test/${NAME}.cc)
     gtest_add_tests(test_${NAME} "" AUTO)

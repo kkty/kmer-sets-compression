@@ -16,7 +16,7 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
-#include "core/unitigs.h"
+#include "core/spss.h"
 
 // KmerSetCompact can store a set of kmers efficiently by using SPSS.
 // It is not possible to add or remove kmers from the structure, but it is

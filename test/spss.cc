@@ -1,4 +1,4 @@
-#include "core/unitigs.h"
+#include "core/spss.h"
 
 #include <string>
 #include <vector>
@@ -34,7 +34,7 @@ KmerSet<K, N, KeyType> GetTestData() {
   return kmer_set;
 }
 
-TEST(Unitigs, Complement) { ASSERT_EQ(Complement("ACGTT"), "AACGT"); }
+TEST(Unitigs, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
 
 TEST(Unitigs, GetUnitigsRandom) {
   const int K = 9;

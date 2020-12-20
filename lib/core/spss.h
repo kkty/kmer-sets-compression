@@ -1,5 +1,5 @@
-#ifndef CORE_UNITIGS_H_
-#define CORE_UNITIGS_H_
+#ifndef CORE_SPSS_H_
+#define CORE_SPSS_H_
 
 #include <cassert>
 #include <cstddef>
@@ -15,9 +15,11 @@
 #include "core/range.h"
 #include "spdlog/spdlog.h"
 
+namespace internal {
+
 // "ACCG", "CCGT", "CGTT" -> "ACCGTT"
 template <int K>
-std::string GetUnitigFromKmers(const std::vector<Kmer<K>>& kmers) {
+std::string ConcatenateKmers(const std::vector<Kmer<K>>& kmers) {
   std::string s;
   s.reserve(K + kmers.size() - 1);
 
@@ -59,6 +61,8 @@ std::string Complement(std::string s) {
 
   return s;
 }
+
+}  // namespace internal
 
 // Constructs unitigs from a set of canonical kmers.
 template <int K, int N, typename KeyType>
@@ -290,7 +294,7 @@ std::vector<std::string> GetUnitigsCanonical(
           for (const Kmer<K>& kmer : path)
             buf_visited.push_back(kmer.Canonical());
 
-          buf_unitigs.push_back(GetUnitigFromKmers(path));
+          buf_unitigs.push_back(internal::ConcatenateKmers(path));
         }
 
         MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
@@ -323,7 +327,7 @@ std::vector<std::string> GetUnitigsCanonical(
           for (const Kmer<K>& kmer : path)
             buf_visited.push_back(kmer.Canonical());
 
-          buf_unitigs.push_back(GetUnitigFromKmers(path));
+          buf_unitigs.push_back(internal::ConcatenateKmers(path));
         }
 
         MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
@@ -361,7 +365,7 @@ std::vector<std::string> GetUnitigsCanonical(
       if (is_same_side) is_right_side = !is_right_side;
     }
 
-    unitigs.push_back(GetUnitigFromKmers(path));
+    unitigs.push_back(internal::ConcatenateKmers(path));
   }
 
   spdlog::debug("processed non-branching loops");
@@ -564,10 +568,11 @@ std::vector<std::string> GetSPSSCanonical(
 
     for (const std::pair<std::int64_t, bool>& p : path) {
       if (is_first) {
-        s += p.second ? Complement(unitigs[p.first]) : unitigs[p.first];
+        s += p.second ? internal::Complement(unitigs[p.first])
+                      : unitigs[p.first];
         is_first = false;
       } else {
-        s += p.second ? Complement(unitigs[p.first])
+        s += p.second ? internal::Complement(unitigs[p.first])
                             .substr(K - 1, unitigs[p.first].length() - (K - 1))
                       : unitigs[p.first].substr(
                             K - 1, unitigs[p.first].length() - (K - 1));
@@ -1218,7 +1223,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
             current = GetNexts(current)[0];
           }
 
-          buf_unitigs.push_back(GetUnitigFromKmers(path));
+          buf_unitigs.push_back(internal::ConcatenateKmers(path));
         }
 
         // 3 * n_workers threads are created in total, but no more than
@@ -1264,7 +1269,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
         current = GetNexts(current)[0];
       }
 
-      unitigs.push_back(GetUnitigFromKmers(path));
+      unitigs.push_back(internal::ConcatenateKmers(path));
     }
   }
 

@@ -31,7 +31,7 @@
 #include "core/kmer_set_compact.h"
 #include "core/kmer_set_immutable.h"
 #include "core/range.h"
-#include "core/unitigs.h"
+#include "core/spss.h"
 #include "spdlog/spdlog.h"
 
 namespace internal {

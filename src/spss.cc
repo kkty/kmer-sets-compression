@@ -1,3 +1,6 @@
+#include "core/spss.h"
+
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -5,7 +8,6 @@
 #include "absl/flags/parse.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
-#include "core/unitigs.h"
 #include "log.h"
 #include "spdlog/spdlog.h"
 
@@ -61,7 +63,7 @@ void Main(const std::string& file_name) {
   spdlog::info("constructed spss");
 
   {
-    int64_t total_size = 0;
+    std::int64_t total_size = 0;
     for (const std::string& s : spss) total_size += s.length();
     spdlog::info("total_size = {}", total_size);
   }
@@ -81,13 +83,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      Main<15, 14, uint16_t>(file_name);
+      Main<15, 14, std::uint16_t>(file_name);
       break;
     case 19:
-      Main<19, 10, uint32_t>(file_name);
+      Main<19, 10, std::uint32_t>(file_name);
       break;
     case 23:
-      Main<23, 14, uint32_t>(file_name);
+      Main<23, 14, std::uint32_t>(file_name);
       break;
     default:
       spdlog::error("unsupported k value");
