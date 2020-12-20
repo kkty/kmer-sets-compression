@@ -4,6 +4,7 @@
 #include <array>
 #include <bitset>
 #include <cassert>
+#include <cstddef>
 #include <string>
 
 #include "absl/random/random.h"
@@ -145,7 +146,7 @@ class Kmer {
   // Returns the bit-wise representation of the kmer.
   std::bitset<K * 2> Bits() const { return bits_; }
 
-  size_t Hash() const { return std::hash<std::bitset<K * 2>>()(bits_); }
+  std::size_t Hash() const { return std::hash<std::bitset<K * 2>>()(bits_); }
 
  private:
   std::bitset<K * 2> bits_;
@@ -200,7 +201,7 @@ bool operator>(const Kmer<K>& lhs, const Kmer<K>& rhs) {
 namespace std {
 template <int K>
 struct hash<Kmer<K>> {
-  size_t operator()(const Kmer<K>& kmer) const { return kmer.Hash(); }
+  std::size_t operator()(const Kmer<K>& kmer) const { return kmer.Hash(); }
 };
 }  // namespace std
 
