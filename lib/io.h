@@ -15,8 +15,9 @@
 #include "core/kmer_set_compact.h"
 #include "spdlog/spdlog.h"
 
+// Loads a KmerSetCompact from a file and constructs a KmerSet from it.
 template <int K, int N, typename KeyType>
-absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromCompressedKmersFile(
+absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromFile(
     const std::string& file_name, const std::string& decompressor,
     bool canonical, int n_workers) {
   KmerSetCompact<K, N, KeyType> kmer_set_compact;

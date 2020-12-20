@@ -53,7 +53,7 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("constructing kmer_set");
 
     absl::StatusOr<KmerSet<K, N, KeyType>> statusor =
-        GetKmerSetFromCompressedKmersFile<K, N, KeyType>(file, decompressor,
+        GetKmerSetFromFile<K, N, KeyType>(file, decompressor,
                                                          canonical, n_workers);
 
     if (!statusor.ok()) {
