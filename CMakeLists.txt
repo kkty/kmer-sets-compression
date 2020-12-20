@@ -59,6 +59,7 @@ foreach (
         kmer
         kmer_counter
         kmer_set
+        kmer_set_set
         range
         io
         search
