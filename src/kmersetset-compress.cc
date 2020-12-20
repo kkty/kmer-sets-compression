@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -24,12 +25,10 @@ ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
 ABSL_FLAG(int, iteration, 1, "number of iterations for KmerSetSet");
-ABSL_FLAG(bool, check, false, "check if k-mer sets can be reconstructed");
-ABSL_FLAG(std::string, out, "", "path to save dumped file");
-ABSL_FLAG(std::string, out_graph, "", "path to save dumped DOT file");
-ABSL_FLAG(std::string, out_folder, "", "folder to save dumped files");
-ABSL_FLAG(std::string, out_extension, "bin", "extension for output files");
+ABSL_FLAG(std::string, out, "", "directory path to save dumped files");
 ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
+ABSL_FLAG(std::string, extension, "bin", "extension for output files");
+ABSL_FLAG(std::string, out_graph, "", "path to save dumped DOT file");
 
 template <int K, int N, typename KeyType>
 void Main(const std::vector<std::string>& files) {
@@ -39,13 +38,12 @@ void Main(const std::vector<std::string>& files) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const bool canonical = absl::GetFlag(FLAGS_canonical);
-  const bool check = absl::GetFlag(FLAGS_check);
 
   const int n_datasets = files.size();
 
   std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n_datasets);
 
-  // Reads the ith file and constructs kmer_sets[i].
+  // Reads the ith file and constructs kmer_sets_immutable[i].
   const auto ReadFile = [&](int i, int n_workers) {
     const std::string& file = files[i];
     const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
@@ -77,16 +75,6 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("kmer_sets_immutable[{}].Bytes() = {}", i,
                  kmer_sets_immutable[i].Bytes());
 
-    if (check) {
-      if (kmer_set.Equals(kmer_sets_immutable[i].ToKmerSet(n_workers),
-                          n_workers)) {
-        spdlog::info("kmer_sets_immutable[{}] -> kmer_set: ok", i);
-      } else {
-        spdlog::error("kmer_sets_immutable[{}] -> kmer_set: failed", i);
-        std::exit(1);
-      }
-    }
-
     spdlog::info("finished reading {}", file);
   };
 
@@ -110,10 +98,10 @@ void Main(const std::vector<std::string>& files) {
   }
 
   {
-    int64_t total_size = 0;
+    std::int64_t total_size = 0;
 
     for (int i = 0; i < n_datasets; i++) {
-      int64_t size = kmer_sets_immutable[i].Size();
+      std::int64_t size = kmer_sets_immutable[i].Size();
       spdlog::info("i = {}, size = {}", i, size);
       total_size += size;
     }
@@ -128,14 +116,8 @@ void Main(const std::vector<std::string>& files) {
   {
     const int n_iterations = absl::GetFlag(FLAGS_iteration);
 
-    // If --check is specified, kmer_sets_immutable should be copied.
-    if (check) {
-      kmer_set_set = KmerSetSet<K, N, KeyType>(kmer_sets_immutable,
-                                               n_iterations, n_workers);
-    } else {
-      kmer_set_set = KmerSetSet<K, N, KeyType>(std::move(kmer_sets_immutable),
-                                               n_iterations, n_workers);
-    }
+    kmer_set_set = KmerSetSet<K, N, KeyType>(std::move(kmer_sets_immutable),
+                                             n_iterations, n_workers);
   }
 
   spdlog::info("constructed kmer_set_set");
@@ -157,55 +139,22 @@ void Main(const std::vector<std::string>& files) {
     }
   }
 
-  // If --out_file or --out_folder is specified, dumps the structure to a file
-  // or files in a folder.
+  // If --out is specified, dumps the structure to files in a directory.
   {
-    const std::string out_file = absl::GetFlag(FLAGS_out);
-    const std::string out_folder = absl::GetFlag(FLAGS_out_folder);
+    const std::string out = absl::GetFlag(FLAGS_out);
     const std::string compressor = absl::GetFlag(FLAGS_compressor);
-
-    // If --check is not specified, it is OK to invalidate kmer_set_set.
-    const bool clear = !check;
+    const std::string extension = absl::GetFlag(FLAGS_extension);
 
     absl::Status status;
 
-    if (!out_file.empty()) {
-      status =
-          kmer_set_set.Dump(out_file, compressor, canonical, clear, n_workers);
-
-    } else if (!out_folder.empty()) {
-      const std::string out_extension = absl::GetFlag(FLAGS_out_extension);
-
-      status = kmer_set_set.DumpToFolder(out_folder, compressor, out_extension,
-                                         canonical, clear, n_workers);
+    if (!out.empty()) {
+      status = kmer_set_set.Dump(out, compressor, extension, canonical, true,
+                                 n_workers);
     }
 
     if (!status.ok()) {
       spdlog::error("failed to dump kmer_set_set: {}", status.ToString());
       std::exit(1);
-    }
-  }
-
-  if (check) {
-    spdlog::info("dumping kmer_set_set");
-    std::vector<std::string> dumped =
-        kmer_set_set.Dump(canonical, true, n_workers);
-    spdlog::info("dumped kmer_set_set");
-
-    spdlog::info("loading");
-    KmerSetSet<K, N, KeyType> loaded = KmerSetSet<K, N, KeyType>::Load(
-        std::move(dumped), canonical, n_workers);
-    spdlog::info("loaded");
-
-    for (int i = 0; i < n_datasets; i++) {
-      // NOLINTNEXTLINE
-      if (kmer_sets_immutable[i].ToKmerSet(n_workers).Equals(
-              loaded.Get(i, n_workers), n_workers)) {
-        spdlog::info("loaded.Get({}, n_workers): ok", i);
-      } else {
-        spdlog::error("loaded.Get({}, n_workers): failed", i);
-        std::exit(1);
-      }
     }
   }
 }
