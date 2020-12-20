@@ -38,6 +38,7 @@ foreach (
         NAME
         kmerset-compress
         kmerset-decompress
+        kmerset-immutable
         kmerset-stat
         kmersetset-compress
         kmersetset-decompress
