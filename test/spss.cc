@@ -1,5 +1,6 @@
 #include "core/spss.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -8,16 +9,18 @@
 #include "core/kmer_set.h"
 #include "gtest/gtest.h"
 
+// Randomly constructs a KmerSet with n kmers.
 template <int K, int N, typename KeyType>
-KmerSet<K, N, KeyType> GetTestData() {
+KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
   absl::InsecureBitGen bitgen;
 
   KmerSet<K, N, KeyType> kmer_set;
 
-  for (int i = 0; i < absl::Uniform(bitgen, 0, 10000); i++) {
+  while (true) {
     std::string s;
 
-    for (int j = 0; j < absl::Uniform(bitgen, 0, 100); j++) {
+    for (int j = 0; j < absl::Uniform(absl::IntervalClosed, bitgen, 1, 100);
+         j++) {
       s += GetRandomKmer<K>().String();
     }
 
@@ -27,11 +30,13 @@ KmerSet<K, N, KeyType> GetTestData() {
     }
 
     for (int j = 0; j < static_cast<int>(s.size()) - K + 1; j++) {
-      kmer_set.Add(Kmer<K>(s.substr(j, K)).Canonical());
+      Kmer<K> kmer(s.substr(j, K));
+      if (canonical) kmer = kmer.Canonical();
+      kmer_set.Add(kmer);
+
+      if (kmer_set.Size() == n) return kmer_set;
     }
   }
-
-  return kmer_set;
 }
 
 TEST(Unitigs, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
@@ -39,11 +44,14 @@ TEST(Unitigs, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
 TEST(Unitigs, GetUnitigsRandom) {
   const int K = 9;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      false);
 
-  std::vector<std::string> unitigs = GetUnitigs(kmer_set, 1);
+  std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
 
   KmerSet<K, N, KeyType> reconstructed;
 
@@ -64,11 +72,14 @@ TEST(Unitigs, GetUnitigsRandom) {
 TEST(Unitigs, GetUnitigsCanonicalRandom) {
   const int K = 9;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      true);
 
-  std::vector<std::string> unitigs = GetUnitigsCanonical(kmer_set, 1);
+  std::vector<std::string> unitigs = GetUnitigsCanonical(kmer_set, n_workers);
 
   KmerSet<K, N, KeyType> reconstructed;
 
@@ -83,17 +94,20 @@ TEST(Unitigs, GetUnitigsCanonicalRandom) {
     }
   }
 
-  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
 TEST(Unitigs, GetSPSSCanonicalRandom) {
   const int K = 9;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      true);
 
-  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, false, 1);
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, false, n_workers);
 
   KmerSet<K, N, KeyType> reconstructed;
 
@@ -108,17 +122,20 @@ TEST(Unitigs, GetSPSSCanonicalRandom) {
     }
   }
 
-  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
 TEST(Unitigs, GetSPSSCanonicalFastRandom) {
   const int K = 9;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      true);
 
-  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, 1);
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, n_workers);
 
   KmerSet<K, N, KeyType> reconstructed;
 
@@ -133,20 +150,23 @@ TEST(Unitigs, GetSPSSCanonicalFastRandom) {
     }
   }
 
-  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
 TEST(Unitigs, GetKmerSetFromSPSSRandom) {
   const int K = 9;
   const int N = 10;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
 
-  KmerSet<K, N, KeyType> kmer_set = GetTestData<K, N, KeyType>();
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      true);
 
-  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, 1);
+  std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, n_workers);
 
   KmerSet<K, N, KeyType> reconstructed =
-      GetKmerSetFromSPSS<K, N, KeyType>(spss, true, 4);
+      GetKmerSetFromSPSS<K, N, KeyType>(spss, true, n_workers);
 
-  ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
