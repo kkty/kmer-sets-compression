@@ -2,6 +2,7 @@
 #define CORE_INT_SET_H_
 
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -20,7 +21,7 @@ class IntSet {
   IntSet(const IntSet& other)
       : first_(other.first_),
         n_(other.n_),
-        compressed_diff_(new uint8_t[other.compressed_diff_size_]),
+        compressed_diff_(new std::uint8_t[other.compressed_diff_size_]),
         compressed_diff_size_(other.compressed_diff_size_) {
     std::memcpy(compressed_diff_, other.compressed_diff_,
                 compressed_diff_size_);
@@ -43,7 +44,7 @@ class IntSet {
     first_ = other.first_;
     n_ = other.n_;
     compressed_diff_size_ = other.compressed_diff_size_;
-    compressed_diff_ = new uint8_t[compressed_diff_size_];
+    compressed_diff_ = new std::uint8_t[compressed_diff_size_];
 
     std::memcpy(compressed_diff_, other.compressed_diff_,
                 compressed_diff_size_);
@@ -76,13 +77,14 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff(n_ - 1);
+    std::vector<std::uint32_t> diff(n_ - 1);
 
-    for (int64_t i = 0; i < n_ - 1; i++) {
+    for (std::int64_t i = 0; i < n_ - 1; i++) {
       diff[i] = v[i + 1] - v[i];
     }
 
-    compressed_diff_ = new uint8_t[streamvbyte_max_compressedbytes(n_ - 1)];
+    compressed_diff_ =
+        new std::uint8_t[streamvbyte_max_compressedbytes(n_ - 1)];
 
     compressed_diff_size_ =
         streamvbyte_encode(diff.data(), n_ - 1, compressed_diff_);
@@ -99,10 +101,10 @@ class IntSet {
   }
 
   // Returns the number of elements in the set.
-  int64_t Size() const { return n_; }
+  std::int64_t Size() const { return n_; }
 
   // Returns the number of used bytes.
-  int64_t Bytes() const { return compressed_diff_size_; }
+  std::int64_t Bytes() const { return compressed_diff_size_; }
 
   // Executes "func" for each element in the set.
   template <typename FuncType>
@@ -110,7 +112,7 @@ class IntSet {
     if (n_ == 0) return;
 
     T current = first_;
-    std::vector<uint32_t> diff = Diff();
+    std::vector<std::uint32_t> diff = Diff();
     auto it = diff.begin();
 
     while (true) {
@@ -130,8 +132,8 @@ class IntSet {
 
     if (lhs.n_ == 0 || rhs.n_ == 0) return;
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<std::uint32_t> diff_lhs = lhs.Diff();
+    std::vector<std::uint32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -165,8 +167,8 @@ class IntSet {
   }
 
   // Returns the size of the overlap between the two IntSets.
-  int64_t IntersectionSize(const IntSet& other) const {
-    int64_t size = 0;
+  std::int64_t IntersectionSize(const IntSet& other) const {
+    std::int64_t size = 0;
     Intersection(other, [&](T) { size++; });
     return size;
   }
@@ -197,8 +199,8 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<std::uint32_t> diff_lhs = lhs.Diff();
+    std::vector<std::uint32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -297,8 +299,8 @@ class IntSet {
       return;
     }
 
-    std::vector<uint32_t> diff_lhs = lhs.Diff();
-    std::vector<uint32_t> diff_rhs = rhs.Diff();
+    std::vector<std::uint32_t> diff_lhs = lhs.Diff();
+    std::vector<std::uint32_t> diff_rhs = rhs.Diff();
 
     auto it_lhs = diff_lhs.begin();
     auto it_rhs = diff_rhs.begin();
@@ -359,18 +361,18 @@ class IntSet {
   }
 
  private:
-  T first_;
-  int64_t n_ = 0;
+  T first_ = 0;
+  std::int64_t n_ = 0;
 
-  std::vector<uint32_t> Diff() const {
+  std::vector<std::uint32_t> Diff() const {
     assert(n_ > 0);
-    std::vector<uint32_t> diff(n_ - 1);
+    std::vector<std::uint32_t> diff(n_ - 1);
     streamvbyte_decode(compressed_diff_, diff.data(), n_ - 1);
     return diff;
   }
 
-  uint8_t* compressed_diff_ = nullptr;
-  int64_t compressed_diff_size_ = 0;
+  std::uint8_t* compressed_diff_ = nullptr;
+  std::int64_t compressed_diff_size_ = 0;
 };
 
 #endif
