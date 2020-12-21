@@ -1297,19 +1297,19 @@ KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
 
   for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
     threads.emplace_back([&, range] {
-      std::vector<Kmer<K>> buf;
+      KmerSet<K, N, KeyType> buf;
 
       for (std::int64_t i : range) {
         const std::string& s = spss[i];
         for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
           Kmer<K> kmer(s.substr(j, K));
           if (canonical) kmer = kmer.Canonical();
-          buf.push_back(kmer);
+          buf.Add(kmer);
         }
       }
 
       std::lock_guard lck(mu);
-      kmer_set.Add(KmerSet<K, N, KeyType>(buf, 1 + done_count), 1 + done_count);
+      kmer_set.Add(buf, 1 + done_count);
       done_count += 1;
     });
   }
