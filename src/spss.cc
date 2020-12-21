@@ -18,7 +18,7 @@ ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, buckets, 1, "number of buckets for SPSS calculation");
-ABSL_FLAG(int, repests, 1, "number of repeats");
+ABSL_FLAG(int, repeats, 1, "number of repeats");
 
 template <int K, int N, typename KeyType>
 void Main(const std::string& file_name) {
@@ -29,7 +29,7 @@ void Main(const std::string& file_name) {
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const int n_buckets = absl::GetFlag(FLAGS_buckets);
   const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
-  const int n_repeats = absl::GetFlag(FLAGS_repests);
+  const int n_repeats = absl::GetFlag(FLAGS_repeats);
 
   KmerSet<K, N, KeyType> kmer_set;
 
@@ -44,6 +44,13 @@ void Main(const std::string& file_name) {
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
+  spdlog::info("constructing unitigs");
+
+  const std::vector<std::string> unitigs =
+      GetUnitigsCanonical(kmer_set, n_workers);
+
+  spdlog::info("constructed unitigs");
+
   for (int i = 0; i < n_repeats; i++) {
     for (bool fast : std::vector<bool>{false, true}) {
       spdlog::info("fast = {}", fast);
@@ -54,7 +61,8 @@ void Main(const std::string& file_name) {
         spdlog::info("constructing spss");
         spdlog::stopwatch sw;
 
-        spss = GetSPSSCanonical(kmer_set, fast, n_workers, n_buckets);
+        spss = GetSPSSCanonical<K, N, KeyType>(unitigs, fast, n_workers,
+                                               n_buckets);
 
         spdlog::info("constructed spss: elapsed = {}", sw);
 

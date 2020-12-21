@@ -373,16 +373,11 @@ std::vector<std::string> GetUnitigsCanonical(
   return unitigs;
 }
 
-// Constructs a small-weight SPSS from a set of canonical kmers.
+// Constructs a small-weight SPSS from unitigs.
 template <int K, int N, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(
-    const KmerSet<K, N, KeyType>& kmer_set, bool fast, int n_workers,
+    const std::vector<std::string>& unitigs, bool fast, int n_workers,
     int n_buckets = 64) {
-  spdlog::debug("constructing unitigs");
-  const std::vector<std::string> unitigs =
-      GetUnitigsCanonical(kmer_set, n_workers);
-  spdlog::debug("constructed unitigs");
-
   const std::int64_t n = unitigs.size();
 
   // Considers a graph where node i represents unitigs[i].
@@ -1120,6 +1115,21 @@ std::vector<std::string> GetSPSSCanonical(
   return spss;
 }
 
+// Constructs a small-weight SPSS from a set of canonical kmers.
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSSCanonical(
+    const KmerSet<K, N, KeyType>& kmer_set, bool fast, int n_workers,
+    int n_buckets = 64) {
+  spdlog::debug("constructing unitigs");
+
+  const std::vector<std::string> unitigs =
+      GetUnitigsCanonical(kmer_set, n_workers);
+
+  spdlog::debug("constructed unitigs");
+
+  return GetSPSSCanonical<K, N, KeyType>(unitigs, fast, n_workers, n_buckets);
+}
+
 // Constructs unitigs from a kmer set.
 template <int K, int N, typename KeyType>
 std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
@@ -1287,19 +1297,19 @@ KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
 
   for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
     threads.emplace_back([&, range] {
-      KmerSet<K, N, KeyType> buf;
+      std::vector<Kmer<K>> buf;
 
       for (std::int64_t i : range) {
         const std::string& s = spss[i];
         for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
           Kmer<K> kmer(s.substr(j, K));
           if (canonical) kmer = kmer.Canonical();
-          buf.Add(kmer);
+          buf.push_back(kmer);
         }
       }
 
       std::lock_guard lck(mu);
-      kmer_set.Add(buf, 1 + done_count);
+      kmer_set.Add(KmerSet<K, N, KeyType>(buf, 1 + done_count), 1 + done_count);
       done_count += 1;
     });
   }
