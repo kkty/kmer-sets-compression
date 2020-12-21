@@ -1,22 +1,24 @@
 #include "core/spss.h"
 
 #include <cstdint>
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_compact.h"
+#include "io.h"
 #include "log.h"
 #include "spdlog/spdlog.h"
+#include "spdlog/stopwatch.h"
 
 ABSL_FLAG(int, k, 15, "the length of kmers");
 ABSL_FLAG(bool, debug, false, "enable debugging messages");
 ABSL_FLAG(std::string, decompressor, "", "specify decompressor");
 ABSL_FLAG(int, workers, 1, "number of workers");
 ABSL_FLAG(int, buckets, 1, "number of buckets for SPSS calculation");
-ABSL_FLAG(bool, fast, false, "enable fast construction");
+ABSL_FLAG(int, repests, 1, "number of repeats");
 
 template <int K, int N, typename KeyType>
 void Main(const std::string& file_name) {
@@ -26,53 +28,68 @@ void Main(const std::string& file_name) {
 
   const int n_workers = absl::GetFlag(FLAGS_workers);
   const int n_buckets = absl::GetFlag(FLAGS_buckets);
-  const bool fast = absl::GetFlag(FLAGS_fast);
+  const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
+  const int n_repeats = absl::GetFlag(FLAGS_repests);
 
-  KmerSetCompact<K, N, KeyType> kmer_set_compact;
+  KmerSet<K, N, KeyType> kmer_set;
 
   {
-    spdlog::info("constructing kmer_set_compact");
+    absl::StatusOr<KmerSet<K, N, KeyType>> statusor =
+        GetKmerSetFromFile<K, N, KeyType>(file_name, decompressor, true,
+                                          n_workers);
 
-    const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
-
-    absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-        KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
-
-    if (!statusor.ok()) {
-      spdlog::error("failed to load kmer_set_compact from file: {}",
-                    statusor.status().ToString());
-      std::exit(1);
-    }
-
-    kmer_set_compact = std::move(statusor).value();
-
-    spdlog::info("constructed kmer_set_compact");
+    kmer_set = std::move(statusor).value();
   }
-
-  spdlog::info("constructing kmer_set");
-  const KmerSet<K, N, KeyType> kmer_set =
-      kmer_set_compact.ToKmerSet(true, n_workers);
-  spdlog::info("constructed kmer_set");
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
-  spdlog::info("constructing spss");
-  std::vector<std::string> spss =
-      GetSPSSCanonical(kmer_set, fast, n_workers, n_buckets);
-  spdlog::info("constructed spss");
+  for (int i = 0; i < n_repeats; i++) {
+    for (bool fast : std::vector<bool>{false, true}) {
+      spdlog::info("fast = {}", fast);
 
-  {
-    std::int64_t total_size = 0;
-    for (const std::string& s : spss) total_size += s.length();
-    spdlog::info("total_size = {}", total_size);
-  }
+      std::vector<std::string> spss;
 
-  {
-    const KmerSet<K, N, KeyType> reconstructed =
-        GetKmerSetFromSPSS<K, N, KeyType>(spss, true, n_workers);
-    spdlog::info("reconstructed.Size() = {}", reconstructed.Size());
-    spdlog::info("reconstructed.Hash() = {}", reconstructed.Hash(n_workers));
+      {
+        spdlog::info("constructing spss");
+        spdlog::stopwatch sw;
+
+        spss = GetSPSSCanonical(kmer_set, fast, n_workers, n_buckets);
+
+        spdlog::info("constructed spss: elapsed = {}", sw);
+
+        std::cout << sw.elapsed().count() << ' ';
+      }
+
+      {
+        std::int64_t total_size = 0;
+        for (const std::string& s : spss) total_size += s.length();
+
+        spdlog::info("total_size = {}", total_size);
+
+        std::cout << total_size << ' ';
+      }
+
+      {
+        spdlog::info("reconstructing");
+        spdlog::stopwatch sw;
+
+        const KmerSet<K, N, KeyType> reconstructed =
+            GetKmerSetFromSPSS<K, N, KeyType>(spss, true, n_workers);
+
+        spdlog::info("reconstructed: elapsed = {}", sw);
+
+        std::cout << sw.elapsed().count() << ' ';
+
+        const bool is_equal = kmer_set.Equals(reconstructed, n_workers);
+
+        spdlog::info("is_equal = {}", is_equal);
+
+        std::cout << is_equal << ' ';
+      }
+    }
+
+    std::cout << std::endl;
   }
 }
 
