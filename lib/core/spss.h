@@ -614,19 +614,28 @@ std::vector<std::string> GetSPSSCanonical(
 
           std::int64_t next;
           bool is_same_side;
-          std::tie(next, is_same_side) = edges_right.front();
+          bool found = false;
 
-          // A loop was found.
-          if (next == i) break;
+          for (auto it = edges_right.begin(); it != edges_right.end(); ++it) {
+            std::tie(next, is_same_side) = *it;
 
-          // Stops if the side of the next node was already used.
-          if (is_same_side) {
-            if (edge_right.find(next) != edge_right.end()) break;
-          } else {
-            if (edge_left.find(next) != edge_left.end()) break;
+            // Skips if it creates a loop.
+            if (next == i) continue;
+
+            // Skips if the side of the next node was already used.
+            if (is_same_side) {
+              if (edge_right.find(next) != edge_right.end()) continue;
+            } else {
+              if (edge_left.find(next) != edge_left.end()) continue;
+            }
+
+            found = true;
+            break;
           }
 
-          // Extends the path.
+          if (!found) break;
+
+          // Extends the path to next.
 
           edge_right[current] = std::make_pair(next, is_same_side);
 
@@ -650,19 +659,28 @@ std::vector<std::string> GetSPSSCanonical(
 
           std::int64_t next;
           bool is_same_side;
-          std::tie(next, is_same_side) = edges_left.front();
+          bool found = false;
 
-          // A loop was found.
-          if (next == i) break;
+          for (auto it = edges_left.begin(); it != edges_left.end(); ++it) {
+            std::tie(next, is_same_side) = *it;
 
-          // Stops if the side of the next node was already used.
-          if (is_same_side) {
-            if (edge_left.find(next) != edge_left.end()) break;
-          } else {
-            if (edge_right.find(next) != edge_right.end()) break;
+            // Skips if it creates a loop.
+            if (next == i) continue;
+
+            // Skips if the side of the next node was already used.
+            if (is_same_side) {
+              if (edge_left.find(next) != edge_left.end()) continue;
+            } else {
+              if (edge_right.find(next) != edge_right.end()) continue;
+            }
+
+            found = true;
+            break;
           }
 
-          // Extends the path.
+          if (!found) break;
+
+          // Extends the path to next.
 
           edge_left[current] = std::make_pair(next, is_same_side);
 
