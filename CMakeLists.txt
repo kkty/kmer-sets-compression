@@ -11,7 +11,7 @@ set(CMAKE_LINKER_FLAGS_DEBUG "-fsanitize=address")
 find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system thread)
+find_package(Boost REQUIRED COMPONENTS thread)
 find_package(mimalloc REQUIRED)
 
 find_library(streamvbyte_LIBRARIES streamvbyte_static REQUIRED)
