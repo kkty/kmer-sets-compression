@@ -26,12 +26,15 @@ class KmerSetImmutable {
       : buckets_(kBucketsNum) {
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        std::vector<KeyType> v(kmer_set.buckets_[i].begin(),
-                               kmer_set.buckets_[i].end());
-        std::sort(v.begin(), v.end());
-        buckets_[i] = IntSet<KeyType>(v);
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          std::vector<KeyType> v(kmer_set.buckets_[i].begin(),
+                                 kmer_set.buckets_[i].end());
+          std::sort(v.begin(), v.end());
+          buckets_[i] = IntSet<KeyType>(v);
+        }
       });
     }
 
@@ -68,10 +71,14 @@ class KmerSetImmutable {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        std::vector<KeyType> v = buckets_[i].Decode();
-        kmer_set.buckets_[i] = absl::flat_hash_set<KeyType>(v.begin(), v.end());
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          std::vector<KeyType> v = buckets_[i].Decode();
+          kmer_set.buckets_[i] =
+              absl::flat_hash_set<KeyType>(v.begin(), v.end());
+        }
       });
     }
 
@@ -86,9 +93,12 @@ class KmerSetImmutable {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        count += buckets_[i].IntersectionSize(other.buckets_[i]);
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          count += buckets_[i].IntersectionSize(other.buckets_[i]);
+        }
       });
     }
 
@@ -149,9 +159,12 @@ class KmerSetImmutable {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        kmer_set_immutable.buckets_[i] = buckets_[i].Add(other.buckets_[i]);
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          kmer_set_immutable.buckets_[i] = buckets_[i].Add(other.buckets_[i]);
+        }
       });
     }
 
@@ -166,9 +179,12 @@ class KmerSetImmutable {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        kmer_set_immutable.buckets_[i] = buckets_[i].Sub(other.buckets_[i]);
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          kmer_set_immutable.buckets_[i] = buckets_[i].Sub(other.buckets_[i]);
+        }
       });
     }
 
