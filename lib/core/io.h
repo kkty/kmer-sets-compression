@@ -65,11 +65,9 @@ absl::StatusOr<std::vector<std::string>> ReadLines(
     }
   }
 
-  std::vector<std::string> lines = absl::StrSplit(s, '\n');
+  if (!s.empty() && s.back() == '\n') s.pop_back();
 
-  if (!lines.empty()) {
-    lines.pop_back();
-  }
+  std::vector<std::string> lines = absl::StrSplit(s, '\n');
 
   return lines;
 }
