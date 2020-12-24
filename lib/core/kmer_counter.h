@@ -10,6 +10,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -88,6 +89,13 @@ class KmerCounter {
           // "read" is not needed anymore.
           std::string().swap(read);
         }
+
+        if (n_workers == 1) {
+          kmer_counter.buckets_ = std::move(buf);
+          return;
+        }
+
+        // Moves from buffer.
 
         std::vector<bool> done(kBucketsNum);
         int done_count = 0;
@@ -200,16 +208,11 @@ class KmerCounter {
             buf.push_back(key);
           }
 
-          {
-            std::lock_guard lck(mu);
-            for (KeyType key : buf) {
-              set.buckets_[bucket_id].insert(key);
-            }
-          }
+          set.buckets_[bucket_id].insert(buf.begin(), buf.end());
         },
         n_workers);
 
-    return {set, static_cast<std::int64_t>(cutoff_count)};
+    return std::make_pair(set, static_cast<std::int64_t>(cutoff_count));
   }
 
   // Returns the count for a kmer.
