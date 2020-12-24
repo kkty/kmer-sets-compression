@@ -1,6 +1,7 @@
 #include "core/spss.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -8,15 +9,17 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "core/kmer_set.h"
+#include "flags.h"
 #include "io.h"
 #include "log.h"
 #include "spdlog/spdlog.h"
 #include "spdlog/stopwatch.h"
 
-ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(std::string, decompressor, "", "specify decompressor");
-ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(int, k, 15, GetFlagMessage("k"));
+ABSL_FLAG(bool, debug, false, GetFlagMessage("debug"));
+ABSL_FLAG(std::string, decompressor, "", GetFlagMessage("decompressor"));
+ABSL_FLAG(int, workers, 1, GetFlagMessage("workers"));
+
 ABSL_FLAG(int, buckets, 1, "number of buckets for SPSS calculation");
 ABSL_FLAG(int, repeats, 1, "number of repeats");
 

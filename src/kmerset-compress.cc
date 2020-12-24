@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 
@@ -12,16 +13,17 @@
 #include "log.h"
 #include "spdlog/spdlog.h"
 
-ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(std::string, decompressor, "",
-          "specify decompressor for FASTA files");
-ABSL_FLAG(std::string, compressor, "", "specify compressor for output");
-ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
-ABSL_FLAG(int, cutoff, 1, "cut off threshold");
-ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(int, k, 15, GetFlagMessage("k"));
+ABSL_FLAG(bool, debug, false, GetFlagMessage("debug"));
+ABSL_FLAG(std::string, decompressor, "", GetFlagMessage("decompressor"));
+ABSL_FLAG(std::string, compressor, "", GetFlagMessage("compressor"));
+ABSL_FLAG(int, workers, 1, GetFlagMessage("workers"));
+ABSL_FLAG(bool, canonical, true, GetFlagMessage("canonical"));
+
+ABSL_FLAG(int, cutoff, 1,
+          "ignore k-mers that appear less often than this value");
 ABSL_FLAG(bool, check, false,
-          "does compression & decompression to see if it is working");
+          "does compression & decompression to see if it is working correctly");
 ABSL_FLAG(std::string, out, "", "output file name");
 
 template <int K, int N, typename KeyType>
@@ -119,13 +121,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      Main<15, 14, uint16_t>(file_name);
+      Main<15, 14, std::uint16_t>(file_name);
       break;
     case 19:
-      Main<19, 10, uint32_t>(file_name);
+      Main<19, 10, std::uint32_t>(file_name);
       break;
     case 23:
-      Main<23, 14, uint32_t>(file_name);
+      Main<23, 14, std::uint32_t>(file_name);
       break;
     default:
       spdlog::error("unsupported k value");

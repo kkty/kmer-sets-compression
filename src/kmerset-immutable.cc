@@ -14,11 +14,12 @@
 #include "spdlog/spdlog.h"
 #include "spdlog/stopwatch.h"
 
-ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(int, workers, 1, "number of workers");
-ABSL_FLAG(std::string, decompressor, "", "program to decompress input files");
-ABSL_FLAG(bool, canonical, false, "use canonical kmers");
+ABSL_FLAG(int, k, 15, GetFlagMessage("k"));
+ABSL_FLAG(bool, debug, false, GetFlagMessage("debug"));
+ABSL_FLAG(int, workers, 1, GetFlagMessage("workers"));
+ABSL_FLAG(std::string, decompressor, "", GetFlagMessage("decompressor"));
+ABSL_FLAG(bool, canonical, true, GetFlagMessage("canonical"));
+
 ABSL_FLAG(int, repeats, 100, "number of repeats");
 
 template <int K, int N, typename KeyType>

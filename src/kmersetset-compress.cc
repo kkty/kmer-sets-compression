@@ -17,12 +17,12 @@
 #include "log.h"
 #include "spdlog/spdlog.h"
 
-ABSL_FLAG(int, k, 15, "the length of kmers");
-ABSL_FLAG(bool, debug, false, "enable debugging messages");
-ABSL_FLAG(std::string, decompressor, "",
-          "specify decompressor for input files");
-ABSL_FLAG(bool, canonical, false, "count canonical k-mers");
-ABSL_FLAG(int, workers, 1, "number of workers");
+ABSL_FLAG(int, k, 15, GetFlagMessage("k"));
+ABSL_FLAG(bool, debug, false, GetFlagMessage("debug"));
+ABSL_FLAG(std::string, decompressor, "", GetFlagMessage("decompressor"));
+ABSL_FLAG(int, workers, 1, GetFlagMessage("workers"));
+ABSL_FLAG(bool, canonical, true, GetFlagMessage("canonical"));
+
 ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
 ABSL_FLAG(int, iteration, 1, "number of iterations for KmerSetSet");
 ABSL_FLAG(std::string, out, "", "directory path to save dumped files");
@@ -53,8 +53,8 @@ void Main(const std::vector<std::string>& files) {
     spdlog::info("constructing kmer_set");
 
     absl::StatusOr<KmerSet<K, N, KeyType>> statusor =
-        GetKmerSetFromFile<K, N, KeyType>(file, decompressor,
-                                                         canonical, n_workers);
+        GetKmerSetFromFile<K, N, KeyType>(file, decompressor, canonical,
+                                          n_workers);
 
     if (!statusor.ok()) {
       spdlog::error("failed to read file: {}", statusor.status().ToString());
@@ -166,13 +166,13 @@ int main(int argc, char** argv) {
 
   switch (k) {
     case 15:
-      Main<15, 14, uint16_t>(files);
+      Main<15, 14, std::uint16_t>(files);
       break;
     case 19:
-      Main<19, 10, uint32_t>(files);
+      Main<19, 10, std::uint32_t>(files);
       break;
     case 23:
-      Main<23, 14, uint32_t>(files);
+      Main<23, 14, std::uint32_t>(files);
       break;
     default:
       spdlog::error("unsupported k value");

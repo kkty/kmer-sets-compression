@@ -21,4 +21,35 @@ std::vector<std::string> ParseFlags(int argc, char* argv[]) {
   return v;
 }
 
+// Returns a flag message shared by multiple executables.
+std::string GetFlagMessage(const std::string& s) {
+  if (s == "k") {
+    return "the length of k-mers";
+  }
+
+  if (s == "debug") {
+    return "enable debugging messages";
+  }
+
+  if (s == "compressor") {
+    return "an program to compress output files; e.g., \"bzip2\" for bzip2, "
+           "\"\" for no compression";
+  }
+
+  if (s == "decompressor") {
+    return "an program to decompress input files; e.g., \"bzip2 -d\" for "
+           "bzip2, \"\" for no decompression";
+  }
+
+  if (s == "workers") {
+    return "number of threads to use";
+  }
+
+  if (s == "canonical") {
+    return "set this flag when handling canonical k-mers";
+  }
+
+  return "";
+}
+
 #endif
