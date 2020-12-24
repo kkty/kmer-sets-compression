@@ -8,6 +8,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "absl/flags/usage.h"
+#include "absl/strings/str_format.h"
 #include "core/kmer_set.h"
 #include "flags.h"
 #include "io.h"
@@ -105,6 +107,11 @@ void Main(const std::string& file_name) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Runs a benchmark for SPSS construction using a single "
+                      "k-mer set. Usage: %s [options] <path to file>",
+                      argv[0]));
+
   const std::string file_name = absl::ParseCommandLine(argc, argv)[1];
 
   const int k = absl::GetFlag(FLAGS_k);

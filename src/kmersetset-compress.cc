@@ -5,8 +5,10 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/flags/usage.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
 #include "core/kmer_set.h"
@@ -160,6 +162,11 @@ void Main(const std::vector<std::string>& files) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Compresses multiple k-mer sets. Usage: %s [options] "
+                      "<paths to file> <path to file> ...",
+                      argv[0]));
+
   const std::vector<std::string> files = ParseFlags(argc, argv);
 
   const int k = absl::GetFlag(FLAGS_k);

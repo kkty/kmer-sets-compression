@@ -5,7 +5,9 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/flags/usage.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
 #include "flags.h"
@@ -70,6 +72,11 @@ void Main(const std::vector<std::string>& files) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Prints the metadata of a k-mer set. Usage: %s [options] "
+                      "<path to file>",
+                      argv[0]));
+
   const std::vector<std::string> files = ParseFlags(argc, argv);
 
   const int k = absl::GetFlag(FLAGS_k);

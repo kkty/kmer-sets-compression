@@ -5,7 +5,9 @@
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
+#include "absl/flags/usage.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
@@ -108,6 +110,11 @@ void Main(const std::string& file_name) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Reads a FASTA file and constructs a set of k-mers. "
+                      "Usage: %s [options] <path to file>",
+                      argv[0]));
+
   const std::vector<std::string> args = ParseFlags(argc, argv);
 
   if (args.size() != 1) {

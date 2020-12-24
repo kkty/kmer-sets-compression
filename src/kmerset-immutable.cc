@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/flags/usage.h"
+#include "absl/strings/str_format.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_immutable.h"
 #include "flags.h"
@@ -197,6 +199,11 @@ void Main(const std::string& file1, const std::string& file2) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Runs a benchmark for intersecting 2 k-mer sets. Usage: "
+                      "%s [options] <path to file> <path to file>",
+                      argv[0]));
+
   const std::vector<std::string> files = ParseFlags(argc, argv);
 
   const int k = absl::GetFlag(FLAGS_k);

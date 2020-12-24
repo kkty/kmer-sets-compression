@@ -4,7 +4,9 @@
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/flags/usage.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
@@ -77,6 +79,11 @@ void Main(const std::string& directory_name) {
 }
 
 int main(int argc, char** argv) {
+  absl::SetProgramUsageMessage(
+      absl::StrFormat("Decompresses the output of \"kmerset-compress\". Usage: "
+                      "%s [options] <path to directory>",
+                      argv[0]));
+
   std::string directory_name;
 
   {
