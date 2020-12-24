@@ -111,17 +111,25 @@ class KmerSetSet {
       boost::asio::thread_pool pool(n_workers);
       std::mutex mu;
 
+      std::vector<std::pair<int, int>> pairs;
+
       for (int i = 0; i < n; i++) {
         for (int j = i + 1; j < n; j++) {
-          boost::asio::post(pool, [&, i, j] {
-            spdlog::debug("calculating weight: i = {}, j = {}", i, j);
-            std::int64_t weight = GetEdgeWeight(i, j);
-            spdlog::debug("calculated weight: i = {}, j = {}", i, j);
-
-            std::lock_guard lck(mu);
-            weights[{i, j}] = weight;
-          });
+          pairs.emplace_back(i, j);
         }
+      }
+
+      for (const Range& range :
+           Range(0, pairs.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
+          for (int i : range) {
+            int j, k;
+            std::tie(j, k) = pairs[i];
+            std::int64_t weight = GetEdgeWeight(j, k);
+            std::lock_guard lck(mu);
+            weights[std::make_pair(j, k)] = weight;
+          }
+        });
       }
 
       pool.join();
@@ -201,34 +209,37 @@ class KmerSetSet {
       {
         spdlog::debug("updating weights");
 
-        boost::asio::thread_pool pool(n_workers);
-        std::mutex mu;
+        std::vector<std::pair<int, int>> pairs;
 
         for (int k = 0; k < n; k++) {
           if (i == k) continue;
 
-          boost::asio::post(pool, [&, k] {
-            std::int64_t weight = GetEdgeWeight(i, k);
-            std::lock_guard lck(mu);
-            weights[{std::min(i, k), std::max(i, k)}] = weight;
-          });
+          pairs.emplace_back(std::min(i, k), std::max(i, k));
         }
 
         for (int k = 0; k < n; k++) {
           if (j == k) continue;
 
-          boost::asio::post(pool, [&, k] {
-            std::int64_t weight = GetEdgeWeight(j, k);
-            std::lock_guard lck(mu);
-            weights[{std::min(j, k), std::max(j, k)}] = weight;
-          });
+          pairs.emplace_back(std::min(j, k), std::max(j, k));
         }
 
         for (int k = 0; k < n; k++) {
-          boost::asio::post(pool, [&, k] {
-            std::int64_t weight = GetEdgeWeight(k, n);
-            std::lock_guard lck(mu);
-            weights[{k, n}] = weight;
+          pairs.emplace_back(k, n);
+        }
+
+        boost::asio::thread_pool pool(n_workers);
+        std::mutex mu;
+
+        for (const Range& range :
+             Range(0, pairs.size()).Split(n_workers * n_workers)) {
+          boost::asio::post(pool, [&, range] {
+            for (int i : range) {
+              int j, k;
+              std::tie(j, k) = pairs[i];
+              std::int64_t weight = GetEdgeWeight(j, k);
+              std::lock_guard lck(mu);
+              weights[std::make_pair(j, k)] = weight;
+            }
           });
         }
 
