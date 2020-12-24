@@ -128,10 +128,13 @@ class KmerSetImmutable {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] {
-        kmer_set_immutable.buckets_[i] =
-            buckets_[i].Intersection(other.buckets_[i]);
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          kmer_set_immutable.buckets_[i] =
+              buckets_[i].Intersection(other.buckets_[i]);
+        }
       });
     }
 
