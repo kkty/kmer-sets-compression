@@ -38,8 +38,8 @@ foreach (
         NAME
         kmerset-compress
         kmerset-decompress
-        kmerset-immutable
         kmerset-intersection-approximation
+        kmerset-intersection-performance
         kmerset-stat
         kmersetset-compress
         kmersetset-decompress
