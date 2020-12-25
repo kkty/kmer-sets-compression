@@ -32,13 +32,13 @@ std::string GetFlagMessage(const std::string& s) {
   }
 
   if (s == "compressor") {
-    return "an program to compress output files; e.g., \"bzip2\" for bzip2, "
-           "\"\" for no compression";
+    return "a program to compress output files; e.g., \"bzip2\" for bzip2, "
+           "\"gzip\" for gzip, and \"\" for no compression";
   }
 
   if (s == "decompressor") {
-    return "an program to decompress input files; e.g., \"bzip2 -d\" for "
-           "bzip2, \"\" for no decompression";
+    return "a program to decompress input files; e.g., \"bzip2 -d\" for "
+           "bzip2, \"gzip -d\" for gzip, and \"\" for no decompression";
   }
 
   if (s == "workers") {
