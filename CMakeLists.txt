@@ -40,7 +40,7 @@ foreach (
         kmerset-decompress
         kmerset-intersection-approximation
         kmerset-intersection-performance
-        kmerset-stat
+        kmerset-similarity
         kmersetset-compress
         kmersetset-decompress
         search

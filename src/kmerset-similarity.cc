@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <iomanip>
 #include <string>
+#include <utility>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
@@ -116,6 +118,9 @@ void Main(const std::vector<std::string>& files) {
           (sub_i.Size() + sub_j.Size() + intersection.Size());
 
       spdlog::info("similarity = {}", similarity);
+
+      std::cout << std::setprecision(5);
+      std::cout << i << ' ' << j << ' ' << similarity << std::endl;
     }
   }
 }
