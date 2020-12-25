@@ -36,7 +36,7 @@ link_libraries(
 
 foreach (
         NAME
-        kmerset-compress
+        kmerset-build
         kmerset-decompress
         kmerset-intersection-approximation
         kmerset-intersection-performance
