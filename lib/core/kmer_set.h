@@ -54,48 +54,6 @@ class KmerSet {
  public:
   KmerSet() : buckets_(kBucketsNum) {}
 
-  KmerSet(const std::vector<Kmer<K>>& kmers, int n_workers)
-      : buckets_(kBucketsNum) {
-    std::vector<std::thread> threads;
-    std::vector<std::mutex> mus(kBucketsNum);
-
-    for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<Bucket> buf(kBucketsNum);
-
-        for (std::int64_t i : range) {
-          int bucket;
-          KeyType key;
-          std::tie(bucket, key) =
-              GetBucketAndKeyFromKmer<K, N, KeyType>(kmers[i]);
-          buf[bucket].insert(key);
-        }
-
-        // Moves data from buffer.
-
-        std::vector<bool> done(kBucketsNum);
-        int done_count = 0;
-
-        while (done_count < kBucketsNum) {
-          for (int i = 0; i < kBucketsNum; i++) {
-            if (done[i]) continue;
-
-            if (mus[i].try_lock()) {
-              for (const KeyType& key : buf[i]) buckets_[i].insert(key);
-
-              mus[i].unlock();
-
-              done[i] = true;
-              done_count += 1;
-            }
-          }
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-  }
-
   // Returns the total number of stored kmers.
   std::int64_t Size() const {
     std::int64_t sum = 0;
@@ -152,11 +110,20 @@ class KmerSet {
           for (const KeyType& key : bucket) {
             const Kmer<K> kmer =
                 GetKmerFromBucketAndKey<K, N, KeyType>(bucket_id, key);
-            if (pred(kmer)) buf.push_back(kmer);
+
+            if (pred(kmer)) {
+              if (n_workers == 1) {
+                kmers.push_back(kmer);
+              } else {
+                buf.push_back(kmer);
+              }
+            }
           }
 
-          std::lock_guard lck(mu);
-          kmers.insert(kmers.end(), buf.begin(), buf.end());
+          if (n_workers != 1) {
+            std::lock_guard lck(mu);
+            kmers.insert(kmers.end(), buf.begin(), buf.end());
+          }
         },
         n_workers);
 
