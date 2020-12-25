@@ -160,19 +160,40 @@ class KmerCounter {
           "FASTA files should have an even number of lines");
     }
 
-    std::vector<std::string> reads;
-    reads.reserve(lines.size() / 2);
+    std::vector<std::string> reads(lines.size() / 2);
+    std::vector<std::thread> threads;
+    std::atomic_bool is_valid = true;
 
-    for (std::size_t i = 0; i < lines.size(); i++) {
-      if (i % 2 == 0 && lines[i][0] != '>') {
-        return absl::FailedPreconditionError("invalid FASTA file");
-      }
+    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (int i : range) {
+          std::string& line = lines[i];
 
-      if (i % 2 == 1) {
-        reads.push_back(std::move(lines[i]));
-      } else {
-        std::string().swap(lines[i]);
-      }
+          if (i % 2 == 0) {
+            if (line.empty() || line[0] != '>') {
+              is_valid = false;
+              return;
+            }
+
+            std::string().swap(line);
+          } else {
+            for (char c : line) {
+              if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && c != 'N') {
+                is_valid = false;
+                return;
+              }
+            }
+
+            reads[i / 2] = std::move(line);
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    if (!is_valid) {
+      return absl::FailedPreconditionError("invalid FASTA file");
     }
 
     // "lines" is not needed anymore.
