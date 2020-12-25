@@ -39,6 +39,7 @@ foreach (
         kmerset-compress
         kmerset-decompress
         kmerset-immutable
+        kmerset-intersection-approximation
         kmerset-stat
         kmersetset-compress
         kmersetset-decompress
