@@ -235,9 +235,7 @@ std::vector<std::string> GetUnitigsCanonical(
       }
 
       if (!done_visited && mu_visited.try_lock()) {
-        for (const Kmer<K>& kmer : buf_visited) {
-          visited.insert(kmer);
-        }
+        visited.insert(buf_visited.begin(), buf_visited.end());
 
         mu_visited.unlock();
         done_visited = true;
@@ -260,11 +258,19 @@ std::vector<std::string> GetUnitigsCanonical(
 
         for (std::int64_t i : range) {
           const Kmer<K>& kmer = terminals_both[i];
-          buf_unitigs.push_back(kmer.String());
-          buf_visited.push_back(kmer);
+
+          if (n_workers == 1) {
+            unitigs.push_back(kmer.String());
+            visited.insert(kmer);
+          } else {
+            buf_unitigs.push_back(kmer.String());
+            buf_visited.push_back(kmer);
+          }
         }
 
-        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        if (n_workers != 1) {
+          MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        }
       });
     }
 
@@ -291,13 +297,24 @@ std::vector<std::string> GetUnitigsCanonical(
 
           if (path.front().Canonical() < path.back().Canonical()) continue;
 
-          for (const Kmer<K>& kmer : path)
-            buf_visited.push_back(kmer.Canonical());
+          for (const Kmer<K>& kmer : path) {
+            if (n_workers == 1) {
+              visited.insert(kmer.Canonical());
+            } else {
+              buf_visited.push_back(kmer.Canonical());
+            }
+          }
 
-          buf_unitigs.push_back(internal::ConcatenateKmers(path));
+          if (n_workers == 1) {
+            unitigs.push_back(internal::ConcatenateKmers(path));
+          } else {
+            buf_unitigs.push_back(internal::ConcatenateKmers(path));
+          }
         }
 
-        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        if (n_workers != 1) {
+          MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        }
       });
     }
 
@@ -324,13 +341,24 @@ std::vector<std::string> GetUnitigsCanonical(
 
           if (path.front().Canonical() < path.back().Canonical()) continue;
 
-          for (const Kmer<K>& kmer : path)
-            buf_visited.push_back(kmer.Canonical());
+          for (const Kmer<K>& kmer : path) {
+            if (n_workers == 1) {
+              visited.insert(kmer.Canonical());
+            } else {
+              buf_visited.push_back(kmer.Canonical());
+            }
+          }
 
-          buf_unitigs.push_back(internal::ConcatenateKmers(path));
+          if (n_workers == 1) {
+            unitigs.push_back(internal::ConcatenateKmers(path));
+          } else {
+            buf_unitigs.push_back(internal::ConcatenateKmers(path));
+          }
         }
 
-        MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        if (n_workers != 1) {
+          MoveFromBuffer(mu_unitigs, mu_visited, buf_unitigs, buf_visited);
+        }
       });
     }
 
@@ -412,20 +440,25 @@ std::vector<std::string> GetSPSSCanonical(
 
         // Moves from buffers.
 
-        bool done_prefixes = false;
-        bool done_suffixes = false;
+        if (n_workers == 1) {
+          prefixes = std::move(buf_prefixes);
+          suffixes = std::move(buf_suffixes);
+        } else {
+          bool done_prefixes = false;
+          bool done_suffixes = false;
 
-        while (!done_prefixes || !done_suffixes) {
-          if (!done_prefixes && mu_prefixes.try_lock()) {
-            prefixes.insert(buf_prefixes.begin(), buf_prefixes.end());
-            mu_prefixes.unlock();
-            done_prefixes = true;
-          }
+          while (!done_prefixes || !done_suffixes) {
+            if (!done_prefixes && mu_prefixes.try_lock()) {
+              prefixes.insert(buf_prefixes.begin(), buf_prefixes.end());
+              mu_prefixes.unlock();
+              done_prefixes = true;
+            }
 
-          if (!done_suffixes && mu_suffixes.try_lock()) {
-            suffixes.insert(buf_suffixes.begin(), buf_suffixes.end());
-            mu_suffixes.unlock();
-            done_suffixes = true;
+            if (!done_suffixes && mu_suffixes.try_lock()) {
+              suffixes.insert(buf_suffixes.begin(), buf_suffixes.end());
+              mu_suffixes.unlock();
+              done_suffixes = true;
+            }
           }
         }
       });
@@ -923,34 +956,40 @@ std::vector<std::string> GetSPSSCanonical(
 
         // Moves from buffers.
 
-        bool done_terminals_left = false;
-        bool done_terminals_right = false;
-        bool done_terminals_both = false;
+        if (n_workers == 1) {
+          terminals_left = std::move(buf_terminals_left);
+          terminals_right = std::move(buf_terminals_right);
+          terminals_both = std::move(buf_terminals_both);
+        } else {
+          bool done_terminals_left = false;
+          bool done_terminals_right = false;
+          bool done_terminals_both = false;
 
-        while (!done_terminals_left || !done_terminals_right ||
-               !done_terminals_both) {
-          if (!done_terminals_left && mu_terminals_left.try_lock()) {
-            terminals_left.insert(terminals_left.end(),
-                                  buf_terminals_left.begin(),
-                                  buf_terminals_left.end());
-            mu_terminals_left.unlock();
-            done_terminals_left = true;
-          }
+          while (!done_terminals_left || !done_terminals_right ||
+                 !done_terminals_both) {
+            if (!done_terminals_left && mu_terminals_left.try_lock()) {
+              terminals_left.insert(terminals_left.end(),
+                                    buf_terminals_left.begin(),
+                                    buf_terminals_left.end());
+              mu_terminals_left.unlock();
+              done_terminals_left = true;
+            }
 
-          if (!done_terminals_right && mu_terminals_right.try_lock()) {
-            terminals_right.insert(terminals_right.end(),
-                                   buf_terminals_right.begin(),
-                                   buf_terminals_right.end());
-            mu_terminals_right.unlock();
-            done_terminals_right = true;
-          }
+            if (!done_terminals_right && mu_terminals_right.try_lock()) {
+              terminals_right.insert(terminals_right.end(),
+                                     buf_terminals_right.begin(),
+                                     buf_terminals_right.end());
+              mu_terminals_right.unlock();
+              done_terminals_right = true;
+            }
 
-          if (!done_terminals_both && mu_terminals_both.try_lock()) {
-            terminals_both.insert(terminals_both.end(),
-                                  buf_terminals_both.begin(),
-                                  buf_terminals_both.end());
-            mu_terminals_both.unlock();
-            done_terminals_both = true;
+            if (!done_terminals_both && mu_terminals_both.try_lock()) {
+              terminals_both.insert(terminals_both.end(),
+                                    buf_terminals_both.begin(),
+                                    buf_terminals_both.end());
+              mu_terminals_both.unlock();
+              done_terminals_both = true;
+            }
           }
         }
       });
@@ -1007,13 +1046,23 @@ std::vector<std::string> GetSPSSCanonical(
             if (path.front().first > path.back().first) continue;
 
             for (std::size_t j = 0; j < path.size(); j++) {
-              buf_visited.push_back(path[j].first);
+              if (n_workers == 1) {
+                visited.insert(path[j].first);
+              } else {
+                buf_visited.push_back(path[j].first);
+              }
             }
 
-            buf_spss.push_back(GetStringFromPath(path));
+            if (n_workers == 1) {
+              spss.push_back(GetStringFromPath(path));
+            } else {
+              buf_spss.push_back(GetStringFromPath(path));
+            }
           }
 
-          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          if (n_workers != 1) {
+            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          }
         });
       }
 
@@ -1038,13 +1087,23 @@ std::vector<std::string> GetSPSSCanonical(
             if (path.front().first > path.back().first) continue;
 
             for (std::size_t j = 0; j < path.size(); j++) {
-              buf_visited.push_back(path[j].first);
+              if (n_workers == 1) {
+                visited.insert(path[j].first);
+              } else {
+                buf_visited.push_back(path[j].first);
+              }
             }
 
-            buf_spss.push_back(GetStringFromPath(path));
+            if (n_workers == 1) {
+              spss.push_back(GetStringFromPath(path));
+            } else {
+              buf_spss.push_back(GetStringFromPath(path));
+            }
           }
 
-          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          if (n_workers != 1) {
+            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          }
         });
       }
 
@@ -1064,11 +1123,18 @@ std::vector<std::string> GetSPSSCanonical(
           std::vector<std::int64_t> buf_visited;
 
           for (std::int64_t i : range) {
-            buf_visited.push_back(terminals_both[i]);
-            buf_spss.push_back(unitigs[terminals_both[i]]);
+            if (n_workers == 1) {
+              visited.insert(terminals_both[i]);
+              spss.push_back(unitigs[terminals_both[i]]);
+            } else {
+              buf_visited.push_back(terminals_both[i]);
+              buf_spss.push_back(unitigs[terminals_both[i]]);
+            }
           }
 
-          MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          if (n_workers != 1) {
+            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+          }
         });
       }
 
