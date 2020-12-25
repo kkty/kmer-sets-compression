@@ -11,9 +11,8 @@
 #include <optional>
 #include <queue>
 #include <sstream>
-#include <thread>
 #include <tuple>
-#include <variant>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -334,10 +333,10 @@ class KmerSetSet {
         const std::string file_name = absl::StrFormat("%d.%s", i, extension);
 
         const absl::Status status =
-            WriteLines((std::filesystem::path(directory_name) /
-                        std::filesystem::path(file_name))
-                           .string(),
-                       compressor, kmer_set_compact.Dump());
+            kmer_set_compact.Dump((std::filesystem::path(directory_name) /
+                                   std::filesystem::path(file_name))
+                                      .string(),
+                                  compressor);
 
         if (!status.ok()) {
           spdlog::error("failed to write data to a file: {}",
