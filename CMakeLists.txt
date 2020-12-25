@@ -39,9 +39,9 @@ foreach (
         kmerset-build
         kmerset-intersection-approximation
         kmerset-intersection-performance
+        kmerset-multiple-compress
         kmerset-similarity
         kmerset-stat
-        kmersetset-compress
         kmersetset-decompress
         search
         search-allpair

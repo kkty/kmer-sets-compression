@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"
@@ -24,12 +25,12 @@ ABSL_FLAG(bool, debug, false, GetFlagMessage("debug"));
 ABSL_FLAG(std::string, decompressor, "", GetFlagMessage("decompressor"));
 ABSL_FLAG(int, workers, 1, GetFlagMessage("workers"));
 ABSL_FLAG(bool, canonical, true, GetFlagMessage("canonical"));
+ABSL_FLAG(std::string, compressor, "", GetFlagMessage("compressor"));
 
 ABSL_FLAG(bool, parallel_input, false, "read files in parallel");
 ABSL_FLAG(int, iteration, 1, "number of iterations for KmerSetSet");
 ABSL_FLAG(std::string, out, "", "directory path to save dumped files");
-ABSL_FLAG(std::string, compressor, "", "program to compress dumped file");
-ABSL_FLAG(std::string, extension, "bin", "extension for output files");
+ABSL_FLAG(std::string, extension, "txt", "extension for output files");
 ABSL_FLAG(std::string, out_graph, "", "path to save dumped DOT file");
 
 template <int K, int N, typename KeyType>
