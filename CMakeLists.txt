@@ -40,9 +40,9 @@ foreach (
         kmerset-intersection-approximation
         kmerset-intersection-performance
         kmerset-multiple-compress
+        kmerset-multiple-decompress
         kmerset-similarity
         kmerset-stat
-        kmersetset-decompress
         search
         search-allpair
         spss
