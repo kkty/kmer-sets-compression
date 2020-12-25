@@ -37,10 +37,10 @@ link_libraries(
 foreach (
         NAME
         kmerset-build
-        kmerset-decompress
         kmerset-intersection-approximation
         kmerset-intersection-performance
         kmerset-similarity
+        kmerset-stat
         kmersetset-compress
         kmersetset-decompress
         search
