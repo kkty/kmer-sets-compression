@@ -13,6 +13,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
+#include "parallel_disjoint_set.h"
 #include "spdlog/spdlog.h"
 
 namespace internal {
@@ -919,6 +920,114 @@ std::vector<std::string> GetSPSSCanonical(
     spdlog::debug("constructed edge_left and edge_right");
   }
 
+  {
+    ParallelDisjointSet disjoint_set(n);
+
+    spdlog::debug("constructing disjoint_set");
+
+    {
+      std::vector<std::thread> threads;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          for (std::int64_t i : range) {
+            {
+              auto it = edge_left.find(i);
+
+              if (it != edge_left.end()) {
+                disjoint_set.Unite(i, it->second.first);
+              }
+            }
+
+            {
+              auto it = edge_right.find(i);
+
+              if (it != edge_right.end()) {
+                disjoint_set.Unite(i, it->second.first);
+              }
+            }
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    spdlog::debug("constructed disjoint_set");
+
+    spdlog::debug("removing loops");
+
+    {
+      absl::flat_hash_set<int> groups;
+      absl::flat_hash_set<int> groups_with_terminals;
+
+      spdlog::debug("constructing groups and groups_with_terminals");
+
+      std::vector<std::thread> threads;
+      std::mutex mu_groups;
+      std::mutex mu_groups_with_terminals;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          absl::flat_hash_set<int> buf_groups;
+          absl::flat_hash_set<int> buf_groups_with_terminals;
+
+          for (std::int64_t i : range) {
+            int group = disjoint_set.Find(i);
+
+            buf_groups.insert(group);
+
+            if (edge_left.find(i) == edge_left.end() ||
+                edge_right.find(i) == edge_right.end()) {
+              buf_groups_with_terminals.insert(group);
+            }
+          }
+
+          if (n_workers == 1) {
+            groups = std::move(buf_groups);
+            groups_with_terminals = std::move(buf_groups_with_terminals);
+          } else {
+            {
+              std::lock_guard lck(mu_groups);
+              groups.insert(buf_groups.begin(), buf_groups.end());
+            }
+
+            {
+              std::lock_guard lck(mu_groups_with_terminals);
+              groups_with_terminals.insert(buf_groups_with_terminals.begin(),
+                                           buf_groups_with_terminals.end());
+            }
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+
+      spdlog::debug("constructed groups and groups_with_terminals");
+
+      for (int i : groups) {
+        if (groups_with_terminals.find(i) == groups_with_terminals.end()) {
+          auto it = edge_left.find(i);
+          assert(it != edge_left.end());
+
+          int j;
+          bool is_same_side;
+          std::tie(j, is_same_side) = it->second;
+
+          edge_left.erase(i);
+
+          if (is_same_side) {
+            edge_left.erase(j);
+          } else {
+            edge_right.erase(j);
+          }
+        }
+      }
+    }
+
+    spdlog::debug("removed loops");
+  }
+
   // Nodes without edges on the left side.
   std::vector<std::int64_t> terminals_left;
   // Nodes without edges on the right side.
@@ -1002,56 +1111,24 @@ std::vector<std::string> GetSPSSCanonical(
   }
 
   std::vector<std::string> spss;
-  absl::flat_hash_set<std::int64_t> visited;
 
   {
     spdlog::debug("constructing spss and visited");
-
-    const auto MoveFromBuffer = [&](std::mutex& mu_spss, std::mutex& mu_visited,
-                                    std::vector<std::string>& buf_spss,
-                                    std::vector<std::int64_t>& buf_visited) {
-      bool done_spss = false;
-      bool done_visited = false;
-
-      while (!done_spss || !done_visited) {
-        if (!done_spss && mu_spss.try_lock()) {
-          for (std::string& s : buf_spss) spss.push_back(std::move(s));
-          mu_spss.unlock();
-          done_spss = true;
-        }
-
-        if (!done_visited && mu_visited.try_lock()) {
-          visited.insert(buf_visited.begin(), buf_visited.end());
-          mu_visited.unlock();
-          done_visited = true;
-        }
-      }
-    };
 
     // Considers paths from terminals_left.
     {
       std::vector<std::thread> threads;
       std::mutex mu_spss;
-      std::mutex mu_visited;
 
       for (const Range& range :
            Range(0, terminals_left.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<std::int64_t> buf_visited;
 
           for (std::int64_t i : range) {
             Path path = FindPath(terminals_left[i], true);
 
             if (path.front().first > path.back().first) continue;
-
-            for (std::size_t j = 0; j < path.size(); j++) {
-              if (n_workers == 1) {
-                visited.insert(path[j].first);
-              } else {
-                buf_visited.push_back(path[j].first);
-              }
-            }
 
             if (n_workers == 1) {
               spss.push_back(GetStringFromPath(path));
@@ -1061,7 +1138,8 @@ std::vector<std::string> GetSPSSCanonical(
           }
 
           if (n_workers != 1) {
-            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+            std::lock_guard lck(mu_spss);
+            spss.insert(spss.end(), buf_spss.begin(), buf_spss.end());
           }
         });
       }
@@ -1073,26 +1151,16 @@ std::vector<std::string> GetSPSSCanonical(
     {
       std::vector<std::thread> threads;
       std::mutex mu_spss;
-      std::mutex mu_visited;
 
       for (const Range& range :
            Range(0, terminals_right.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<std::int64_t> buf_visited;
 
           for (std::int64_t i : range) {
             Path path = FindPath(terminals_right[i], false);
 
             if (path.front().first > path.back().first) continue;
-
-            for (std::size_t j = 0; j < path.size(); j++) {
-              if (n_workers == 1) {
-                visited.insert(path[j].first);
-              } else {
-                buf_visited.push_back(path[j].first);
-              }
-            }
 
             if (n_workers == 1) {
               spss.push_back(GetStringFromPath(path));
@@ -1102,7 +1170,8 @@ std::vector<std::string> GetSPSSCanonical(
           }
 
           if (n_workers != 1) {
-            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+            std::lock_guard lck(mu_spss);
+            spss.insert(spss.end(), buf_spss.begin(), buf_spss.end());
           }
         });
       }
@@ -1114,26 +1183,23 @@ std::vector<std::string> GetSPSSCanonical(
     {
       std::vector<std::thread> threads;
       std::mutex mu_spss;
-      std::mutex mu_visited;
 
       for (const Range& range :
            Range(0, terminals_both.size()).Split(n_workers)) {
         threads.emplace_back([&, range] {
           std::vector<std::string> buf_spss;
-          std::vector<std::int64_t> buf_visited;
 
           for (std::int64_t i : range) {
             if (n_workers == 1) {
-              visited.insert(terminals_both[i]);
               spss.push_back(unitigs[terminals_both[i]]);
             } else {
-              buf_visited.push_back(terminals_both[i]);
               buf_spss.push_back(unitigs[terminals_both[i]]);
             }
           }
 
           if (n_workers != 1) {
-            MoveFromBuffer(mu_spss, mu_visited, buf_spss, buf_visited);
+            std::lock_guard lck(mu_spss);
+            spss.insert(spss.end(), buf_spss.begin(), buf_spss.end());
           }
         });
       }
@@ -1142,58 +1208,6 @@ std::vector<std::string> GetSPSSCanonical(
     }
 
     spdlog::debug("constructed spss and visited");
-  }
-
-  {
-    spdlog::debug("processing non-branching loops");
-
-    std::vector<std::int64_t> not_visited;
-
-    // Constructs "not_visited".
-    {
-      std::vector<std::thread> threads;
-      std::mutex mu;
-
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          std::vector<std::int64_t> buf;
-
-          for (std::int64_t i : range) {
-            if (visited.find(i) == visited.end()) {
-              buf.push_back(i);
-            }
-          }
-
-          std::lock_guard lck(mu);
-          not_visited.insert(not_visited.end(), buf.begin(), buf.end());
-        });
-      }
-
-      for (std::thread& t : threads) t.join();
-    }
-
-    for (std::int64_t start : not_visited) {
-      if (visited.find(start) != visited.end()) continue;
-
-      Path path;
-      std::int64_t current = start;
-      bool is_right_side = true;
-
-      while (visited.find(current) == visited.end()) {
-        visited.insert(current);
-        path.emplace_back(current, !is_right_side);
-
-        bool is_same_side;
-        std::tie(current, is_same_side) =
-            is_right_side ? edge_right[current] : edge_left[current];
-
-        if (is_same_side) is_right_side = !is_right_side;
-      }
-
-      spss.push_back(GetStringFromPath(path));
-    }
-
-    spdlog::debug("processed non-branching loops");
   }
 
   return spss;
