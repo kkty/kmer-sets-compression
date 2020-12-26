@@ -11,7 +11,11 @@
 
 class DisjointSet {
  public:
-  DisjointSet(int size) : parents_(size) {}
+  DisjointSet(int size) : parents_(size) {
+    for (int i = 0; i < size; i++) {
+      parents_[i] = i;
+    }
+  }
 
   int Find(int i) {
     if (parents_[i] == i) return i;

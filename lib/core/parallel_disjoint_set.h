@@ -13,7 +13,11 @@
 // twenty-third annual ACM symposium on Theory of computing (pp. 370-380)".
 class ParallelDisjointSet {
  public:
-  ParallelDisjointSet(int size) : a_(size) {}
+  ParallelDisjointSet(int size) : a_(size) {
+    for (int i = 0; i < size; i++) {
+      a_[i] = i;
+    }
+  }
 
   int Find(int x) {
     int y = x;
