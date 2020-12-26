@@ -282,8 +282,10 @@ class KmerSetSet {
   absl::Status Dump(const std::string& directory_name,
                     const std::string& compressor, const std::string& extension,
                     bool canonical, bool clear, int n_workers) {
-    if (!std::filesystem::create_directories(directory_name)) {
-      return absl::InternalError("failed to create directory");
+    try {
+      std::filesystem::create_directories(directory_name);
+    } catch (...) {
+      return absl::InternalError("failed to create a directory");
     }
 
     // Dumps children_ and kmer_sets_immutable_.size().
