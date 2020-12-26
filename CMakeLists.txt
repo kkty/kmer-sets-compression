@@ -61,6 +61,7 @@ foreach (
         kmer_counter
         kmer_set
         kmer_set_set
+        parallel_disjoint_set
         range
         io
         search
