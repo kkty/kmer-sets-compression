@@ -36,8 +36,8 @@ class DisjointSet {
 
 TEST(ParallelDisjointSet, Random) {
   const int n_workers = 8;
-  const int n = 10000;
-  const int m = 2500;
+  const int n = 4000;
+  const int m = 1000;
 
   std::vector<std::pair<int, int>> pairs;
 
