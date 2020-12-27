@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
 #include "core/range.h"
 #include "gtest/gtest.h"
@@ -102,10 +103,17 @@ TEST(ParallelDisjointSet, FindRandom) {
     auto it = map.find(expected[i]);
 
     if (it == map.end()) {
-      map[i] = actual[i];
+      map[expected[i]] = actual[i];
     } else {
       ASSERT_EQ(it->second, actual[i]);
     }
+  }
+
+  // "map" should not contain the same values.
+  absl::flat_hash_set<int> set;
+  for (auto it = map.begin(); it != map.end(); ++it) {
+    ASSERT_TRUE(set.find(it->second) == set.end());
+    set.insert(it->second);
   }
 }
 
