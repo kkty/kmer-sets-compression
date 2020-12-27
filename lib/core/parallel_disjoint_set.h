@@ -80,7 +80,9 @@ class ParallelDisjointSet {
 
   bool UpdateRoot(int x, int old_rank, int y, int new_rank) {
     std::uint64_t old = a_[x];
-    if ((old << 32) >> 32 != x || old >> 32 != old_rank) return false;
+    if ((old << 32) >> 32 != static_cast<std::uint64_t>(x) ||
+        old >> 32 != static_cast<std::uint64_t>(old_rank))
+      return false;
     std::uint64_t updated = (static_cast<std::uint64_t>(new_rank) << 32) + y;
     return a_[x].compare_exchange_weak(old, updated);
   }
