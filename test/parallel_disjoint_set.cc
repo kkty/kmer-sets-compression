@@ -39,7 +39,7 @@ TEST(ParallelDisjointSet, FindRandom) {
   const int n_workers = 8;
   absl::InsecureBitGen bitgen;
 
-  const int n = 4000;
+  const int n = 100000;
   const int m = absl::Uniform(absl::IntervalClosed, bitgen, 1, n);
 
   std::vector<std::pair<int, int>> pairs;
