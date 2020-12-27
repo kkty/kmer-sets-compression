@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/random/random.h"
 #include "core/range.h"
 #include "gtest/gtest.h"
@@ -34,10 +35,85 @@ class DisjointSet {
   std::vector<int> parents_;
 };
 
-TEST(ParallelDisjointSet, Random) {
+TEST(ParallelDisjointSet, FindRandom) {
   const int n_workers = 8;
+  absl::InsecureBitGen bitgen;
+
   const int n = 4000;
-  const int m = 1000;
+  const int m = absl::Uniform(absl::IntervalClosed, bitgen, 1, n);
+
+  std::vector<std::pair<int, int>> pairs;
+
+  {
+    for (int i = 0; i < m; i++) {
+      int x = absl::Uniform(bitgen, 0, n);
+      int y = absl::Uniform(bitgen, 0, n);
+      pairs.emplace_back(x, y);
+    }
+  }
+
+  DisjointSet disjoint_set(n);
+
+  for (const std::pair<int, int>& p : pairs) {
+    disjoint_set.Unite(p.first, p.second);
+  }
+
+  ParallelDisjointSet parallel_disjoint_set(n);
+
+  {
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, pairs.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (int i : range) {
+          parallel_disjoint_set.Unite(pairs[i].first, pairs[i].second);
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  std::vector<int> actual(n);
+
+  {
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (int i : range) {
+          actual[i] = parallel_disjoint_set.Find(i);
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  std::vector<int> expected(n);
+
+  for (int i = 0; i < n; i++) {
+    expected[i] = disjoint_set.Find(i);
+  }
+
+  absl::flat_hash_map<int, int> map;
+
+  for (int i = 0; i < n; i++) {
+    auto it = map.find(expected[i]);
+
+    if (it == map.end()) {
+      map[i] = actual[i];
+    } else {
+      ASSERT_EQ(it->second, actual[i]);
+    }
+  }
+}
+
+TEST(ParallelDisjointSet, IsSameRandom) {
+  const int n_workers = 8;
+
+  const int n = 4000;
+  const int m = 2000;
 
   std::vector<std::pair<int, int>> pairs;
 
