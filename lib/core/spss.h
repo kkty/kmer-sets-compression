@@ -402,16 +402,12 @@ std::vector<std::string> GetUnitigsCanonical(
   return unitigs;
 }
 
-// Constructs a small-weight SPSS from unitigs.
-template <int K, int N, typename KeyType>
-std::vector<std::string> GetSPSSCanonical(
-    const std::vector<std::string>& unitigs, bool fast, int n_workers,
-    int n_buckets = 64) {
+template <int K>
+std::pair<absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>,
+          absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>>
+GetPrefixesAndSuffixesFromUnitigs(const std::vector<std::string>& unitigs,
+                                  int n_workers) {
   const std::int64_t n = unitigs.size();
-
-  // Considers a graph where node i represents unitigs[i].
-  // Each node has two sides just as the one considered in
-  // GetUnitigsCanonical().
 
   // If i is in prefixes[kmer], the unitigs.substr(0, K) == kmer.String().
   absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
@@ -420,8 +416,6 @@ std::vector<std::string> GetSPSSCanonical(
   absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
 
   {
-    spdlog::debug("constructing prefixes and suffixes");
-
     std::vector<std::thread> threads;
     std::mutex mu_prefixes;
     std::mutex mu_suffixes;
@@ -466,9 +460,23 @@ std::vector<std::string> GetSPSSCanonical(
     }
 
     for (std::thread& t : threads) t.join();
-
-    spdlog::debug("constructed prefixes and suffixes");
   }
+
+  return std::make_pair(prefixes, suffixes);
+}
+
+// Constructs a small-weight SPSS from unitigs.
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSSCanonical(
+    const std::vector<std::string>& unitigs,
+    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
+    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& suffixes,
+    bool fast, int n_workers, int n_buckets = 64) {
+  const std::int64_t n = unitigs.size();
+
+  // Considers a graph where node i represents unitigs[i].
+  // Each node has two sides just as the one considered in
+  // GetUnitigsCanonical().
 
   // If the second element is true, the edge connects the same side of two
   // nodes.
@@ -484,27 +492,35 @@ std::vector<std::string> GetSPSSCanonical(
     const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
 
     for (const Kmer<K>& suffix_next : suffix.Nexts()) {
-      if (prefixes.find(suffix_next) != prefixes.end()) {
-        for (std::int64_t j : prefixes[suffix_next]) {
-          if (i == j) continue;
+      {
+        auto it = prefixes.find(suffix_next);
 
-          // There is an edge from the right side from i to the left
-          // side of j.
+        if (it != prefixes.end()) {
+          for (std::int64_t j : it->second) {
+            if (i == j) continue;
 
-          edges.emplace_back(j, false);
+            // There is an edge from the right side from i to the left
+            // side of j.
+
+            edges.emplace_back(j, false);
+          }
         }
       }
 
       const Kmer<K> suffix_next_complement = suffix_next.Complement();
 
-      if (suffixes.find(suffix_next_complement) != suffixes.end()) {
-        for (std::int64_t j : suffixes[suffix_next_complement]) {
-          if (i == j) continue;
+      {
+        auto it = suffixes.find(suffix_next_complement);
 
-          // There is an edge from the right side from i to the right side
-          // of j.
+        if (it != suffixes.end()) {
+          for (std::int64_t j : it->second) {
+            if (i == j) continue;
 
-          edges.emplace_back(j, true);
+            // There is an edge from the right side from i to the right side
+            // of j.
+
+            edges.emplace_back(j, true);
+          }
         }
       }
     }
@@ -522,27 +538,35 @@ std::vector<std::string> GetSPSSCanonical(
     const Kmer<K> prefix(unitig.substr(0, K));
 
     for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
-      if (suffixes.find(prefix_prev) != suffixes.end()) {
-        for (std::int64_t j : suffixes[prefix_prev]) {
-          if (i == j) continue;
+      {
+        auto it = suffixes.find(prefix_prev);
 
-          // There is an edge from the left side of i to the right side of
-          // j.
+        if (it != suffixes.end()) {
+          for (std::int64_t j : it->second) {
+            if (i == j) continue;
 
-          edges.emplace_back(j, false);
+            // There is an edge from the left side of i to the right side of
+            // j.
+
+            edges.emplace_back(j, false);
+          }
         }
       }
 
       const Kmer<K> prefix_prev_complement = prefix_prev.Complement();
 
-      if (prefixes.find(prefix_prev_complement) != prefixes.end()) {
-        for (std::int64_t j : prefixes[prefix_prev_complement]) {
-          if (i == j) continue;
+      {
+        auto it = prefixes.find(prefix_prev_complement);
 
-          // There is an edge from the left side of i to the left side of
-          // j.
+        if (it != prefixes.end()) {
+          for (std::int64_t j : it->second) {
+            if (i == j) continue;
 
-          edges.emplace_back(j, true);
+            // There is an edge from the left side of i to the left side of
+            // j.
+
+            edges.emplace_back(j, true);
+          }
         }
       }
     }
@@ -1225,7 +1249,18 @@ std::vector<std::string> GetSPSSCanonical(
 
   spdlog::debug("constructed unitigs");
 
-  return GetSPSSCanonical<K, N, KeyType>(unitigs, fast, n_workers, n_buckets);
+  spdlog::debug("constructing prefixes and suffixes");
+
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+
+  std::tie(prefixes, suffixes) =
+      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+
+  spdlog::debug("constructed prefixes and suffixes");
+
+  return GetSPSSCanonical<K, N, KeyType>(unitigs, prefixes, suffixes, fast,
+                                         n_workers, n_buckets);
 }
 
 // Constructs unitigs from a kmer set.

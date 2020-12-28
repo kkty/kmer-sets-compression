@@ -4,12 +4,15 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
 #include "absl/strings/str_format.h"
+#include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "flags.h"
 #include "io.h"
@@ -56,6 +59,16 @@ void Main(const std::string& file_name) {
 
   spdlog::info("constructed unitigs");
 
+  spdlog::info("constructing prefixes and suffixes");
+
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+
+  std::tie(prefixes, suffixes) =
+      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+
+  spdlog::info("constructed prefixes and suffixes");
+
   for (int i = 0; i < n_repeats; i++) {
     for (bool fast : std::vector<bool>{false, true}) {
       spdlog::info("fast = {}", fast);
@@ -66,8 +79,8 @@ void Main(const std::string& file_name) {
         spdlog::info("constructing spss");
         spdlog::stopwatch sw;
 
-        spss = GetSPSSCanonical<K, N, KeyType>(unitigs, fast, n_workers,
-                                               n_buckets);
+        spss = GetSPSSCanonical<K, N, KeyType>(unitigs, prefixes, suffixes,
+                                               fast, n_workers, n_buckets);
 
         spdlog::info("constructed spss: elapsed = {}", sw);
 
