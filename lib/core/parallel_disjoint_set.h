@@ -84,7 +84,7 @@ class ParallelDisjointSet {
         old >> 32 != static_cast<std::uint64_t>(old_rank))
       return false;
     std::uint64_t updated = (static_cast<std::uint64_t>(new_rank) << 32) + y;
-    return a_[x].compare_exchange_weak(old, updated);
+    return a_[x].compare_exchange_strong(old, updated);
   }
 
   bool LessThan(int x, int y) const {
