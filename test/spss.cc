@@ -39,9 +39,9 @@ KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
   }
 }
 
-TEST(Unitigs, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
+TEST(SPSS, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
 
-TEST(Unitigs, GetUnitigsRandom) {
+TEST(SPSS, GetUnitigsRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -69,7 +69,7 @@ TEST(Unitigs, GetUnitigsRandom) {
   ASSERT_TRUE(kmer_set.Equals(reconstructed, 1));
 }
 
-TEST(Unitigs, GetUnitigsCanonicalRandom) {
+TEST(SPSS, GetUnitigsCanonicalRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -97,7 +97,35 @@ TEST(Unitigs, GetUnitigsCanonicalRandom) {
   ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
-TEST(Unitigs, GetSPSSCanonicalRandom) {
+TEST(SPSS, GetSPSSRandom) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
+
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      false);
+
+  std::vector<std::string> spss = GetSPSS(kmer_set, n_workers);
+
+  KmerSet<K, N, KeyType> reconstructed;
+
+  for (const std::string& s : spss) {
+    const int n = s.length();
+    ASSERT_TRUE(n >= K);
+
+    for (int i = 0; i < n - K + 1; i++) {
+      const Kmer<K> kmer = Kmer<K>(s.substr(i, K));
+      ASSERT_FALSE(reconstructed.Contains(kmer));
+      reconstructed.Add(kmer);
+    }
+  }
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
+}
+
+TEST(SPSS, GetSPSSCanonicalRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -125,7 +153,7 @@ TEST(Unitigs, GetSPSSCanonicalRandom) {
   ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
-TEST(Unitigs, GetSPSSCanonicalFastRandom) {
+TEST(SPSS, GetSPSSCanonicalFastRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -153,7 +181,7 @@ TEST(Unitigs, GetSPSSCanonicalFastRandom) {
   ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
-TEST(Unitigs, GetKmerSetFromSPSSRandom) {
+TEST(SPSS, GetKmerSetFromSPSSRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
