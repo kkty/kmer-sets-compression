@@ -35,7 +35,7 @@ class KmerSetCompact {
     if (canonical) {
       spss = GetSPSSCanonical<K, N, KeyType>(kmer_set, fast, n_workers);
     } else {
-      spss = GetUnitigs<K, N, KeyType>(kmer_set, n_workers);
+      spss = GetSPSS<K, N, KeyType>(kmer_set, n_workers);
     }
 
     return KmerSetCompact(std::move(spss));
