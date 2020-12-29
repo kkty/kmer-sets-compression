@@ -402,6 +402,8 @@ std::vector<std::string> GetUnitigsCanonical(
   return unitigs;
 }
 
+// For each kmer, finds a list of unitigs that contain the kmer as its prefix
+// or as its suffix.
 template <int K>
 std::pair<absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>,
           absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>>
@@ -845,7 +847,6 @@ std::vector<std::string> GetSPSSCanonical(
     };
 
     // Adds an edge incident to the right side of i.
-    // NOLINTNEXTLINE
     const auto AddEdgeRight = [&](std::int64_t i, std::int64_t j,
                                   bool is_same_side) {
       int bucket_i = i % n_buckets;
@@ -1137,7 +1138,7 @@ std::vector<std::string> GetSPSSCanonical(
   std::vector<std::string> spss;
 
   {
-    spdlog::debug("constructing spss and visited");
+    spdlog::debug("constructing spss");
 
     // Considers paths from terminals_left.
     {
@@ -1231,7 +1232,7 @@ std::vector<std::string> GetSPSSCanonical(
       for (std::thread& t : threads) t.join();
     }
 
-    spdlog::debug("constructed spss and visited");
+    spdlog::debug("constructed spss");
   }
 
   return spss;
@@ -1417,6 +1418,371 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
   }
 
   return unitigs;
+}
+
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSS(
+    const std::vector<std::string>& unitigs,
+    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
+    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& suffixes,
+    int n_workers, int n_buckets = 64) {
+  const std::int64_t n = unitigs.size();
+
+  // Considers a directed graph where each node represents a unitig.
+
+  // Returns a list of outgoing edges from i.
+  const auto GetEdgesOut = [&](std::int64_t i) {
+    std::vector<std::int64_t> edges;
+
+    const std::string& unitig = unitigs[i];
+
+    const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+
+    for (const Kmer<K>& suffix_next : suffix.Nexts()) {
+      auto it = prefixes.find(suffix_next);
+
+      if (it == prefixes.end()) continue;
+
+      for (std::int64_t j : it->second) {
+        if (i == j) continue;
+
+        edges.push_back(j);
+      }
+    }
+
+    return edges;
+  };
+
+  // Returns a list of incoming edges to i.
+  const auto GetEdgesIn = [&](std::int64_t i) {
+    std::vector<std::int64_t> edges;
+
+    const std::string& unitig = unitigs[i];
+
+    const Kmer<K> prefix(unitig.substr(0, K));
+
+    for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
+      auto it = suffixes.find(prefix_prev);
+
+      if (it == suffixes.end()) continue;
+
+      for (std::int64_t j : it->second) {
+        if (i == j) continue;
+
+        edges.push_back(j);
+      }
+    }
+
+    return edges;
+  };
+
+  // edge_in[i] is the selected incoming edge to i.
+  absl::flat_hash_map<std::int64_t, std::int64_t> edge_in;
+
+  // edge_out[i] is the selected outgoing edge from i.
+  absl::flat_hash_map<std::int64_t, std::int64_t> edge_out;
+
+  {
+    spdlog::debug("constructing edge_in and edge_out");
+
+    std::vector<std::thread> threads;
+    std::vector<std::mutex> mus(n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_in(
+        n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_out(
+        n_buckets);
+
+    // Acquires locks for node i and j.
+    const auto AcquireLock = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].lock();
+        return;
+      }
+
+      mus[std::min(bucket_i, bucket_j)].lock();
+      mus[std::max(bucket_i, bucket_j)].lock();
+    };
+
+    // Releases locks for node i and j.
+    const auto ReleaseLock = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].unlock();
+        return;
+      }
+
+      mus[std::max(bucket_i, bucket_j)].unlock();
+      mus[std::min(bucket_i, bucket_j)].unlock();
+    };
+
+    // Returns true if there is an incoming edge to i.
+    const auto HasEdgeIn = [&](std::int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edge_in[bucket].find(i) != buf_edge_in[bucket].end();
+    };
+
+    // Returns true if there is an outgoing edge from i.
+    const auto HasEdgeOut = [&](std::int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edge_out[bucket].find(i) != buf_edge_out[bucket].end();
+    };
+
+    // Adds an incoming edge to i.
+    const auto AddEdgeIn = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      buf_edge_in[bucket_i][i] = j;
+    };
+
+    // Add an outgoing edge from i.
+    const auto AddEdgeOut = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      buf_edge_out[bucket_i][i] = j;
+    };
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (std::int64_t i : range) {
+          for (std::int64_t j : GetEdgesOut(i)) {
+            AcquireLock(i, j);
+
+            if (!HasEdgeOut(i) && !HasEdgeIn(j)) {
+              AddEdgeOut(i, j);
+              AddEdgeIn(j, i);
+            }
+
+            ReleaseLock(i, j);
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    spdlog::debug("moving from buffers");
+
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      boost::asio::post(pool, [&] {
+        std::int64_t size = 0;
+        for (int i = 0; i < n_buckets; i++) {
+          size += buf_edge_in[i].size();
+        }
+        edge_in.reserve(size);
+        for (int i = 0; i < n_buckets; i++) {
+          edge_in.insert(buf_edge_in[i].begin(), buf_edge_in[i].end());
+        }
+      });
+
+      boost::asio::post(pool, [&] {
+        std::int64_t size = 0;
+        for (int i = 0; i < n_buckets; i++) {
+          size += buf_edge_out[i].size();
+        }
+        edge_out.reserve(size);
+        for (int i = 0; i < n_buckets; i++) {
+          edge_out.insert(buf_edge_out[i].begin(), buf_edge_out[i].end());
+        }
+      });
+
+      pool.join();
+    }
+
+    spdlog::debug("constructed edge_in and edge_out");
+  }
+
+  {
+    ParallelDisjointSet disjoint_set(n);
+
+    spdlog::debug("constructing disjoint_set");
+
+    {
+      std::vector<std::thread> threads;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          for (std::int64_t i : range) {
+            auto it = edge_out.find(i);
+            if (it == edge_out.end()) continue;
+            disjoint_set.Unite(i, it->second);
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    spdlog::debug("constructed disjoint_set");
+
+    spdlog::debug("removing loops");
+
+    {
+      absl::flat_hash_set<std::int64_t> groups;
+      absl::flat_hash_set<std::int64_t> groups_with_terminals;
+
+      spdlog::debug("constructing groups and groups_with_terminals");
+
+      std::vector<std::thread> threads;
+      std::mutex mu_groups;
+      std::mutex mu_groups_with_terminals;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          absl::flat_hash_set<std::int64_t> buf_groups;
+          absl::flat_hash_set<std::int64_t> buf_groups_with_terminals;
+
+          for (std::int64_t i : range) {
+            int group = disjoint_set.Find(i);
+
+            buf_groups.insert(group);
+
+            if (edge_out.find(i) == edge_out.end()) {
+              buf_groups_with_terminals.insert(group);
+            }
+          }
+
+          if (n_workers == 1) {
+            groups = std::move(buf_groups);
+            groups_with_terminals = std::move(buf_groups_with_terminals);
+          } else {
+            {
+              std::lock_guard lck(mu_groups);
+              groups.insert(buf_groups.begin(), buf_groups.end());
+            }
+
+            {
+              std::lock_guard lck(mu_groups_with_terminals);
+              groups_with_terminals.insert(buf_groups_with_terminals.begin(),
+                                           buf_groups_with_terminals.end());
+            }
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+
+      spdlog::debug("constructed groups and groups_with_terminals");
+
+      for (std::int64_t i : groups) {
+        if (groups_with_terminals.find(i) == groups_with_terminals.end()) {
+          std::int64_t j = edge_out[i];
+          edge_out.erase(i);
+          edge_in.erase(j);
+        }
+      }
+    }
+
+    spdlog::debug("removed loops");
+  }
+
+  std::vector<std::int64_t> starts;
+
+  spdlog::debug("constructing starts");
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::int64_t> buf;
+
+        for (std::int64_t i : range) {
+          if (edge_in.find(i) == edge_in.end()) {
+            buf.push_back(i);
+          }
+        }
+
+        {
+          std::lock_guard lck(mu);
+          starts.insert(starts.end(), buf.begin(), buf.end());
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  spdlog::debug("constructed starts");
+
+  std::vector<std::string> spss;
+
+  spdlog::debug("constructing spss");
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, starts.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf;
+
+        for (std::int64_t i : range) {
+          std::int64_t start = starts[i];
+
+          std::vector<std::int64_t> path;
+
+          std::int64_t current = start;
+          while (true) {
+            path.push_back(current);
+
+            auto it = edge_out.find(current);
+            if (it == edge_out.end()) break;
+
+            current = it->second;
+          }
+
+          std::string s = unitigs[path[0]];
+          for (std::size_t j = 1; j < path.size(); j++) {
+            s += unitigs[path[j]].substr(K - 1,
+                                         unitigs[path[j]].length() - (K - 1));
+          }
+
+          buf.push_back(std::move(s));
+        }
+
+        {
+          std::lock_guard lck(mu);
+          spss.insert(spss.end(), buf.begin(), buf.end());
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  spdlog::debug("constructed spss");
+
+  return spss;
+}
+
+// Constructs a small-weight SPSS from a set of kmers.
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSS(const KmerSet<K, N, KeyType>& kmer_set,
+                                 int n_workers, int n_buckets = 64) {
+  spdlog::debug("constructing unitigs");
+
+  const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
+
+  spdlog::debug("constructed unitigs");
+
+  spdlog::debug("constructing prefixes and suffixes");
+
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+
+  std::tie(prefixes, suffixes) =
+      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+
+  spdlog::debug("constructed prefixes and suffixes");
+
+  return GetSPSS<K, N, KeyType>(unitigs, prefixes, suffixes, n_workers,
+                                n_buckets);
 }
 
 template <int K, int N, typename KeyType>
