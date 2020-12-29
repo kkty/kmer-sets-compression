@@ -189,6 +189,24 @@ TEST(SPSS, GetKmerSetFromSPSSRandom) {
 
   KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
       absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
+      false);
+
+  std::vector<std::string> spss = GetSPSS(kmer_set, n_workers);
+
+  KmerSet<K, N, KeyType> reconstructed =
+      GetKmerSetFromSPSS<K, N, KeyType>(spss, false, n_workers);
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
+}
+
+TEST(SPSS, GetKmerSetFromSPSSCanonicalRandom) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
+
+  KmerSet<K, N, KeyType> kmer_set = GetRandomKmerSet<K, N, KeyType>(
+      absl::Uniform(absl::IntervalClosed, absl::InsecureBitGen(), 1, 1 << 16),
       true);
 
   std::vector<std::string> spss = GetSPSSCanonical(kmer_set, true, n_workers);
