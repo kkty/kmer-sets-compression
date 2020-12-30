@@ -1773,6 +1773,42 @@ std::vector<std::string> GetSPSSCanonical(
                                          n_workers, n_buckets);
 }
 
+// Reads SPSS and returns a list of kmers.
+template <int K>
+std::vector<Kmer<K>> GetKmersFromSPSS(const std::vector<std::string>& spss,
+                                      bool canonical, int n_workers) {
+  std::vector<Kmer<K>> kmers;
+  std::vector<std::thread> threads;
+  std::mutex mu;
+
+  for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
+    threads.emplace_back([&, range] {
+      std::vector<Kmer<K>> buf;
+
+      for (std::int64_t i : range) {
+        const std::string& s = spss[i];
+
+        for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
+          Kmer<K> kmer(s.substr(j, K));
+          if (canonical) kmer = kmer.Canonical();
+          buf.push_back(kmer);
+        }
+      }
+
+      if (n_workers == 1) {
+        kmers = std::move(buf);
+      } else {
+        std::lock_guard lck(mu);
+        kmers.insert(kmers.end(), buf.begin(), buf.end());
+      }
+    });
+  }
+
+  for (std::thread& t : threads) t.join();
+
+  return kmers;
+}
+
 // Reads SPSS and returns the corresponding kmer set.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
