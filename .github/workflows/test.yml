@@ -5,6 +5,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: '**/extern'
+          key: ${{ runner.os }}-${{ hashFiles('**/extern/install.sh') }}
       - run: PREFIX=$(pwd) ./install.sh
         working-directory: extern
         env:
