@@ -18,5 +18,5 @@ jobs:
           CXX: g++-10
       - run: ctest
         working-directory: build
-      - run: ctest --repeat-until-fail 100 -R '.*Random'
+      - run: ctest --repeat-until-fail 10 -R '.*Random'
         working-directory: build
