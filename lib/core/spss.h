@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -64,6 +65,162 @@ std::string Complement(std::string s) {
 }
 
 }  // namespace internal
+
+// Constructs unitigs from a kmer set.
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
+                                    int n_workers) {
+  const auto GetNexts = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (next != kmer && kmer_set.Contains(next)) v.push_back(next);
+    }
+
+    return v;
+  };
+
+  const auto GetPrevs = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> v;
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (prev != kmer && kmer_set.Contains(prev)) v.push_back(prev);
+    }
+
+    return v;
+  };
+
+  // Kmers where a unitig starts.
+  const auto start_kmers = kmer_set.Find(
+      [&](const Kmer<K>& kmer) {
+        const auto prevs = GetPrevs(kmer);
+
+        // If the k-mer has no incoming edges.
+        if (prevs.size() == 0) return true;
+
+        // If the k-mer has multiple incoming edges.
+        if (prevs.size() >= 2) return true;
+
+        // There is an edge from "prev" to "kmer".
+        const Kmer<K> prev = prevs[0];
+
+        const auto prev_nexts = GetNexts(prev);
+
+        // If "prev" has multiple outgoing edges.
+        if (prev_nexts.size() >= 2) return true;
+
+        return false;
+      },
+      n_workers);
+
+  // Kmers where a unitig ends.
+  const auto end_kmers = [&] {
+    const auto v = kmer_set.Find(
+        [&](const Kmer<K>& kmer) {
+          const auto nexts = GetNexts(kmer);
+
+          // If the k-mer has no outgoing edges.
+          if (nexts.size() == 0) return true;
+
+          // If the k-mer has multiple outgoing edges.
+          if (nexts.size() >= 2) return true;
+
+          // There is an edge from "kmer" to "next".
+          const Kmer<K> next = nexts[0];
+
+          const auto next_prevs = GetPrevs(next);
+
+          // If "next" has multiple incoming edges.
+          if (next_prevs.size() >= 2) return true;
+
+          return false;
+        },
+        n_workers);
+
+    const absl::flat_hash_set<Kmer<K>> s(v.begin(), v.end());
+
+    return s;
+  }();
+
+  std::vector<std::string> unitigs;
+  KmerSet<K, N, KeyType> visited;
+
+  // For each kmer in start_kmers, finds the unitig from it.
+  {
+    std::mutex mu_unitigs;
+    std::mutex mu_visited;
+
+    std::vector<std::thread> threads;
+
+    for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf_unitigs;
+        KmerSet<K, N, KeyType> buf_visited;
+
+        for (std::int64_t i : range) {
+          const Kmer<K>& start_kmer = start_kmers[i];
+          std::vector<Kmer<K>> path;
+
+          Kmer<K> current = start_kmer;
+          while (true) {
+            buf_visited.Add(current);
+            path.push_back(current);
+            if (end_kmers.find(current) != end_kmers.end()) break;
+            current = GetNexts(current)[0];
+          }
+
+          buf_unitigs.push_back(internal::ConcatenateKmers(path));
+        }
+
+        // 3 * n_workers threads are created in total, but no more than
+        // n_workers threads are active at any point in time.
+
+        std::vector<std::thread> threads;
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_visited);
+          visited.Add(buf_visited, 1);
+        });
+
+        threads.emplace_back([&] {
+          std::lock_guard lck(mu_unitigs);
+
+          for (std::string& unitig : buf_unitigs)
+            unitigs.push_back(std::move(unitig));
+        });
+
+        for (std::thread& t : threads) t.join();
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  // Considers loops where every node has 1 incoming edge and 1 outgoing edge.
+  {
+    const std::vector<Kmer<K>> not_visited = kmer_set.Find(
+        [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); },
+        n_workers);
+
+    for (const Kmer<K>& kmer : not_visited) {
+      if (visited.Contains(kmer)) continue;
+
+      Kmer<K> current = kmer;
+
+      std::vector<Kmer<K>> path;
+
+      while (!visited.Contains(current)) {
+        path.push_back(current);
+        visited.Add(current);
+        current = GetNexts(current)[0];
+      }
+
+      unitigs.push_back(internal::ConcatenateKmers(path));
+    }
+  }
+
+  return unitigs;
+}
 
 // Constructs unitigs from a set of canonical kmers.
 template <int K, int N, typename KeyType>
@@ -480,6 +637,343 @@ absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetSuffixesFromUnitigs(
   }
 
   return suffixes;
+}
+
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSS(
+    const std::vector<std::string>& unitigs,
+    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
+    int n_workers, int n_buckets = 64) {
+  const std::int64_t n = unitigs.size();
+
+  // Considers a directed graph where each node represents a unitig.
+
+  // Returns a list of outgoing edges from i.
+  const auto GetEdgesOut = [&](std::int64_t i) {
+    std::vector<std::int64_t> edges;
+
+    const std::string& unitig = unitigs[i];
+
+    const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+
+    for (const Kmer<K>& suffix_next : suffix.Nexts()) {
+      auto it = prefixes.find(suffix_next);
+
+      if (it == prefixes.end()) continue;
+
+      for (std::int64_t j : it->second) {
+        if (i == j) continue;
+
+        edges.push_back(j);
+      }
+    }
+
+    return edges;
+  };
+
+  // edge_in[i] is the selected incoming edge to i.
+  absl::flat_hash_map<std::int64_t, std::int64_t> edge_in;
+
+  // edge_out[i] is the selected outgoing edge from i.
+  absl::flat_hash_map<std::int64_t, std::int64_t> edge_out;
+
+  {
+    spdlog::debug("constructing edge_in and edge_out");
+
+    std::vector<std::thread> threads;
+    std::vector<std::mutex> mus(n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_in(
+        n_buckets);
+    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_out(
+        n_buckets);
+
+    // Acquires locks for node i and j.
+    const auto AcquireLock = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].lock();
+        return;
+      }
+
+      mus[std::min(bucket_i, bucket_j)].lock();
+      mus[std::max(bucket_i, bucket_j)].lock();
+    };
+
+    // Releases locks for node i and j.
+    const auto ReleaseLock = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      int bucket_j = j % n_buckets;
+
+      if (bucket_i == bucket_j) {
+        mus[bucket_i].unlock();
+        return;
+      }
+
+      mus[std::max(bucket_i, bucket_j)].unlock();
+      mus[std::min(bucket_i, bucket_j)].unlock();
+    };
+
+    // Returns true if there is an incoming edge to i.
+    const auto HasEdgeIn = [&](std::int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edge_in[bucket].find(i) != buf_edge_in[bucket].end();
+    };
+
+    // Returns true if there is an outgoing edge from i.
+    const auto HasEdgeOut = [&](std::int64_t i) {
+      int bucket = i % n_buckets;
+      return buf_edge_out[bucket].find(i) != buf_edge_out[bucket].end();
+    };
+
+    // Adds an incoming edge to i.
+    const auto AddEdgeIn = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      buf_edge_in[bucket_i][i] = j;
+    };
+
+    // Add an outgoing edge from i.
+    const auto AddEdgeOut = [&](std::int64_t i, std::int64_t j) {
+      int bucket_i = i % n_buckets;
+      buf_edge_out[bucket_i][i] = j;
+    };
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        for (std::int64_t i : range) {
+          for (std::int64_t j : GetEdgesOut(i)) {
+            AcquireLock(i, j);
+
+            if (!HasEdgeOut(i) && !HasEdgeIn(j)) {
+              AddEdgeOut(i, j);
+              AddEdgeIn(j, i);
+            }
+
+            ReleaseLock(i, j);
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+
+    spdlog::debug("moving from buffers");
+
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      boost::asio::post(pool, [&] {
+        std::int64_t size = 0;
+        for (int i = 0; i < n_buckets; i++) {
+          size += buf_edge_in[i].size();
+        }
+        edge_in.reserve(size);
+        for (int i = 0; i < n_buckets; i++) {
+          edge_in.insert(buf_edge_in[i].begin(), buf_edge_in[i].end());
+        }
+      });
+
+      boost::asio::post(pool, [&] {
+        std::int64_t size = 0;
+        for (int i = 0; i < n_buckets; i++) {
+          size += buf_edge_out[i].size();
+        }
+        edge_out.reserve(size);
+        for (int i = 0; i < n_buckets; i++) {
+          edge_out.insert(buf_edge_out[i].begin(), buf_edge_out[i].end());
+        }
+      });
+
+      pool.join();
+    }
+
+    spdlog::debug("constructed edge_in and edge_out");
+  }
+
+  {
+    ParallelDisjointSet disjoint_set(n);
+
+    spdlog::debug("constructing disjoint_set");
+
+    {
+      std::vector<std::thread> threads;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          for (std::int64_t i : range) {
+            auto it = edge_out.find(i);
+            if (it == edge_out.end()) continue;
+            disjoint_set.Unite(i, it->second);
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+    }
+
+    spdlog::debug("constructed disjoint_set");
+
+    spdlog::debug("removing loops");
+
+    {
+      absl::flat_hash_set<std::int64_t> groups;
+      absl::flat_hash_set<std::int64_t> groups_with_terminals;
+
+      spdlog::debug("constructing groups and groups_with_terminals");
+
+      std::vector<std::thread> threads;
+      std::mutex mu_groups;
+      std::mutex mu_groups_with_terminals;
+
+      for (const Range& range : Range(0, n).Split(n_workers)) {
+        threads.emplace_back([&, range] {
+          absl::flat_hash_set<std::int64_t> buf_groups;
+          absl::flat_hash_set<std::int64_t> buf_groups_with_terminals;
+
+          for (std::int64_t i : range) {
+            int group = disjoint_set.Find(i);
+
+            buf_groups.insert(group);
+
+            if (edge_out.find(i) == edge_out.end()) {
+              buf_groups_with_terminals.insert(group);
+            }
+          }
+
+          if (n_workers == 1) {
+            groups = std::move(buf_groups);
+            groups_with_terminals = std::move(buf_groups_with_terminals);
+          } else {
+            {
+              std::lock_guard lck(mu_groups);
+              groups.insert(buf_groups.begin(), buf_groups.end());
+            }
+
+            {
+              std::lock_guard lck(mu_groups_with_terminals);
+              groups_with_terminals.insert(buf_groups_with_terminals.begin(),
+                                           buf_groups_with_terminals.end());
+            }
+          }
+        });
+      }
+
+      for (std::thread& t : threads) t.join();
+
+      spdlog::debug("constructed groups and groups_with_terminals");
+
+      for (std::int64_t i : groups) {
+        if (groups_with_terminals.find(i) == groups_with_terminals.end()) {
+          std::int64_t j = edge_out[i];
+          edge_out.erase(i);
+          edge_in.erase(j);
+        }
+      }
+    }
+
+    spdlog::debug("removed loops");
+  }
+
+  std::vector<std::int64_t> starts;
+
+  spdlog::debug("constructing starts");
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::int64_t> buf;
+
+        for (std::int64_t i : range) {
+          if (edge_in.find(i) == edge_in.end()) {
+            buf.push_back(i);
+          }
+        }
+
+        {
+          std::lock_guard lck(mu);
+          starts.insert(starts.end(), buf.begin(), buf.end());
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  spdlog::debug("constructed starts");
+
+  std::vector<std::string> spss;
+
+  spdlog::debug("constructing spss");
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, starts.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::string> buf;
+
+        for (std::int64_t i : range) {
+          std::int64_t start = starts[i];
+
+          std::vector<std::int64_t> path;
+
+          std::int64_t current = start;
+          while (true) {
+            path.push_back(current);
+
+            auto it = edge_out.find(current);
+            if (it == edge_out.end()) break;
+
+            current = it->second;
+          }
+
+          std::string s = unitigs[path[0]];
+          for (std::size_t j = 1; j < path.size(); j++) {
+            s += unitigs[path[j]].substr(K - 1,
+                                         unitigs[path[j]].length() - (K - 1));
+          }
+
+          buf.push_back(std::move(s));
+        }
+
+        {
+          std::lock_guard lck(mu);
+          spss.insert(spss.end(), buf.begin(), buf.end());
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  spdlog::debug("constructed spss");
+
+  return spss;
+}
+
+// Constructs a small-weight SPSS from a set of kmers.
+template <int K, int N, typename KeyType>
+std::vector<std::string> GetSPSS(const KmerSet<K, N, KeyType>& kmer_set,
+                                 int n_workers, int n_buckets = 64) {
+  spdlog::debug("constructing unitigs");
+
+  const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
+
+  spdlog::debug("constructed unitigs");
+
+  spdlog::debug("constructing prefixes");
+
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
+      GetPrefixesFromUnitigs<K>(unitigs, n_workers);
+
+  spdlog::debug("constructed prefixes");
+
+  return GetSPSS<K, N, KeyType>(unitigs, prefixes, n_workers, n_buckets);
 }
 
 // Constructs a small-weight SPSS from unitigs.
@@ -1279,499 +1773,7 @@ std::vector<std::string> GetSPSSCanonical(
                                          n_workers, n_buckets);
 }
 
-// Constructs unitigs from a kmer set.
-template <int K, int N, typename KeyType>
-std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
-                                    int n_workers) {
-  const auto GetNexts = [&](const Kmer<K>& kmer) {
-    std::vector<Kmer<K>> v;
-
-    for (const Kmer<K>& next : kmer.Nexts()) {
-      if (next != kmer && kmer_set.Contains(next)) v.push_back(next);
-    }
-
-    return v;
-  };
-
-  const auto GetPrevs = [&](const Kmer<K>& kmer) {
-    std::vector<Kmer<K>> v;
-
-    for (const Kmer<K>& prev : kmer.Prevs()) {
-      if (prev != kmer && kmer_set.Contains(prev)) v.push_back(prev);
-    }
-
-    return v;
-  };
-
-  // Kmers where a unitig starts.
-  const auto start_kmers = kmer_set.Find(
-      [&](const Kmer<K>& kmer) {
-        const auto prevs = GetPrevs(kmer);
-
-        // If the k-mer has no incoming edges.
-        if (prevs.size() == 0) return true;
-
-        // If the k-mer has multiple incoming edges.
-        if (prevs.size() >= 2) return true;
-
-        // There is an edge from "prev" to "kmer".
-        const Kmer<K> prev = prevs[0];
-
-        const auto prev_nexts = GetNexts(prev);
-
-        // If "prev" has multiple outgoing edges.
-        if (prev_nexts.size() >= 2) return true;
-
-        return false;
-      },
-      n_workers);
-
-  // Kmers where a unitig ends.
-  const auto end_kmers = [&] {
-    const auto v = kmer_set.Find(
-        [&](const Kmer<K>& kmer) {
-          const auto nexts = GetNexts(kmer);
-
-          // If the k-mer has no outgoing edges.
-          if (nexts.size() == 0) return true;
-
-          // If the k-mer has multiple outgoing edges.
-          if (nexts.size() >= 2) return true;
-
-          // There is an edge from "kmer" to "next".
-          const Kmer<K> next = nexts[0];
-
-          const auto next_prevs = GetPrevs(next);
-
-          // If "next" has multiple incoming edges.
-          if (next_prevs.size() >= 2) return true;
-
-          return false;
-        },
-        n_workers);
-
-    const absl::flat_hash_set<Kmer<K>> s(v.begin(), v.end());
-
-    return s;
-  }();
-
-  std::vector<std::string> unitigs;
-  KmerSet<K, N, KeyType> visited;
-
-  // For each kmer in start_kmers, finds the unitig from it.
-  {
-    std::mutex mu_unitigs;
-    std::mutex mu_visited;
-
-    std::vector<std::thread> threads;
-
-    for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<std::string> buf_unitigs;
-        KmerSet<K, N, KeyType> buf_visited;
-
-        for (std::int64_t i : range) {
-          const Kmer<K>& start_kmer = start_kmers[i];
-          std::vector<Kmer<K>> path;
-
-          Kmer<K> current = start_kmer;
-          while (true) {
-            buf_visited.Add(current);
-            path.push_back(current);
-            if (end_kmers.find(current) != end_kmers.end()) break;
-            current = GetNexts(current)[0];
-          }
-
-          buf_unitigs.push_back(internal::ConcatenateKmers(path));
-        }
-
-        // 3 * n_workers threads are created in total, but no more than
-        // n_workers threads are active at any point in time.
-
-        std::vector<std::thread> threads;
-
-        threads.emplace_back([&] {
-          std::lock_guard lck(mu_visited);
-          visited.Add(buf_visited, 1);
-        });
-
-        threads.emplace_back([&] {
-          std::lock_guard lck(mu_unitigs);
-
-          for (std::string& unitig : buf_unitigs)
-            unitigs.push_back(std::move(unitig));
-        });
-
-        for (std::thread& t : threads) t.join();
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-  }
-
-  // Considers loops where every node has 1 incoming edge and 1 outgoing edge.
-  {
-    const std::vector<Kmer<K>> not_visited = kmer_set.Find(
-        [&](const Kmer<K>& kmer) { return !visited.Contains(kmer); },
-        n_workers);
-
-    for (const Kmer<K>& kmer : not_visited) {
-      if (visited.Contains(kmer)) continue;
-
-      Kmer<K> current = kmer;
-
-      std::vector<Kmer<K>> path;
-
-      while (!visited.Contains(current)) {
-        path.push_back(current);
-        visited.Add(current);
-        current = GetNexts(current)[0];
-      }
-
-      unitigs.push_back(internal::ConcatenateKmers(path));
-    }
-  }
-
-  return unitigs;
-}
-
-template <int K, int N, typename KeyType>
-std::vector<std::string> GetSPSS(
-    const std::vector<std::string>& unitigs,
-    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
-    int n_workers, int n_buckets = 64) {
-  const std::int64_t n = unitigs.size();
-
-  // Considers a directed graph where each node represents a unitig.
-
-  // Returns a list of outgoing edges from i.
-  const auto GetEdgesOut = [&](std::int64_t i) {
-    std::vector<std::int64_t> edges;
-
-    const std::string& unitig = unitigs[i];
-
-    const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
-
-    for (const Kmer<K>& suffix_next : suffix.Nexts()) {
-      auto it = prefixes.find(suffix_next);
-
-      if (it == prefixes.end()) continue;
-
-      for (std::int64_t j : it->second) {
-        if (i == j) continue;
-
-        edges.push_back(j);
-      }
-    }
-
-    return edges;
-  };
-
-  // edge_in[i] is the selected incoming edge to i.
-  absl::flat_hash_map<std::int64_t, std::int64_t> edge_in;
-
-  // edge_out[i] is the selected outgoing edge from i.
-  absl::flat_hash_map<std::int64_t, std::int64_t> edge_out;
-
-  {
-    spdlog::debug("constructing edge_in and edge_out");
-
-    std::vector<std::thread> threads;
-    std::vector<std::mutex> mus(n_buckets);
-    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_in(
-        n_buckets);
-    std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_out(
-        n_buckets);
-
-    // Acquires locks for node i and j.
-    const auto AcquireLock = [&](std::int64_t i, std::int64_t j) {
-      int bucket_i = i % n_buckets;
-      int bucket_j = j % n_buckets;
-
-      if (bucket_i == bucket_j) {
-        mus[bucket_i].lock();
-        return;
-      }
-
-      mus[std::min(bucket_i, bucket_j)].lock();
-      mus[std::max(bucket_i, bucket_j)].lock();
-    };
-
-    // Releases locks for node i and j.
-    const auto ReleaseLock = [&](std::int64_t i, std::int64_t j) {
-      int bucket_i = i % n_buckets;
-      int bucket_j = j % n_buckets;
-
-      if (bucket_i == bucket_j) {
-        mus[bucket_i].unlock();
-        return;
-      }
-
-      mus[std::max(bucket_i, bucket_j)].unlock();
-      mus[std::min(bucket_i, bucket_j)].unlock();
-    };
-
-    // Returns true if there is an incoming edge to i.
-    const auto HasEdgeIn = [&](std::int64_t i) {
-      int bucket = i % n_buckets;
-      return buf_edge_in[bucket].find(i) != buf_edge_in[bucket].end();
-    };
-
-    // Returns true if there is an outgoing edge from i.
-    const auto HasEdgeOut = [&](std::int64_t i) {
-      int bucket = i % n_buckets;
-      return buf_edge_out[bucket].find(i) != buf_edge_out[bucket].end();
-    };
-
-    // Adds an incoming edge to i.
-    const auto AddEdgeIn = [&](std::int64_t i, std::int64_t j) {
-      int bucket_i = i % n_buckets;
-      buf_edge_in[bucket_i][i] = j;
-    };
-
-    // Add an outgoing edge from i.
-    const auto AddEdgeOut = [&](std::int64_t i, std::int64_t j) {
-      int bucket_i = i % n_buckets;
-      buf_edge_out[bucket_i][i] = j;
-    };
-
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        for (std::int64_t i : range) {
-          for (std::int64_t j : GetEdgesOut(i)) {
-            AcquireLock(i, j);
-
-            if (!HasEdgeOut(i) && !HasEdgeIn(j)) {
-              AddEdgeOut(i, j);
-              AddEdgeIn(j, i);
-            }
-
-            ReleaseLock(i, j);
-          }
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    spdlog::debug("moving from buffers");
-
-    {
-      boost::asio::thread_pool pool(n_workers);
-
-      boost::asio::post(pool, [&] {
-        std::int64_t size = 0;
-        for (int i = 0; i < n_buckets; i++) {
-          size += buf_edge_in[i].size();
-        }
-        edge_in.reserve(size);
-        for (int i = 0; i < n_buckets; i++) {
-          edge_in.insert(buf_edge_in[i].begin(), buf_edge_in[i].end());
-        }
-      });
-
-      boost::asio::post(pool, [&] {
-        std::int64_t size = 0;
-        for (int i = 0; i < n_buckets; i++) {
-          size += buf_edge_out[i].size();
-        }
-        edge_out.reserve(size);
-        for (int i = 0; i < n_buckets; i++) {
-          edge_out.insert(buf_edge_out[i].begin(), buf_edge_out[i].end());
-        }
-      });
-
-      pool.join();
-    }
-
-    spdlog::debug("constructed edge_in and edge_out");
-  }
-
-  {
-    ParallelDisjointSet disjoint_set(n);
-
-    spdlog::debug("constructing disjoint_set");
-
-    {
-      std::vector<std::thread> threads;
-
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          for (std::int64_t i : range) {
-            auto it = edge_out.find(i);
-            if (it == edge_out.end()) continue;
-            disjoint_set.Unite(i, it->second);
-          }
-        });
-      }
-
-      for (std::thread& t : threads) t.join();
-    }
-
-    spdlog::debug("constructed disjoint_set");
-
-    spdlog::debug("removing loops");
-
-    {
-      absl::flat_hash_set<std::int64_t> groups;
-      absl::flat_hash_set<std::int64_t> groups_with_terminals;
-
-      spdlog::debug("constructing groups and groups_with_terminals");
-
-      std::vector<std::thread> threads;
-      std::mutex mu_groups;
-      std::mutex mu_groups_with_terminals;
-
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
-          absl::flat_hash_set<std::int64_t> buf_groups;
-          absl::flat_hash_set<std::int64_t> buf_groups_with_terminals;
-
-          for (std::int64_t i : range) {
-            int group = disjoint_set.Find(i);
-
-            buf_groups.insert(group);
-
-            if (edge_out.find(i) == edge_out.end()) {
-              buf_groups_with_terminals.insert(group);
-            }
-          }
-
-          if (n_workers == 1) {
-            groups = std::move(buf_groups);
-            groups_with_terminals = std::move(buf_groups_with_terminals);
-          } else {
-            {
-              std::lock_guard lck(mu_groups);
-              groups.insert(buf_groups.begin(), buf_groups.end());
-            }
-
-            {
-              std::lock_guard lck(mu_groups_with_terminals);
-              groups_with_terminals.insert(buf_groups_with_terminals.begin(),
-                                           buf_groups_with_terminals.end());
-            }
-          }
-        });
-      }
-
-      for (std::thread& t : threads) t.join();
-
-      spdlog::debug("constructed groups and groups_with_terminals");
-
-      for (std::int64_t i : groups) {
-        if (groups_with_terminals.find(i) == groups_with_terminals.end()) {
-          std::int64_t j = edge_out[i];
-          edge_out.erase(i);
-          edge_in.erase(j);
-        }
-      }
-    }
-
-    spdlog::debug("removed loops");
-  }
-
-  std::vector<std::int64_t> starts;
-
-  spdlog::debug("constructing starts");
-
-  {
-    std::vector<std::thread> threads;
-    std::mutex mu;
-
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<std::int64_t> buf;
-
-        for (std::int64_t i : range) {
-          if (edge_in.find(i) == edge_in.end()) {
-            buf.push_back(i);
-          }
-        }
-
-        {
-          std::lock_guard lck(mu);
-          starts.insert(starts.end(), buf.begin(), buf.end());
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-  }
-
-  spdlog::debug("constructed starts");
-
-  std::vector<std::string> spss;
-
-  spdlog::debug("constructing spss");
-
-  {
-    std::vector<std::thread> threads;
-    std::mutex mu;
-
-    for (const Range& range : Range(0, starts.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        std::vector<std::string> buf;
-
-        for (std::int64_t i : range) {
-          std::int64_t start = starts[i];
-
-          std::vector<std::int64_t> path;
-
-          std::int64_t current = start;
-          while (true) {
-            path.push_back(current);
-
-            auto it = edge_out.find(current);
-            if (it == edge_out.end()) break;
-
-            current = it->second;
-          }
-
-          std::string s = unitigs[path[0]];
-          for (std::size_t j = 1; j < path.size(); j++) {
-            s += unitigs[path[j]].substr(K - 1,
-                                         unitigs[path[j]].length() - (K - 1));
-          }
-
-          buf.push_back(std::move(s));
-        }
-
-        {
-          std::lock_guard lck(mu);
-          spss.insert(spss.end(), buf.begin(), buf.end());
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-  }
-
-  spdlog::debug("constructed spss");
-
-  return spss;
-}
-
-// Constructs a small-weight SPSS from a set of kmers.
-template <int K, int N, typename KeyType>
-std::vector<std::string> GetSPSS(const KmerSet<K, N, KeyType>& kmer_set,
-                                 int n_workers, int n_buckets = 64) {
-  spdlog::debug("constructing unitigs");
-
-  const std::vector<std::string> unitigs = GetUnitigs(kmer_set, n_workers);
-
-  spdlog::debug("constructed unitigs");
-
-  spdlog::debug("constructing prefixes");
-
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
-      GetPrefixesFromUnitigs<K>(unitigs, n_workers);
-
-  spdlog::debug("constructed prefixes");
-
-  return GetSPSS<K, N, KeyType>(unitigs, prefixes, n_workers, n_buckets);
-}
-
+// Reads SPSS and returns the corresponding kmer set.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
                                           bool canonical, int n_workers) {
