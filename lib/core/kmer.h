@@ -6,7 +6,9 @@
 #include <cassert>
 #include <cstddef>
 #include <string>
+#include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
 
 // Kmer is used to represent a single kmer.
@@ -111,6 +113,7 @@ class Kmer {
   // The dictionary ordering is used to get the minimum.
   Kmer<K> Canonical() const { return std::min(*this, Complement()); }
 
+  // Returns the concatenation of the (K-1)-suffix of the kmer and "c".
   Kmer<K> Next(char c) const {
     Kmer<K> next = *this;
     next.bits_ <<= 2;
@@ -118,6 +121,7 @@ class Kmer {
     return next;
   }
 
+  // Returns the concatenation of "c" and the (K-1)-prefix of the kmer.
   Kmer<K> Prev(char c) const {
     Kmer<K> prev = *this;
     prev.bits_ >>= 2;
@@ -125,6 +129,7 @@ class Kmer {
     return prev;
   }
 
+  // Returns {Next('A'), Next('C'), Next('G'), Next('T')}.
   std::array<Kmer<K>, 4> Nexts() const {
     std::array<Kmer<K>, 4> nexts;
     nexts[0] = Next('A');
@@ -134,6 +139,7 @@ class Kmer {
     return nexts;
   }
 
+  // Returns {Prev('A'), Prev('C'), Prev('G'), Prev('T')}.
   std::array<Kmer<K>, 4> Prevs() const {
     std::array<Kmer<K>, 4> prevs;
     prevs[0] = Prev('A');
@@ -176,6 +182,18 @@ Kmer<K> GetRandomKmer() {
   }
 
   return kmer;
+}
+
+// Returns n randomly-generated kmers.
+template <int K>
+std::vector<Kmer<K>> GetRandomKmers(int n) {
+  absl::flat_hash_set<Kmer<K>> kmers;
+
+  while (static_cast<int>(kmers.size()) < n) {
+    kmers.insert(GetRandomKmer<K>());
+  }
+
+  return std::vector<Kmer<K>>(kmers.begin(), kmers.end());
 }
 
 template <int K>
