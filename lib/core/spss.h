@@ -402,61 +402,36 @@ std::vector<std::string> GetUnitigsCanonical(
   return unitigs;
 }
 
-// For each kmer, finds a list of unitigs that contain the kmer as its prefix
-// or as its suffix.
+// For each kmer s, finds a list of integers v such that s is the prefix of
+// unitigs[v[i]] for each i.
 template <int K>
-std::pair<absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>,
-          absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>>
-GetPrefixesAndSuffixesFromUnitigs(const std::vector<std::string>& unitigs,
-                                  int n_workers) {
+absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetPrefixesFromUnitigs(
+    const std::vector<std::string>& unitigs, int n_workers) {
   const std::int64_t n = unitigs.size();
 
-  // If i is in prefixes[kmer], the unitigs.substr(0, K) == kmer.String().
   absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
-
-  // Similar to prefixes, but suffixes are considered.
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
 
   {
     std::vector<std::thread> threads;
-    std::mutex mu_prefixes;
-    std::mutex mu_suffixes;
+    std::mutex mu;
 
     for (const Range& range : Range(0, n).Split(n_workers)) {
       threads.emplace_back([&, range] {
-        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf_prefixes;
-        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf_suffixes;
+        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf;
 
         for (std::int64_t i : range) {
           const std::string& unitig = unitigs[i];
           const Kmer<K> prefix(unitig.substr(0, K));
-          const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
-          buf_prefixes[prefix].push_back(i);
-          buf_suffixes[suffix].push_back(i);
+          buf[prefix].push_back(i);
         }
 
         // Moves from buffers.
 
         if (n_workers == 1) {
-          prefixes = std::move(buf_prefixes);
-          suffixes = std::move(buf_suffixes);
+          prefixes = std::move(buf);
         } else {
-          bool done_prefixes = false;
-          bool done_suffixes = false;
-
-          while (!done_prefixes || !done_suffixes) {
-            if (!done_prefixes && mu_prefixes.try_lock()) {
-              prefixes.insert(buf_prefixes.begin(), buf_prefixes.end());
-              mu_prefixes.unlock();
-              done_prefixes = true;
-            }
-
-            if (!done_suffixes && mu_suffixes.try_lock()) {
-              suffixes.insert(buf_suffixes.begin(), buf_suffixes.end());
-              mu_suffixes.unlock();
-              done_suffixes = true;
-            }
-          }
+          std::lock_guard lck(mu);
+          prefixes.insert(buf.begin(), buf.end());
         }
       });
     }
@@ -464,7 +439,47 @@ GetPrefixesAndSuffixesFromUnitigs(const std::vector<std::string>& unitigs,
     for (std::thread& t : threads) t.join();
   }
 
-  return std::make_pair(prefixes, suffixes);
+  return prefixes;
+}
+
+// For each kmer s, finds a list of integers v such that s is the suffix of
+// unitigs[v[i]] for each i.
+template <int K>
+absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetSuffixesFromUnitigs(
+    const std::vector<std::string>& unitigs, int n_workers) {
+  const std::int64_t n = unitigs.size();
+
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+
+  {
+    std::vector<std::thread> threads;
+    std::mutex mu;
+
+    for (const Range& range : Range(0, n).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf;
+
+        for (std::int64_t i : range) {
+          const std::string& unitig = unitigs[i];
+          const Kmer<K> suffix(unitig.substr(unitig.length() - K, K));
+          buf[suffix].push_back(i);
+        }
+
+        // Moves from buffers.
+
+        if (n_workers == 1) {
+          suffixes = std::move(buf);
+        } else {
+          std::lock_guard lck(mu);
+          suffixes.insert(buf.begin(), buf.end());
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  return suffixes;
 }
 
 // Constructs a small-weight SPSS from unitigs.
@@ -1252,11 +1267,11 @@ std::vector<std::string> GetSPSSCanonical(
 
   spdlog::debug("constructing prefixes and suffixes");
 
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
+      GetPrefixesFromUnitigs<K>(unitigs, n_workers);
 
-  std::tie(prefixes, suffixes) =
-      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes =
+      GetSuffixesFromUnitigs<K>(unitigs, n_workers);
 
   spdlog::debug("constructed prefixes and suffixes");
 
@@ -1424,7 +1439,6 @@ template <int K, int N, typename KeyType>
 std::vector<std::string> GetSPSS(
     const std::vector<std::string>& unitigs,
     const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
-    const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& suffixes,
     int n_workers, int n_buckets = 64) {
   const std::int64_t n = unitigs.size();
 
@@ -1442,29 +1456,6 @@ std::vector<std::string> GetSPSS(
       auto it = prefixes.find(suffix_next);
 
       if (it == prefixes.end()) continue;
-
-      for (std::int64_t j : it->second) {
-        if (i == j) continue;
-
-        edges.push_back(j);
-      }
-    }
-
-    return edges;
-  };
-
-  // Returns a list of incoming edges to i.
-  const auto GetEdgesIn = [&](std::int64_t i) {
-    std::vector<std::int64_t> edges;
-
-    const std::string& unitig = unitigs[i];
-
-    const Kmer<K> prefix(unitig.substr(0, K));
-
-    for (const Kmer<K>& prefix_prev : prefix.Prevs()) {
-      auto it = suffixes.find(prefix_prev);
-
-      if (it == suffixes.end()) continue;
 
       for (std::int64_t j : it->second) {
         if (i == j) continue;
@@ -1771,18 +1762,14 @@ std::vector<std::string> GetSPSS(const KmerSet<K, N, KeyType>& kmer_set,
 
   spdlog::debug("constructed unitigs");
 
-  spdlog::debug("constructing prefixes and suffixes");
+  spdlog::debug("constructing prefixes");
 
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
+      GetPrefixesFromUnitigs<K>(unitigs, n_workers);
 
-  std::tie(prefixes, suffixes) =
-      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+  spdlog::debug("constructed prefixes");
 
-  spdlog::debug("constructed prefixes and suffixes");
-
-  return GetSPSS<K, N, KeyType>(unitigs, prefixes, suffixes, n_workers,
-                                n_buckets);
+  return GetSPSS<K, N, KeyType>(unitigs, prefixes, n_workers, n_buckets);
 }
 
 template <int K, int N, typename KeyType>

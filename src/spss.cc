@@ -61,11 +61,11 @@ void Main(const std::string& file_name) {
 
   spdlog::info("constructing prefixes and suffixes");
 
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
+      GetPrefixesFromUnitigs<K>(unitigs, n_workers);
 
-  std::tie(prefixes, suffixes) =
-      GetPrefixesAndSuffixesFromUnitigs<K>(unitigs, n_workers);
+  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes =
+      GetSuffixesFromUnitigs<K>(unitigs, n_workers);
 
   spdlog::info("constructed prefixes and suffixes");
 
