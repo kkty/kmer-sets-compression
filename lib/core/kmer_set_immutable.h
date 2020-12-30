@@ -2,7 +2,11 @@
 #define CORE_KMER_SET_IMMUTABLE_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
@@ -22,6 +26,60 @@ class KmerSetImmutable {
  public:
   KmerSetImmutable() : buckets_(kBucketsNum) {}
 
+  // Constructs KmerSetImmutable from a list of kmers.
+  KmerSetImmutable(const std::vector<Kmer<K>>& kmers, int n_workers)
+      : buckets_(kBucketsNum) {
+    std::vector<std::thread> threads;
+    std::vector<std::mutex> mus(kBucketsNum);
+
+    for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+      threads.emplace_back([&, range] {
+        std::vector<std::vector<KeyType>> buf(kBucketsNum);
+
+        for (std::int64_t i : range) {
+          int bucket;
+          KeyType key;
+          std::tie(bucket, key) =
+              GetBucketAndKeyFromKmer<K, N, KeyType>(kmers[i]);
+
+          buf[bucket].push_back(key);
+        }
+
+        std::vector<IntSet<KeyType>> int_sets(kBucketsNum);
+
+        // Moves data from buf to int_sets.
+
+        for (int i = 0; i < kBucketsNum; i++) {
+          std::sort(buf[i].begin(), buf[i].end());
+          int_sets[i] = IntSet<KeyType>(buf[i]);
+          std::vector<KeyType>().swap(buf[i]);
+        }
+
+        std::vector<std::vector<KeyType>>().swap(buf);
+
+        // Moves from int_sets.
+
+        if (n_workers == 1) {
+          buckets_ = std::move(int_sets);
+        } else {
+          std::atomic_int done_count = 0;
+          while (done_count < kBucketsNum) {
+            for (int i = 0; i < kBucketsNum; i++) {
+              if (mus[i].try_lock()) {
+                buckets_[i] = buckets_[i].Add(int_sets[i]);
+                mus[i].unlock();
+                done_count += 1;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    for (std::thread& t : threads) t.join();
+  }
+
+  // Constructs KmerSetImmutable from a KmerSet.
   KmerSetImmutable(const KmerSet<K, N, KeyType>& kmer_set, int n_workers)
       : buckets_(kBucketsNum) {
     boost::asio::thread_pool pool(n_workers);
@@ -85,6 +143,36 @@ class KmerSetImmutable {
     pool.join();
 
     return kmer_set;
+  }
+
+  // Reconstructs a list of kmers.
+  std::vector<Kmer<K>> ToKmers(int n_workers) const {
+    std::vector<Kmer<K>> kmers;
+
+    boost::asio::thread_pool pool(n_workers);
+    std::mutex mu;
+
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::vector<Kmer<K>> buf;
+
+        for (int i : range) {
+          std::vector<KeyType> v = buckets_[i].Decode();
+
+          for (KeyType key : v) {
+            buf.push_back(GetKmerFromBucketAndKey<K, N, KeyType>(i, key));
+          }
+        }
+
+        std::lock_guard lck(mu);
+        kmers.insert(kmers.end(), buf.begin(), buf.end());
+      });
+    }
+
+    pool.join();
+
+    return kmers;
   }
 
   std::int64_t IntersectionSize(const KmerSetImmutable& other,
