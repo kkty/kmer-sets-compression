@@ -1773,6 +1773,109 @@ std::vector<std::string> GetSPSSCanonical(
                                          n_workers, n_buckets);
 }
 
+// Given a set of canonical kmers, returns the lower bound of the SPSS weight.
+template <int K, int N, typename KeyType>
+std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
+                                    int n_workers) {
+  std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
+
+  std::atomic_int64_t n_iso = 0;
+  std::atomic_int64_t n_dead = 0;
+  std::atomic_int64_t n_sp = 0;
+
+  using Neighbor = std::pair<Kmer<K>, bool>;
+
+  const auto GetNeighborsLeft = [&](const Kmer<K>& kmer) {
+    std::vector<Neighbor> neighbors;
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (kmer_set.Contains(prev)) {
+        neighbors.emplace_back(prev, false);
+      }
+
+      if (kmer_set.Contains(prev.Complement())) {
+        neighbors.emplace_back(prev, true);
+      }
+    }
+
+    return neighbors;
+  };
+
+  const auto GetNeighborsRight = [&](const Kmer<K>& kmer) {
+    std::vector<Neighbor> neighbors;
+
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (kmer_set.Contains(next)) {
+        neighbors.emplace_back(next, false);
+      }
+
+      if (kmer_set.Contains(next.Complement())) {
+        neighbors.emplace_back(next, true);
+      }
+    }
+
+    return neighbors;
+  };
+
+  std::vector<std::thread> threads;
+
+  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+    threads.emplace_back([&, range] {
+      for (std::int64_t i : range) {
+        const Kmer<K>& kmer = kmers[i];
+
+        std::vector<Neighbor> neighbors_left = GetNeighborsLeft(kmer);
+        std::vector<Neighbor> neighbors_right = GetNeighborsRight(kmer);
+
+        if (neighbors_left.size() + neighbors_right.size() == 0) {
+          n_iso += 1;
+          continue;
+        }
+
+        if (neighbors_left.size() == 0 || neighbors_right.size() == 0) {
+          n_dead += 1;
+        }
+
+        int n_special_neighbors_left = 0;
+
+        for (const Neighbor& neighbor : neighbors_left) {
+          if (neighbor.second) {
+            if (GetNeighborsLeft(neighbor.first).size() == 1) {
+              n_special_neighbors_left += 1;
+            }
+          } else {
+            if (GetNeighborsRight(neighbor.first).size() == 1) {
+              n_special_neighbors_left += 1;
+            }
+          }
+        }
+
+        n_sp += std::max(0, n_special_neighbors_left - 1);
+
+        int n_special_neighbors_right = 0;
+
+        for (const Neighbor& neighbor : neighbors_right) {
+          if (neighbor.second) {
+            if (GetNeighborsRight(neighbor.first).size() == 1) {
+              n_special_neighbors_right += 1;
+            }
+          } else {
+            if (GetNeighborsLeft(neighbor.first).size() == 1) {
+              n_special_neighbors_right += 1;
+            }
+          }
+        }
+
+        n_sp += std::max(0, n_special_neighbors_right - 1);
+      }
+    });
+  }
+
+  for (std::thread& t : threads) t.join();
+
+  return (n_dead + n_sp + 1) / 2 + n_iso;
+}
+
 // Reads SPSS and returns a list of kmers.
 template <int K>
 std::vector<Kmer<K>> GetKmersFromSPSS(const std::vector<std::string>& spss,
