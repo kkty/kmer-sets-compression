@@ -1873,7 +1873,7 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
 
   for (std::thread& t : threads) t.join();
 
-  return (n_dead + n_sp + 1) / 2 + n_iso;
+  return ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
 }
 
 // Reads SPSS and returns a list of kmers.
