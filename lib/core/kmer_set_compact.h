@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
@@ -46,6 +47,13 @@ class KmerSetCompact {
   // be true here as well.
   KmerSet<K, N, KeyType> ToKmerSet(bool canonical, int n_workers) const {
     return GetKmerSetFromSPSS<K, N, KeyType>(spss_, canonical, n_workers);
+  }
+
+  // Constructs a list of kmers.
+  // If the structure was created with "canonical == true", "canonical" should
+  // be true here as well.
+  std::vector<Kmer<K>> ToKmers(bool canonical, int n_workers) const {
+    return GetKmersFromSPSS<K>(spss_, canonical, n_workers);
   }
 
   // Dumps data to a file.
