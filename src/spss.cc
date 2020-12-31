@@ -52,6 +52,10 @@ void Main(const std::string& file_name) {
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
+  std::int64_t weight = GetSPSSWeightCanonical(kmer_set, n_workers);
+
+  spdlog::info("weight = {}", weight);
+
   spdlog::info("constructing unitigs");
 
   const std::vector<std::string> unitigs =
