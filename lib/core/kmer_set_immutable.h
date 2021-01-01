@@ -62,13 +62,18 @@ class KmerSetImmutable {
         if (n_workers == 1) {
           buckets_ = std::move(int_sets);
         } else {
-          std::atomic_int done_count = 0;
+          std::vector<bool> done(kBucketsNum);
+          int done_count = 0;
+
           while (done_count < kBucketsNum) {
             for (int i = 0; i < kBucketsNum; i++) {
+              if (done[i]) continue;
+
               if (mus[i].try_lock()) {
                 buckets_[i] = buckets_[i].Add(int_sets[i]);
                 mus[i].unlock();
                 done_count += 1;
+                done[i] = true;
               }
             }
           }
