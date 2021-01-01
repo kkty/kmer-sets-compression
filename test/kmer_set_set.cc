@@ -13,33 +13,7 @@
 #include "core/kmer_set.h"
 #include "core/kmer_set_immutable.h"
 #include "gtest/gtest.h"
-
-// Constructs n "KmerSetImmutable"s each with m kmers.
-template <int K, int N, typename KeyType>
-std::vector<KmerSetImmutable<K, N, KeyType>> GetRandomKmerSetsImmutable(
-    int n, int m, int n_workers) {
-  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n);
-
-  for (int i = 0; i < n; i++) {
-    KmerSet<K, N, KeyType> kmer_set;
-
-    for (int j = 0; j < m; j++) {
-      kmer_set.Add(GetRandomKmer<K>().Canonical());
-    }
-
-    kmer_sets_immutable[i] =
-        KmerSetImmutable<K, N, KeyType>(kmer_set, n_workers);
-  }
-
-  return kmer_sets_immutable;
-}
-
-// Constructs a KmerSetSet with n kmer sets, each with m kmers.
-template <int K, int N, typename KeyType>
-KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, int n_workers) {
-  return KmerSetSet<K, N, KeyType>(
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers), n, n_workers);
-}
+#include "random.h"
 
 class TemporaryDirectory {
  public:

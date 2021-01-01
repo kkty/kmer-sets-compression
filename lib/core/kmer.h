@@ -6,10 +6,6 @@
 #include <cassert>
 #include <cstddef>
 #include <string>
-#include <vector>
-
-#include "absl/container/flat_hash_set.h"
-#include "absl/random/random.h"
 
 // Kmer is used to represent a single kmer.
 // Data is represented with 2 * K bits internally, regarding 'A', 'C', 'G', and
@@ -157,44 +153,6 @@ class Kmer {
  private:
   std::bitset<K * 2> bits_;
 };
-
-// Returns a randomly-generated kmer.
-template <int K>
-Kmer<K> GetRandomKmer() {
-  absl::InsecureBitGen bitgen;
-  Kmer<K> kmer;
-
-  for (int i = 0; i < K; i++) {
-    switch (absl::Uniform(bitgen, 0, 4)) {
-      case 0:
-        kmer.Set(i, 'A');
-        break;
-      case 1:
-        kmer.Set(i, 'G');
-        break;
-      case 2:
-        kmer.Set(i, 'C');
-        break;
-      case 3:
-        kmer.Set(i, 'T');
-        break;
-    }
-  }
-
-  return kmer;
-}
-
-// Returns n randomly-generated kmers.
-template <int K>
-std::vector<Kmer<K>> GetRandomKmers(int n) {
-  absl::flat_hash_set<Kmer<K>> kmers;
-
-  while (static_cast<int>(kmers.size()) < n) {
-    kmers.insert(GetRandomKmer<K>());
-  }
-
-  return std::vector<Kmer<K>>(kmers.begin(), kmers.end());
-}
 
 template <int K>
 bool operator==(const Kmer<K>& lhs, const Kmer<K>& rhs) {

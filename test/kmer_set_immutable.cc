@@ -6,6 +6,7 @@
 
 #include "core/kmer.h"
 #include "gtest/gtest.h"
+#include "random.h"
 
 TEST(KmerSetImmutable, FromAndToKmers) {
   const int K = 9;

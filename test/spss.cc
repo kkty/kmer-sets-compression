@@ -8,36 +8,7 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "gtest/gtest.h"
-
-// Randomly constructs a KmerSet with n kmers.
-template <int K, int N, typename KeyType>
-KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
-  absl::InsecureBitGen bitgen;
-
-  KmerSet<K, N, KeyType> kmer_set;
-
-  while (true) {
-    std::string s;
-
-    for (int j = 0; j < absl::Uniform(absl::IntervalClosed, bitgen, 1, 100);
-         j++) {
-      s += GetRandomKmer<K>().String();
-    }
-
-    // Creates a loop.
-    if (absl::Uniform(bitgen, 0, 2) == 0) {
-      s += s;
-    }
-
-    for (int j = 0; j < static_cast<int>(s.size()) - K + 1; j++) {
-      Kmer<K> kmer(s.substr(j, K));
-      if (canonical) kmer = kmer.Canonical();
-      kmer_set.Add(kmer);
-
-      if (kmer_set.Size() == n) return kmer_set;
-    }
-  }
-}
+#include "random.h"
 
 TEST(SPSS, Complement) { ASSERT_EQ(internal::Complement("ACGTT"), "AACGT"); }
 
