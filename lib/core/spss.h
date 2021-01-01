@@ -1773,6 +1773,83 @@ std::vector<std::string> GetSPSSCanonical(
                                          n_workers, n_buckets);
 }
 
+// Given a set of kmers, returns the lower bound of SPSS weight.
+template <int K, int N, typename KeyType>
+std::int64_t GetSPSSWeight(const KmerSet<K, N, KeyType>& kmer_set,
+                           int n_workers) {
+  std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
+
+  std::atomic_int64_t n_iso = 0;
+  std::atomic_int64_t n_dead = 0;
+  std::atomic_int64_t n_sp = 0;
+
+  const auto GetNeighborsOut = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> neighbors;
+
+    for (const Kmer<K>& next : kmer.Nexts()) {
+      if (kmer_set.Contains(next)) {
+        neighbors.push_back(next);
+      }
+    }
+
+    return neighbors;
+  };
+
+  const auto GetNeighborsIn = [&](const Kmer<K>& kmer) {
+    std::vector<Kmer<K>> neighbors;
+
+    for (const Kmer<K>& prev : kmer.Prevs()) {
+      if (kmer_set.Contains(prev)) {
+        neighbors.push_back(prev);
+      }
+    }
+
+    return neighbors;
+  };
+
+  std::vector<std::thread> threads;
+
+  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
+    for (std::int64_t i : range) {
+      const Kmer<K>& kmer = kmers[i];
+
+      std::vector<Kmer<K>> neighbors_in = GetNeighborsIn(kmer);
+      std::vector<Kmer<K>> neighbors_out = GetNeighborsOut(kmer);
+
+      if (neighbors_in.size() == 0 && neighbors_out.size() == 0) {
+        n_iso += 1;
+        continue;
+      }
+
+      if (neighbors_in.size() == 0 || neighbors_out.size() == 0) {
+        n_dead += 1;
+      }
+
+      int n_special_neighbors_in = 0;
+      int n_special_neighbors_out = 0;
+
+      for (const Kmer<K>& neighbor : neighbors_in) {
+        if (GetNeighborsOut(neighbor).size() == 1) {
+          n_special_neighbors_in += 1;
+        }
+      }
+
+      for (const Kmer<K>& neighbor : neighbors_out) {
+        if (GetNeighborsIn(neighbor).size() == 1) {
+          n_special_neighbors_out += 1;
+        }
+      }
+
+      n_sp += std::max(0, n_special_neighbors_in - 1);
+      n_sp += std::max(0, n_special_neighbors_out - 1);
+    }
+  }
+
+  for (std::thread& t : threads) t.join();
+
+  return ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
+}
+
 // Given a set of canonical kmers, returns the lower bound of the SPSS weight.
 template <int K, int N, typename KeyType>
 std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
@@ -1793,8 +1870,10 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
         neighbors.emplace_back(prev, false);
       }
 
-      if (kmer_set.Contains(prev.Complement())) {
-        neighbors.emplace_back(prev, true);
+      const Kmer<K> prev_complement = prev.Complement();
+
+      if (kmer_set.Contains(prev_complement)) {
+        neighbors.emplace_back(prev_complement, true);
       }
     }
 
@@ -1809,8 +1888,10 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
         neighbors.emplace_back(next, false);
       }
 
-      if (kmer_set.Contains(next.Complement())) {
-        neighbors.emplace_back(next, true);
+      const Kmer<K> next_complement = next.Complement();
+
+      if (kmer_set.Contains(next_complement)) {
+        neighbors.emplace_back(next_complement, true);
       }
     }
 
@@ -1837,6 +1918,7 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
         }
 
         int n_special_neighbors_left = 0;
+        int n_special_neighbors_right = 0;
 
         for (const Neighbor& neighbor : neighbors_left) {
           if (neighbor.second) {
@@ -1851,8 +1933,6 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
         }
 
         n_sp += std::max(0, n_special_neighbors_left - 1);
-
-        int n_special_neighbors_right = 0;
 
         for (const Neighbor& neighbor : neighbors_right) {
           if (neighbor.second) {
