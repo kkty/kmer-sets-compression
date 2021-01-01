@@ -24,5 +24,5 @@ TEST(KmerSetImmutable, FromAndToKmers) {
   std::sort(kmers.begin(), kmers.end());
   std::sort(reconstructed.begin(), reconstructed.end());
 
-  ASSERT_EQ(kmers, reconstructed);
+  ASSERT_TRUE(kmers == reconstructed);
 }
