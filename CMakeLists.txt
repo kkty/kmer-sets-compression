@@ -43,8 +43,6 @@ foreach (
         kmerset-multiple-decompress
         kmerset-similarity
         kmerset-stat
-        search
-        search-allpair
         spss
 )
     add_executable(${NAME} src/${NAME}.cc)
@@ -65,7 +63,6 @@ foreach (
         parallel_disjoint_set
         range
         io
-        search
         spss
 )
     add_executable(test_${NAME} test/${NAME}.cc)
