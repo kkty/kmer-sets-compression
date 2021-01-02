@@ -3,11 +3,16 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
+#include <limits>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
 #include <vector>
 
+#include "absl/random/random.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "core/kmer_counter.h"
@@ -103,5 +108,29 @@ absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
 
   return reads;
 }
+
+// Creates a temporary directory on initialization and removes it on
+// deconstruction.
+class TemporaryDirectory {
+ public:
+  TemporaryDirectory() {
+    std::stringstream ss;
+    absl::InsecureBitGen bitgen;
+
+    ss << std::hex
+       << absl::Uniform<std::uint64_t>(
+              absl::IntervalClosed, bitgen, 0,
+              std::numeric_limits<std::uint64_t>::max());
+
+    name_ = (std::filesystem::temp_directory_path() / ss.str()).string();
+  }
+
+  ~TemporaryDirectory() { std::filesystem::remove_all(name_); }
+
+  std::string Name() const { return name_; }
+
+ private:
+  std::string name_;
+};
 
 #endif

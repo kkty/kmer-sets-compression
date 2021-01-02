@@ -1,41 +1,16 @@
 #include "core/kmer_set_set.h"
 
 #include <cstdint>
-#include <filesystem>
-#include <ios>
-#include <limits>
-#include <sstream>
 #include <string>
+#include <utility>
 
-#include "absl/random/random.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_immutable.h"
 #include "gtest/gtest.h"
+#include "io.h"
 #include "random.h"
-
-class TemporaryDirectory {
- public:
-  TemporaryDirectory() {
-    std::stringstream ss;
-    absl::InsecureBitGen bitgen;
-
-    ss << std::hex
-       << absl::Uniform<std::uint64_t>(
-              absl::IntervalClosed, bitgen, 0,
-              std::numeric_limits<std::uint64_t>::max());
-
-    name_ = (std::filesystem::temp_directory_path() / ss.str()).string();
-  }
-
-  ~TemporaryDirectory() { std::filesystem::remove_all(name_); }
-
-  std::string Name() const { return name_; }
-
- private:
-  std::string name_;
-};
 
 TEST(KmerSetSet, CtorAndGet) {
   const int K = 9;
