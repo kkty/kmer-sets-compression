@@ -11,6 +11,7 @@
 #include <optional>
 #include <queue>
 #include <sstream>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -90,7 +91,7 @@ class KmerSetSet {
   KmerSetSet() = default;
 
   KmerSetSet(std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable,
-             int n_iterations, int n_workers)
+             bool canonical, int n_workers)
       : kmer_sets_immutable_(std::move(kmer_sets_immutable)) {
     // Considers a non-directed complete graph where ith node represents
     // kmer_sets_immutable_[i].
@@ -99,6 +100,24 @@ class KmerSetSet {
     const auto GetEdgeWeight = [&](int i, int j) {
       return kmer_sets_immutable_[i].IntersectionSizeEstimate(
           kmer_sets_immutable_[j], 0.1);
+    };
+
+    // Returns the sum of expected SPSS weights.
+    const auto GetTotalSPSSWeight = [&] {
+      std::int64_t weight = 0;
+
+      for (const KmerSetImmutable<K, N, KeyType>& kmer_set_immutable :
+           kmer_sets_immutable_) {
+        if (canonical) {
+          weight += GetSPSSWeightCanonical(
+              kmer_set_immutable.ToKmerSet(n_workers), n_workers);
+        } else {
+          weight +=
+              GetSPSSWeight(kmer_set_immutable.ToKmerSet(n_workers), n_workers);
+        }
+      }
+
+      return weight;
     };
 
     // weights[{i, j}] (i < j) is the weight between the ith node and jth node.
@@ -138,6 +157,7 @@ class KmerSetSet {
     // For each i, calculates the size of kmer_sets_immutable_[i] and sums them
     // up. This value will be updated in the main loop accordingly.
     std::atomic_int64_t total_size = 0;
+
     {
       boost::asio::thread_pool pool(n_workers);
       for (std::size_t i = 0; i < kmer_sets_immutable_.size(); i++) {
@@ -146,21 +166,31 @@ class KmerSetSet {
       }
       pool.join();
     }
+
     spdlog::debug("total_size = {}", total_size);
 
-    while (n_iterations--) {
-      spdlog::debug("n_iterations = {}", n_iterations);
+    spdlog::debug("calculating total_spss_weight");
+
+    std::int64_t total_spss_weight = GetTotalSPSSWeight();
+
+    spdlog::debug("calculated total_spss_weight");
+
+    // The interval with which total_spss_weight is updated.
+    const int interval = kmer_sets_immutable_.size() / 8 + 1;
+
+    for (int i = 0;; i++) {
+      spdlog::debug("i = {}", i);
 
       const int n = kmer_sets_immutable_.size();
 
       // Finds i, j such that the weight between ith node and jth node is
       // maximized.
       std::int64_t weight = 0;
-      int i, j;
+      int j, k;
       for (const std::pair<const std::pair<int, int>, std::int64_t>& p :
            weights) {
         if (p.second > weight) {
-          std::tie(i, j) = p.first;
+          std::tie(j, k) = p.first;
           weight = p.second;
         }
       }
@@ -168,36 +198,36 @@ class KmerSetSet {
       // If there are no edges with positive weights, stops the iteration.
       if (weight == 0) break;
 
-      spdlog::debug("i = {}, j = {}, weight = {}", i, j, weight);
+      spdlog::debug("j = {}, k = {}, weight = {}", j, k, weight);
 
-      // Constructs kmer_set by intersecting kmer_sets_immutable_[i] and
-      // kmer_sets_immutable_[j].
+      // Constructs kmer_set by intersecting kmer_sets_immutable_[j] and
+      // kmer_sets_immutable_[k].
       KmerSetImmutable<K, N, KeyType> kmer_set_immutable =
-          kmer_sets_immutable_[i].Intersection(kmer_sets_immutable_[j],
+          kmer_sets_immutable_[j].Intersection(kmer_sets_immutable_[k],
                                                n_workers);
 
       const std::int64_t original_size =
-          kmer_sets_immutable_[i].Size() + kmer_sets_immutable_[j].Size();
+          kmer_sets_immutable_[j].Size() + kmer_sets_immutable_[k].Size();
 
       // Moves kmer_set to kmer_sets_immutable_[n].
       kmer_sets_immutable_.push_back(std::move(kmer_set_immutable));
 
-      // Updates kmer_sets_immutable_[i] and kmer_sets_immutable_[j] and adds
-      // metadata so that the original kmer_sets_immutable_[i] and
-      // kmer_sets_immutable_[j] can be reconstructed.
-      kmer_sets_immutable_[i] =
-          kmer_sets_immutable_[i].Sub(kmer_sets_immutable_[n], n_workers);
+      // Updates kmer_sets_immutable_[j] and kmer_sets_immutable_[k] and adds
+      // metadata so that the original kmer_sets_immutable_[j] and
+      // kmer_sets_immutable_[k] can be reconstructed.
       kmer_sets_immutable_[j] =
           kmer_sets_immutable_[j].Sub(kmer_sets_immutable_[n], n_workers);
+      kmer_sets_immutable_[k] =
+          kmer_sets_immutable_[k].Sub(kmer_sets_immutable_[n], n_workers);
 
-      children_[i].push_back(n);
       children_[j].push_back(n);
+      children_[k].push_back(n);
 
       // The change in the number of kmers that are stored in
       // kmer_sets_immutable_. It should be negative.
       const std::int64_t size_diff =
-          kmer_sets_immutable_[n].Size() + kmer_sets_immutable_[i].Size() +
-          kmer_sets_immutable_[j].Size() - original_size;
+          kmer_sets_immutable_[n].Size() + kmer_sets_immutable_[j].Size() +
+          kmer_sets_immutable_[k].Size() - original_size;
 
       total_size += size_diff;
       spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);
@@ -210,20 +240,20 @@ class KmerSetSet {
 
         std::vector<std::pair<int, int>> pairs;
 
-        for (int k = 0; k < n; k++) {
-          if (i == k) continue;
+        for (int l = 0; l < n; l++) {
+          if (j == l) continue;
 
-          pairs.emplace_back(std::min(i, k), std::max(i, k));
+          pairs.emplace_back(std::min(j, l), std::max(j, l));
         }
 
-        for (int k = 0; k < n; k++) {
-          if (j == k) continue;
+        for (int l = 0; l < n; l++) {
+          if (k == l) continue;
 
-          pairs.emplace_back(std::min(j, k), std::max(j, k));
+          pairs.emplace_back(std::min(k, l), std::max(k, l));
         }
 
-        for (int k = 0; k < n; k++) {
-          pairs.emplace_back(k, n);
+        for (int l = 0; l < n; l++) {
+          pairs.emplace_back(l, n);
         }
 
         boost::asio::thread_pool pool(n_workers);
@@ -232,12 +262,12 @@ class KmerSetSet {
         for (const Range& range :
              Range(0, pairs.size()).Split(n_workers * n_workers)) {
           boost::asio::post(pool, [&, range] {
-            for (int i : range) {
-              int j, k;
-              std::tie(j, k) = pairs[i];
-              std::int64_t weight = GetEdgeWeight(j, k);
+            for (int j : range) {
+              int k, l;
+              std::tie(k, l) = pairs[j];
+              std::int64_t weight = GetEdgeWeight(k, l);
               std::lock_guard lck(mu);
-              weights[std::make_pair(j, k)] = weight;
+              weights[std::make_pair(k, l)] = weight;
             }
           });
         }
@@ -245,6 +275,24 @@ class KmerSetSet {
         pool.join();
 
         spdlog::debug("updated weights");
+      }
+
+      if (i % interval == 0) {
+        // Updates total_spss_weight.
+        // If it were to increase, breaks the loop.
+
+        spdlog::debug("updating total_spss_weight");
+
+        std::int64_t updated = GetTotalSPSSWeight();
+
+        spdlog::debug("total_spss_weight = {}, updated = {}", total_spss_weight,
+                      updated);
+
+        if (updated >= total_spss_weight) break;
+
+        total_spss_weight = updated;
+
+        spdlog::debug("updated total_spss_weight");
       }
     }
   }

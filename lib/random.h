@@ -103,7 +103,8 @@ std::vector<KmerSetImmutable<K, N, KeyType>> GetRandomKmerSetsImmutable(
 template <int K, int N, typename KeyType>
 KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, int n_workers) {
   return KmerSetSet<K, N, KeyType>(
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers), n, n_workers);
+      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers), true,
+      n_workers);
 }
 
 #endif

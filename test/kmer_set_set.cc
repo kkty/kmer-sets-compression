@@ -49,7 +49,7 @@ TEST(KmerSetSet, CtorAndGet) {
   std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable =
       GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers);
 
-  const KmerSetSet<K, N, KeyType> kmer_set_set(kmer_sets_immutable, n,
+  const KmerSetSet<K, N, KeyType> kmer_set_set(kmer_sets_immutable, true,
                                                n_workers);
 
   for (int i = 0; i < n; i++) {
