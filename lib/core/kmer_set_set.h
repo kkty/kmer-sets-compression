@@ -181,6 +181,24 @@ class KmerSetSet {
     for (int i = 0;; i++) {
       spdlog::debug("i = {}", i);
 
+      if (i > 0 && i % interval == 0) {
+        // Updates total_spss_weight.
+        // If it were to increase, breaks the loop.
+
+        spdlog::debug("updating total_spss_weight");
+
+        std::int64_t updated = GetTotalSPSSWeight();
+
+        spdlog::debug("total_spss_weight = {}, updated = {}", total_spss_weight,
+                      updated);
+
+        if (updated >= total_spss_weight) break;
+
+        total_spss_weight = updated;
+
+        spdlog::debug("updated total_spss_weight");
+      }
+
       const int n = kmer_sets_immutable_.size();
 
       // Finds i, j such that the weight between ith node and jth node is
@@ -275,24 +293,6 @@ class KmerSetSet {
         pool.join();
 
         spdlog::debug("updated weights");
-      }
-
-      if (i % interval == 0) {
-        // Updates total_spss_weight.
-        // If it were to increase, breaks the loop.
-
-        spdlog::debug("updating total_spss_weight");
-
-        std::int64_t updated = GetTotalSPSSWeight();
-
-        spdlog::debug("total_spss_weight = {}, updated = {}", total_spss_weight,
-                      updated);
-
-        if (updated >= total_spss_weight) break;
-
-        total_spss_weight = updated;
-
-        spdlog::debug("updated total_spss_weight");
       }
     }
   }
