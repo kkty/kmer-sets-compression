@@ -164,9 +164,9 @@ class KmerSetSet {
 
           if (canonical) {
             weight +=
-                GetSPSSWeightCanonical(kmer_set_immutable.ToKmerSet(1), 1);
+                GetSPSSWeightCanonical(kmer_set_immutable.ToKmerSet(1), 1, 0.1);
           } else {
-            weight += GetSPSSWeight(kmer_set_immutable.ToKmerSet(1), 1);
+            weight += GetSPSSWeight(kmer_set_immutable.ToKmerSet(1), 1, 0.1);
           }
         });
       }
