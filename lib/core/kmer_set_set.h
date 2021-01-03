@@ -102,24 +102,6 @@ class KmerSetSet {
           kmer_sets_immutable_[j], 0.1);
     };
 
-    // Returns the sum of expected SPSS weights.
-    const auto GetTotalSPSSWeight = [&] {
-      std::int64_t weight = 0;
-
-      for (const KmerSetImmutable<K, N, KeyType>& kmer_set_immutable :
-           kmer_sets_immutable_) {
-        if (canonical) {
-          weight += GetSPSSWeightCanonical(
-              kmer_set_immutable.ToKmerSet(n_workers), n_workers);
-        } else {
-          weight +=
-              GetSPSSWeight(kmer_set_immutable.ToKmerSet(n_workers), n_workers);
-        }
-      }
-
-      return weight;
-    };
-
     // weights[{i, j}] (i < j) is the weight between the ith node and jth node.
     absl::flat_hash_map<std::pair<int, int>, std::int64_t> weights;
 
@@ -169,6 +151,31 @@ class KmerSetSet {
 
     spdlog::debug("total_size = {}", total_size);
 
+    // Returns the sum of expected SPSS weights.
+    const auto GetTotalSPSSWeight = [&] {
+      std::atomic_int64_t weight = 0;
+
+      boost::asio::thread_pool pool(n_workers);
+
+      for (int i = 0; i < static_cast<int>(kmer_sets_immutable_.size()); i++) {
+        boost::asio::post(pool, [&, i] {
+          const KmerSetImmutable<K, N, KeyType>& kmer_set_immutable =
+              kmer_sets_immutable_[i];
+
+          if (canonical) {
+            weight +=
+                GetSPSSWeightCanonical(kmer_set_immutable.ToKmerSet(1), 1);
+          } else {
+            weight += GetSPSSWeight(kmer_set_immutable.ToKmerSet(1), 1);
+          }
+        });
+      }
+
+      pool.join();
+
+      return static_cast<std::int64_t>(weight);
+    };
+
     spdlog::debug("calculating total_spss_weight");
 
     std::int64_t total_spss_weight = GetTotalSPSSWeight();
@@ -176,7 +183,7 @@ class KmerSetSet {
     spdlog::debug("calculated total_spss_weight");
 
     // The interval with which total_spss_weight is updated.
-    const int interval = kmer_sets_immutable_.size() / 8 + 1;
+    const int interval = kmer_sets_immutable_.size() / 4 + 1;
 
     for (int i = 0;; i++) {
       spdlog::debug("i = {}", i);
@@ -251,7 +258,7 @@ class KmerSetSet {
       spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);
 
       // Updates the graph.
-      // Weights of edges that are incident to ith node, jth node, or nth node
+      // Weights of edges that are incident to jth node, kth node, or nth node
       // should be modified / added.
       {
         spdlog::debug("updating weights");
