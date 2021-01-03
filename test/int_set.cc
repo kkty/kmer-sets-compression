@@ -73,7 +73,7 @@ TEST(IntSet, CopyAssignment) {
 TEST(IntSet, EncodeAndDecodeRandom) {
   absl::InsecureBitGen bitgen;
 
-  const int n = 1000000;
+  const int n = 100000;
   std::vector<int> v = GetRandomInts(n, true, true);
 
   IntSet int_set(v);
