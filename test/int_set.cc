@@ -2,10 +2,41 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
 #include "gtest/gtest.h"
+
+std::vector<int> GetRandomInts(int n, bool is_unique = false,
+                               bool is_sorted = false,
+                               int min = std::numeric_limits<int>::min(),
+                               int max = std::numeric_limits<int>::max()) {
+  absl::InsecureBitGen bitgen;
+
+  std::vector<int> v;
+
+  if (is_unique) {
+    absl::flat_hash_set<int> s;
+
+    while (static_cast<int>(s.size()) < n) {
+      s.insert(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
+    }
+
+    v.insert(v.end(), s.begin(), s.end());
+  } else {
+    for (int i = 0; i < n; i++) {
+      v.push_back(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
+    }
+  }
+
+  if (is_sorted) {
+    std::sort(v.begin(), v.end());
+  }
+
+  return v;
+}
 
 TEST(IntSet, MoveConstructor) {
   std::vector<int> v{1, 3, 5, 7, 9};
@@ -43,21 +74,7 @@ TEST(IntSet, EncodeAndDecodeRandom) {
   absl::InsecureBitGen bitgen;
 
   const int n = 1000000;
-  std::vector<int> v;
-  v.reserve(n);
-
-  for (int i = 0; i < n; i++) {
-    v.push_back(absl::Uniform<uint32_t>(absl::IntervalClosedClosed, bitgen,
-                                        std::numeric_limits<int>::min(),
-                                        std::numeric_limits<int>::max()));
-  }
-
-  std::sort(v.begin(), v.end());
-
-  {
-    auto it = std::unique(v.begin(), v.end());
-    v.resize(std::distance(v.begin(), it));
-  }
+  std::vector<int> v = GetRandomInts(n, true, true);
 
   IntSet int_set(v);
 
@@ -93,24 +110,10 @@ TEST(IntSet, IntersectionAddSubRandom) {
   absl::InsecureBitGen bitgen;
 
   const auto GetData = [&] {
-    std::vector<int> v;
+    const int n = absl::Uniform(absl::IntervalClosed, bitgen, 0, 10000);
+    const int m = absl::Uniform(absl::IntervalClosed, bitgen, 0, 10000);
 
-    const int n = absl::Uniform(bitgen, 0, 10000);
-    const int m = absl::Uniform(bitgen, 0, 10000);
-
-    v.reserve(n);
-
-    for (int i = 0; i < n; i++) {
-      v.push_back(absl::Uniform(absl::IntervalClosedClosed, bitgen, 0, m));
-    }
-
-    std::sort(v.begin(), v.end());
-
-    // Removes duplicates.
-    auto it = std::unique(v.begin(), v.end());
-    v.resize(std::distance(v.begin(), it));
-
-    return v;
+    return GetRandomInts(n, true, true, 0, m);
   };
 
   std::vector<int> v1 = GetData();
