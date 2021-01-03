@@ -111,7 +111,7 @@ TEST(IntSet, IntersectionAddSubRandom) {
 
   const auto GetData = [&] {
     const int n = absl::Uniform(absl::IntervalClosed, bitgen, 0, 10000);
-    const int m = absl::Uniform(absl::IntervalClosed, bitgen, 0, 10000);
+    const int m = absl::Uniform(absl::IntervalClosed, bitgen, 2 * n, 8 * n);
 
     return GetRandomInts(n, true, true, 0, m);
   };
