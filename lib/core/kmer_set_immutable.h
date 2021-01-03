@@ -139,8 +139,10 @@ class KmerSetImmutable {
       boost::asio::post(pool, [&, range] {
         for (int i : range) {
           std::vector<KeyType> v = buckets_[i].Decode();
-          kmer_set.buckets_[i] =
-              absl::flat_hash_set<KeyType>(v.begin(), v.end());
+          absl::flat_hash_set<KeyType> s;
+          s.reserve(v.size());
+          s.insert(v.begin(), v.end());
+          kmer_set.buckets_[i] = std::move(s);
         }
       });
     }
