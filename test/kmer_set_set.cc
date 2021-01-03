@@ -12,7 +12,7 @@
 #include "io.h"
 #include "random.h"
 
-TEST(KmerSetSet, CtorAndGet) {
+TEST(KmerSetSet, GetRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -22,7 +22,7 @@ TEST(KmerSetSet, CtorAndGet) {
   const int m = 10000;
 
   std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable =
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers);
+      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, true, n_workers);
 
   const KmerSetSet<K, N, KeyType> kmer_set_set(kmer_sets_immutable, true,
                                                n_workers);
@@ -34,7 +34,7 @@ TEST(KmerSetSet, CtorAndGet) {
   }
 }
 
-TEST(KmerSetSet, DumpAndLoad) {
+TEST(KmerSetSet, DumpAndLoadRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -46,7 +46,7 @@ TEST(KmerSetSet, DumpAndLoad) {
   const TemporaryDirectory temporary_directory;
 
   KmerSetSet<K, N, KeyType> kmer_set_set =
-      GetRandomKmerSetSet<K, N, KeyType>(n, m, n_workers);
+      GetRandomKmerSetSet<K, N, KeyType>(n, m, true, n_workers);
 
   {
     absl::Status status = kmer_set_set.Dump(temporary_directory.Name(), "",
@@ -75,7 +75,7 @@ TEST(KmerSetSet, DumpAndLoad) {
   }
 }
 
-TEST(KmerSetSet, Reader) {
+TEST(KmerSetSet, ReaderRandom) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -87,7 +87,7 @@ TEST(KmerSetSet, Reader) {
   const TemporaryDirectory temporary_directory;
 
   KmerSetSet<K, N, KeyType> kmer_set_set =
-      GetRandomKmerSetSet<K, N, KeyType>(n, m, n_workers);
+      GetRandomKmerSetSet<K, N, KeyType>(n, m, true, n_workers);
 
   {
     absl::Status status = kmer_set_set.Dump(temporary_directory.Name(), "",

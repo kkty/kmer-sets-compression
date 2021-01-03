@@ -88,12 +88,12 @@ KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
 // Constructs n "KmerSetImmutable"s each with m kmers.
 template <int K, int N, typename KeyType>
 std::vector<KmerSetImmutable<K, N, KeyType>> GetRandomKmerSetsImmutable(
-    int n, int m, int n_workers) {
+    int n, int m, bool canonical, int n_workers) {
   std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n);
 
   for (int i = 0; i < n; i++) {
     kmer_sets_immutable[i] = KmerSetImmutable<K, N, KeyType>(
-        GetRandomKmerSet<K, N, KeyType>(m, true), n_workers);
+        GetRandomKmerSet<K, N, KeyType>(m, canonical), n_workers);
   }
 
   return kmer_sets_immutable;
@@ -101,10 +101,11 @@ std::vector<KmerSetImmutable<K, N, KeyType>> GetRandomKmerSetsImmutable(
 
 // Constructs a KmerSetSet with n kmer sets, each with m kmers.
 template <int K, int N, typename KeyType>
-KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, int n_workers) {
+KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, bool canonical,
+                                              int n_workers) {
   return KmerSetSet<K, N, KeyType>(
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, n_workers), true,
-      n_workers);
+      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, canonical, n_workers),
+      canonical, n_workers);
 }
 
 #endif
