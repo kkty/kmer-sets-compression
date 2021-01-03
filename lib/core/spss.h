@@ -1774,10 +1774,27 @@ std::vector<std::string> GetSPSSCanonical(
 }
 
 // Given a set of kmers, returns the lower bound of SPSS weight.
+// If factor is 0.8, 80% of kmers are used to estimate the correct value.
 template <int K, int N, typename KeyType>
 std::int64_t GetSPSSWeight(const KmerSet<K, N, KeyType>& kmer_set,
-                           int n_workers) {
-  std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
+                           int n_workers, float factor = 1.0) {
+  std::vector<Kmer<K>> kmers;
+
+  {
+    absl::InsecureBitGen bitgen;
+
+    if (factor == 1.0) {
+      kmers = kmer_set.Find(n_workers);
+    } else {
+      kmers = kmer_set.Find(
+          [&](const Kmer<K>&) {
+            return absl::Uniform(bitgen, 0.0, 1.0) < factor;
+          },
+          n_workers,
+          static_cast<std::int64_t>(static_cast<float>(kmer_set.Size()) *
+                                    factor));
+    }
+  }
 
   std::atomic_int64_t n_iso = 0;
   std::atomic_int64_t n_dead = 0;
@@ -1847,14 +1864,35 @@ std::int64_t GetSPSSWeight(const KmerSet<K, N, KeyType>& kmer_set,
 
   for (std::thread& t : threads) t.join();
 
-  return ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
+  std::int64_t weight =
+      ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
+
+  if (factor != 1.0) {
+    weight = static_cast<std::int64_t>(static_cast<float>(weight) / factor);
+  }
+
+  return weight;
 }
 
 // Given a set of canonical kmers, returns the lower bound of the SPSS weight.
+// If factor is 0.8, 80% of kmers are used to estimate the correct value.
 template <int K, int N, typename KeyType>
 std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
-                                    int n_workers) {
-  std::vector<Kmer<K>> kmers = kmer_set.Find(n_workers);
+                                    int n_workers, float factor = 1.0) {
+  std::vector<Kmer<K>> kmers;
+  absl::InsecureBitGen bitgen;
+
+  if (factor == 1.0) {
+    kmers = kmer_set.Find(n_workers);
+  } else {
+    kmers = kmer_set.Find(
+        [&](const Kmer<K>&) {
+          return absl::Uniform(bitgen, 0.0, 1.0) < factor;
+        },
+        n_workers,
+        static_cast<std::int64_t>(static_cast<float>(kmer_set.Size()) *
+                                  factor));
+  }
 
   std::atomic_int64_t n_iso = 0;
   std::atomic_int64_t n_dead = 0;
@@ -1953,7 +1991,14 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
 
   for (std::thread& t : threads) t.join();
 
-  return ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
+  std::int64_t weight =
+      ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
+
+  if (factor != 1.0) {
+    weight = static_cast<std::int64_t>(static_cast<float>(weight) / factor);
+  }
+
+  return weight;
 }
 
 // Reads SPSS and returns a list of kmers.

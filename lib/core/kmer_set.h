@@ -100,19 +100,15 @@ class KmerSet {
 
   // Finds all the k-mers that match the condition.
   template <typename PredType>
-  std::vector<Kmer<K>> Find(PredType pred, int n_workers) const {
+  std::vector<Kmer<K>> Find(PredType pred, int n_workers,
+                            std::int64_t estimated_size = 0) const {
     std::vector<Kmer<K>> kmers;
-    std::mutex mu;
 
-    {
-      std::int64_t size = 0;
-
-      for (int i = 0; i < kBucketsNum; i++) {
-        size += buckets_[i].size();
-      }
-
-      kmers.reserve(size);
+    if (estimated_size > 0) {
+      kmers.reserve(estimated_size);
     }
+
+    std::mutex mu;
 
     ForEachBucket(
         [&](const Bucket& bucket, int bucket_id) {
@@ -147,7 +143,7 @@ class KmerSet {
 
   // Returns all the k-mers.
   std::vector<Kmer<K>> Find(int n_workers) const {
-    return Find([&](const Kmer<K>&) { return true; }, n_workers);
+    return Find([](const Kmer<K>&) { return true; }, n_workers, Size());
   }
 
   // Adds kmers that exist in "other".
