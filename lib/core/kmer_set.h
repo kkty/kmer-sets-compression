@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
@@ -103,9 +104,23 @@ class KmerSet {
     std::vector<Kmer<K>> kmers;
     std::mutex mu;
 
+    {
+      std::int64_t size = 0;
+
+      for (int i = 0; i < kBucketsNum; i++) {
+        size += buckets_[i].size();
+      }
+
+      kmers.reserve(size);
+    }
+
     ForEachBucket(
         [&](const Bucket& bucket, int bucket_id) {
           std::vector<Kmer<K>> buf;
+
+          if (n_workers != 1) {
+            buf.reserve(bucket.size());
+          }
 
           for (const KeyType& key : bucket) {
             const Kmer<K> kmer =
@@ -301,8 +316,13 @@ class KmerSet {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] { f(buckets_[i], i); });
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          f(buckets_[i], i);
+        }
+      });
     }
 
     pool.join();
