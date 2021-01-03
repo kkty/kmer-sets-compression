@@ -76,6 +76,18 @@ pushd $WORK_DIR
       make install
     popd
   popd
+
+  echo "installing google benchmark"
+  wget https://github.com/google/benchmark/archive/v1.5.2.tar.gz
+  tar xf v1.5.2.tar.gz
+  pushd benchmark-1.5.2
+    mkdir build
+    pushd build
+      cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX -DBENCHMARK_DOWNLOAD_DEPENDENCIES=ON
+      make -j
+      make install
+    popd
+  popd
 popd
 
 rm -rf $WORK_DIR
