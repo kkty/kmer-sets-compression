@@ -75,6 +75,7 @@ foreach (
         kmer
         kmer_counter
         kmer_set
+        spss
 )
     add_executable(benchmark_${NAME} benchmark/${NAME}.cc)
     target_link_libraries(benchmark_${NAME} benchmark::benchmark)
