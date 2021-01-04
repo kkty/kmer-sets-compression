@@ -181,25 +181,38 @@ class KmerSetSet {
     std::int64_t total_spss_weight = GetTotalSPSSWeight();
 
     spdlog::debug("calculated total_spss_weight");
+    spdlog::debug("total_spss_weight = {}", total_spss_weight);
 
     // The interval with which total_spss_weight is updated.
     const int interval = kmer_sets_immutable_.size() / 4 + 1;
+
+    // The threshold to decide when to stop the iterations.
+    const float improvement_threshold =
+        0.1 * interval / kmer_sets_immutable_.size();
+
+    spdlog::debug("interval = {}, improvement_threshold = {}", interval,
+                  improvement_threshold);
 
     for (int i = 0;; i++) {
       spdlog::debug("i = {}", i);
 
       if (i > 0 && i % interval == 0) {
         // Updates total_spss_weight.
-        // If it were to increase, breaks the loop.
+        // If the improvement is less than the threshold, breaks the loop.
 
         spdlog::debug("updating total_spss_weight");
 
-        std::int64_t updated = GetTotalSPSSWeight();
+        const std::int64_t updated = GetTotalSPSSWeight();
 
-        spdlog::debug("total_spss_weight = {}, updated = {}", total_spss_weight,
-                      updated);
+        const float improvement =
+            static_cast<float>(total_spss_weight - updated) / total_spss_weight;
 
-        if (updated >= total_spss_weight) break;
+        spdlog::debug("total_spss_weight = {}, updated = {}, improvement = {}",
+                      total_spss_weight, updated, improvement);
+
+        if (improvement <= improvement_threshold) {
+          break;
+        }
 
         total_spss_weight = updated;
 
