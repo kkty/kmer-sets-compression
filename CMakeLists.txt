@@ -73,6 +73,7 @@ endforeach ()
 foreach (
         NAME
         kmer
+        kmer_counter
         kmer_set
 )
     add_executable(benchmark_${NAME} benchmark/${NAME}.cc)

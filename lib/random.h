@@ -9,6 +9,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
 #include "core/kmer.h"
+#include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_immutable.h"
 #include "core/kmer_set_set.h"
@@ -33,6 +34,49 @@ std::vector<Kmer<K>> GetRandomKmers(int n) {
   return std::vector<Kmer<K>>(kmers.begin(), kmers.end());
 }
 
+// Returns a random read.
+template <int K>
+std::string GetRandomRead() {
+  std::string s;
+  absl::InsecureBitGen bitgen;
+
+  for (int j = 0; j < absl::Uniform(absl::IntervalClosed, bitgen, 1, 100);
+       j++) {
+    s += GetRandomKmer<K>().String();
+  }
+
+  // Creates a loop.
+  if (absl::Uniform(bitgen, 0, 2) == 0) {
+    s += s;
+  }
+
+  return s;
+}
+
+template <int K, int N, typename KeyType>
+KmerCounter<K, N, KeyType> GetRandomKmerCounter(int n, bool canonical) {
+  int counter = 0;
+
+  KmerCounter<K, N, KeyType> kmer_counter;
+
+  while (true) {
+    std::string s = GetRandomRead<K>();
+
+    for (int j = 0; j < static_cast<int>(s.size()) - K + 1; j++) {
+      Kmer<K> kmer(s.substr(j, K));
+      if (canonical) kmer = kmer.Canonical();
+      kmer_counter.Add(kmer, 1);
+      counter += 1;
+
+      if (counter == n) break;
+    }
+
+    if (counter == n) break;
+  }
+
+  return kmer_counter;
+}
+
 // Randomly constructs a KmerSet with n kmers.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
@@ -41,17 +85,7 @@ KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
   absl::flat_hash_set<Kmer<K>> kmers;
 
   while (true) {
-    std::string s;
-
-    for (int j = 0; j < absl::Uniform(absl::IntervalClosed, bitgen, 1, 100);
-         j++) {
-      s += GetRandomKmer<K>().String();
-    }
-
-    // Creates a loop.
-    if (absl::Uniform(bitgen, 0, 2) == 0) {
-      s += s;
-    }
+    std::string s = GetRandomRead<K>();
 
     for (int j = 0; j < static_cast<int>(s.size()) - K + 1; j++) {
       Kmer<K> kmer(s.substr(j, K));

@@ -25,3 +25,7 @@ jobs:
           CXX: g++-10
       - run: ./benchmark_kmer --benchmark_repetitions=3
         working-directory: build
+      - run: ./benchmark_kmer_counter --benchmark_repetitions=3
+        working-directory: build
+      - run: ./benchmark_kmer_set --benchmark_repetitions=3
+        working-directory: build
