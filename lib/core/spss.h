@@ -1,6 +1,7 @@
 #ifndef CORE_SPSS_H_
 #define CORE_SPSS_H_
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -311,35 +312,71 @@ std::vector<std::string> GetUnitigsCanonical(
   spdlog::debug("constructing terminals_left");
 
   // kmers that has no mates on the left side, but has a mate on the right side.
-  const std::vector<Kmer<K>> terminals_left = kmer_set.Find(
-      [&](const Kmer<K>& kmer) {
-        return IsTerminalLeft(kmer) && !IsTerminalRight(kmer);
-      },
-      n_workers);
+  std::vector<Kmer<K>> terminals_left = kmer_set.Find(
+      [&](const Kmer<K>& kmer) { return IsTerminalLeft(kmer); }, n_workers);
 
   spdlog::debug("constructed terminals_left");
+
+  spdlog::debug("sorting terminals_left");
+
+  std::sort(terminals_left.begin(), terminals_left.end());
+
+  spdlog::debug("sorted terminals_left");
 
   spdlog::debug("constructing terminals_right");
 
   // kmers that has no mates on the right side, but has a mate on the left side.
-  const std::vector<Kmer<K>> terminals_right = kmer_set.Find(
-      [&](const Kmer<K>& kmer) {
-        return !IsTerminalLeft(kmer) && IsTerminalRight(kmer);
-      },
-      n_workers);
+  std::vector<Kmer<K>> terminals_right = kmer_set.Find(
+      [&](const Kmer<K>& kmer) { return IsTerminalRight(kmer); }, n_workers);
 
   spdlog::debug("constructed terminals_right");
+
+  spdlog::debug("sorting terminals_right");
+
+  std::sort(terminals_right.begin(), terminals_right.end());
+
+  spdlog::debug("sorted terminals_right");
 
   spdlog::debug("constructing terminals_both");
 
   // kmers that has no mates on the both sides.
-  const std::vector<Kmer<K>> terminals_both = kmer_set.Find(
-      [&](const Kmer<K>& kmer) {
-        return IsTerminalLeft(kmer) && IsTerminalRight(kmer);
-      },
-      n_workers);
+  std::vector<Kmer<K>> terminals_both;
+
+  std::set_intersection(terminals_left.begin(), terminals_left.end(),
+                        terminals_right.begin(), terminals_right.end(),
+                        std::back_inserter(terminals_both));
 
   spdlog::debug("constructed terminals_both");
+
+  {
+    spdlog::debug("updating terminals_left");
+
+    std::vector<Kmer<K>> buf;
+    buf.reserve(terminals_left.size() - terminals_both.size());
+
+    std::set_difference(terminals_left.begin(), terminals_left.end(),
+                        terminals_both.begin(), terminals_both.end(),
+                        std::back_inserter(buf));
+
+    buf.swap(terminals_left);
+
+    spdlog::debug("updated terminals_left");
+  }
+
+  {
+    spdlog::debug("updating terminals_right");
+
+    std::vector<Kmer<K>> buf;
+    buf.reserve(terminals_right.size() - terminals_both.size());
+
+    std::set_difference(terminals_right.begin(), terminals_right.end(),
+                        terminals_both.begin(), terminals_both.end(),
+                        std::back_inserter(buf));
+
+    buf.swap(terminals_right);
+
+    spdlog::debug("updated terminals_right");
+  }
 
   // If "is_right_side" is true, finds a path from the right side of "start".
   // If "is_right_side" is false, finds a path from the left side of "start".
@@ -374,6 +411,11 @@ std::vector<std::string> GetUnitigsCanonical(
 
   std::vector<std::string> unitigs;
   absl::flat_hash_set<Kmer<K>> visited;
+
+  unitigs.reserve(terminals_both.size() +
+                  (terminals_left.size() + terminals_right.size()) / 2);
+
+  visited.reserve(kmer_set.Size());
 
   const auto MoveFromBuffer = [&](std::mutex& mu_unitigs,
                                   std::mutex& mu_visited,
@@ -529,7 +571,7 @@ std::vector<std::string> GetUnitigsCanonical(
 
   std::vector<Kmer<K>> not_visited = kmer_set.Find(
       [&](const Kmer<K>& kmer) { return visited.find(kmer) == visited.end(); },
-      n_workers);
+      n_workers, kmer_set.Size() - visited.size());
 
   for (const Kmer<K>& start : not_visited) {
     if (visited.find(start) != visited.end()) continue;
