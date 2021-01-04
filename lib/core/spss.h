@@ -2009,9 +2009,30 @@ std::vector<Kmer<K>> GetKmersFromSPSS(const std::vector<std::string>& spss,
   std::vector<std::thread> threads;
   std::mutex mu;
 
+  if (n_workers != 1) {
+    std::int64_t size = 0;
+
+    for (const std::string& s : spss) {
+      size += s.length() - K + 1;
+    }
+
+    kmers.reserve(size);
+  }
+
   for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
     threads.emplace_back([&, range] {
       std::vector<Kmer<K>> buf;
+
+      {
+        std::int64_t size = 0;
+
+        for (std::int64_t i : range) {
+          const std::string& s = spss[i];
+          size += s.length() - K + 1;
+        }
+
+        buf.reserve(size);
+      }
 
       for (std::int64_t i : range) {
         const std::string& s = spss[i];
