@@ -73,6 +73,7 @@ endforeach ()
 foreach (
         NAME
         kmer
+        kmer_set
 )
     add_executable(benchmark_${NAME} benchmark/${NAME}.cc)
     target_link_libraries(benchmark_${NAME} benchmark::benchmark)
