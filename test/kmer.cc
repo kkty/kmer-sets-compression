@@ -32,8 +32,3 @@ TEST(kmer, Prev) {
   Kmer<5> kmer("AGCTG");
   ASSERT_EQ(kmer.Prev('C').String(), "CAGCT");
 }
-
-TEST(kmer, Hash) {
-  std::hash<Kmer<5>> h;
-  ASSERT_EQ(h(Kmer<5>("ACGTA")), h(Kmer<5>("ACGTA")));
-}

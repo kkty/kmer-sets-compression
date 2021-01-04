@@ -1,6 +1,8 @@
 #ifndef RANDOM_H_
 #define RANDOM_H_
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -14,27 +16,9 @@
 // Returns a randomly-generated kmer.
 template <int K>
 Kmer<K> GetRandomKmer() {
-  absl::InsecureBitGen bitgen;
-  Kmer<K> kmer;
-
-  for (int i = 0; i < K; i++) {
-    switch (absl::Uniform(bitgen, 0, 4)) {
-      case 0:
-        kmer.Set(i, 'A');
-        break;
-      case 1:
-        kmer.Set(i, 'G');
-        break;
-      case 2:
-        kmer.Set(i, 'C');
-        break;
-      case 3:
-        kmer.Set(i, 'T');
-        break;
-    }
-  }
-
-  return kmer;
+  return Kmer<K>(absl::Uniform<std::uint64_t>(
+      absl::IntervalClosed, absl::InsecureBitGen(), 0,
+      std::numeric_limits<std::uint64_t>::max() >> (64 - K * 2)));
 }
 
 // Returns n randomly-generated kmers.
@@ -83,6 +67,13 @@ KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
   for (const Kmer<K>& kmer : kmers) kmer_set.Add(kmer);
 
   return kmer_set;
+}
+
+template <int K, int N, typename KeyType>
+KmerSetImmutable<K, N, KeyType> GetRandomKmerSetImmutable(int n, bool canonical,
+                                                          int n_workers) {
+  return KmerSetImmutable<K, N, KeyType>(
+      GetRandomKmerSet<K, N, KeyType>(n, canonical), n_workers);
 }
 
 // Constructs n "KmerSetImmutable"s each with m kmers.

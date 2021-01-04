@@ -2,10 +2,12 @@
 #define CORE_KMER_H_
 
 #include <array>
-#include <bitset>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
+#include <utility>
 
 // Kmer is used to represent a single kmer.
 // Data is represented with 2 * K bits internally, regarding 'A', 'C', 'G', and
@@ -18,76 +20,62 @@ class Kmer {
   Kmer() = default;
 
   explicit Kmer(const std::string& s) {
+    std::uint64_t bits = 0;
+
     for (int i = 0; i < K; i++) {
-      assert(s[i] == 'A' || s[i] == 'C' || s[i] == 'G' || s[i] == 'T');
-      Set(i, s[i]);
+      bits <<= 2;
+
+      switch (s[i]) {
+        case 'A':
+          break;
+        case 'C':
+          bits += 1;
+          break;
+        case 'G':
+          bits += 2;
+          break;
+        case 'T':
+          bits += 3;
+          break;
+        default:
+          assert(false);
+      }
     }
+
+    bits_ = bits;
   }
 
-  explicit Kmer(const std::bitset<K * 2>& bits) : bits_(bits) {}
+  explicit Kmer(std::uint64_t bits) : bits_(bits) {}
 
   // Returns the string representation of the kmer.
   // The length of the output string is K and only contains 'A', 'C', 'G' and
   // 'T'.
   std::string String() const {
     std::string s;
-    s.reserve(K);
+    s.resize(K);
+
+    std::int64_t bits = bits_;
+
     for (int i = 0; i < K; i++) {
-      s += Get(i);
+      switch (bits % 4) {
+        case 0:
+          s[K - 1 - i] = 'A';
+          break;
+        case 1:
+          s[K - 1 - i] = 'C';
+          break;
+        case 2:
+          s[K - 1 - i] = 'G';
+          break;
+        case 3:
+          s[K - 1 - i] = 'T';
+          break;
+      }
+
+      bits >>= 2;
     }
+
     return s;
-  }
-
-  // Returns the ith character of the kmer. The return value is either 'A', 'C',
-  // 'G' or 'T'.
-  char Get(int idx) const {
-    // Gets the ith bit from the right.
-    const auto get = [&](int i) { return bits_[K * 2 - 1 - i]; };
-
-    const bool b0 = get(idx * 2);
-    const bool b1 = get(idx * 2 + 1);
-
-    if (!b0) {
-      if (!b1) {
-        // 00
-        return 'A';
-      } else {
-        // 01
-        return 'C';
-      }
-    } else {
-      if (!b1) {
-        // 10
-        return 'G';
-      } else {
-        // 11
-        return 'T';
-      }
-    }
-  }
-
-  // Sets the ith character of the kmer. "idx" should be in [0, K) and "c"
-  // should be either 'A', 'C', 'G' or 'T'.
-  void Set(int idx, char c) {
-    // Sets the ith bit from the left.
-    const auto set = [&](int i) { bits_.set(K * 2 - 1 - i); };
-
-    switch (c) {
-      case 'A':
-        break;
-      case 'C':
-        set(idx * 2 + 1);
-        break;
-      case 'G':
-        set(idx * 2);
-        break;
-      case 'T':
-        set(idx * 2);
-        set(idx * 2 + 1);
-        break;
-      default:
-        assert(false);
-    }
   }
 
   // Returns the complement of the kmer.
@@ -98,10 +86,29 @@ class Kmer {
   // Example: The complement of "AACCG" is "CGGTT".
   Kmer<K> Complement() const {
     Kmer<K> complement;
+
+    std::int64_t bits = bits_;
+
     for (int i = 0; i < K; i++) {
-      complement.Set(K - 1 - i, Get(i));
+      complement.bits_ <<= 2;
+
+      switch (bits % 4) {
+        case 0:
+          complement.bits_ += 3;
+          break;
+        case 1:
+          complement.bits_ += 2;
+          break;
+        case 2:
+          complement.bits_ += 1;
+          break;
+        case 3:
+          break;
+      }
+
+      bits >>= 2;
     }
-    complement.bits_.flip();
+
     return complement;
   }
 
@@ -112,16 +119,53 @@ class Kmer {
   // Returns the concatenation of the (K-1)-suffix of the kmer and "c".
   Kmer<K> Next(char c) const {
     Kmer<K> next = *this;
+
     next.bits_ <<= 2;
-    next.Set(K - 1, c);
+
+    // Clears upper bits.
+    next.bits_ &= std::numeric_limits<std::uint64_t>::max() >> (64 - K * 2);
+
+    switch (c) {
+      case 'A':
+        break;
+      case 'C':
+        next.bits_ += 1;
+        break;
+      case 'G':
+        next.bits_ += 2;
+        break;
+      case 'T':
+        next.bits_ += 3;
+        break;
+      default:
+        assert(false);
+    }
+
     return next;
   }
 
   // Returns the concatenation of "c" and the (K-1)-prefix of the kmer.
   Kmer<K> Prev(char c) const {
     Kmer<K> prev = *this;
+
     prev.bits_ >>= 2;
-    prev.Set(0, c);
+
+    switch (c) {
+      case 'A':
+        break;
+      case 'C':
+        prev.bits_ += static_cast<std::uint64_t>(1) << ((K - 1) * 2);
+        break;
+      case 'G':
+        prev.bits_ += static_cast<std::uint64_t>(2) << ((K - 1) * 2);
+        break;
+      case 'T':
+        prev.bits_ += static_cast<std::uint64_t>(3) << ((K - 1) * 2);
+        break;
+      default:
+        assert(false);
+    }
+
     return prev;
   }
 
@@ -146,12 +190,17 @@ class Kmer {
   }
 
   // Returns the bit-wise representation of the kmer.
-  std::bitset<K * 2> Bits() const { return bits_; }
+  std::uint64_t Bits() const { return bits_; }
 
-  std::size_t Hash() const { return std::hash<std::bitset<K * 2>>()(bits_); }
+  std::size_t Hash() const { return bits_; }
+
+  template <typename H>
+  friend H AbslHashValue(H h, const Kmer& kmer) {
+    return H::combine(std::move(h), kmer.bits_);
+  }
 
  private:
-  std::bitset<K * 2> bits_;
+  std::uint64_t bits_ = 0;
 };
 
 template <int K>
@@ -166,19 +215,12 @@ bool operator!=(const Kmer<K>& lhs, const Kmer<K>& rhs) {
 
 template <int K>
 bool operator<(const Kmer<K>& lhs, const Kmer<K>& rhs) {
-  return lhs.Bits().to_ullong() < rhs.Bits().to_ullong();
+  return lhs.Bits() < rhs.Bits();
 }
 
 template <int K>
 bool operator>(const Kmer<K>& lhs, const Kmer<K>& rhs) {
-  return lhs.Bits().to_ullong() > rhs.Bits().to_ullong();
+  return lhs.Bits() > rhs.Bits();
 }
-
-namespace std {
-template <int K>
-struct hash<Kmer<K>> {
-  std::size_t operator()(const Kmer<K>& kmer) const { return kmer.Hash(); }
-};
-}  // namespace std
 
 #endif

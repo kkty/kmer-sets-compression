@@ -1,7 +1,6 @@
 #ifndef CORE_KMER_SET_H_
 #define CORE_KMER_SET_H_
 
-#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -28,10 +27,10 @@ std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
   const int n_key_bits = K * 2 - N;
   static_assert(n_key_bits <= sizeof(KeyType) * 8);
 
-  const std::bitset<2 * K> bits = kmer.Bits();
-  const int bucket_id = bits.to_ullong() >> n_key_bits;
-  const KeyType key = bits.to_ullong() % (1ull << n_key_bits);
-  return {bucket_id, key};
+  const std::uint64_t bits = kmer.Bits();
+  const int bucket_id = bits >> n_key_bits;
+  const KeyType key = bits % (static_cast<std::uint64_t>(1) << n_key_bits);
+  return std::make_pair(bucket_id, key);
 }
 
 template <int K, int N, typename KeyType>
@@ -39,11 +38,10 @@ Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
   const int n_key_bits = K * 2 - N;
   static_assert(n_key_bits <= sizeof(KeyType) * 8);
 
-  std::bitset<K * 2> bits{
-      (static_cast<std::uint64_t>(bucket_id) << n_key_bits) +
-      static_cast<std::uint64_t>(key)};
+  std::uint64_t data = (static_cast<std::uint64_t>(bucket_id) << n_key_bits) +
+                       static_cast<std::uint64_t>(key);
 
-  return Kmer<K>{bits};
+  return Kmer<K>(data);
 }
 
 // KmerSet can be used to hold a unique set of kmers.
