@@ -13,6 +13,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "boost/sort/sort.hpp"
 #include "core/kmer_set.h"
 #include "core/range.h"
 #include "parallel_disjoint_set.h"
@@ -319,7 +320,12 @@ std::vector<std::string> GetUnitigsCanonical(
 
   spdlog::debug("sorting terminals_left");
 
-  std::sort(terminals_left.begin(), terminals_left.end());
+  if (n_workers == 1) {
+    std::sort(terminals_left.begin(), terminals_left.end());
+  } else {
+    boost::sort::block_indirect_sort(terminals_left.begin(),
+                                     terminals_left.end(), n_workers);
+  }
 
   spdlog::debug("sorted terminals_left");
 
@@ -333,7 +339,12 @@ std::vector<std::string> GetUnitigsCanonical(
 
   spdlog::debug("sorting terminals_right");
 
-  std::sort(terminals_right.begin(), terminals_right.end());
+  if (n_workers == 1) {
+    std::sort(terminals_right.begin(), terminals_right.end());
+  } else {
+    boost::sort::block_indirect_sort(terminals_right.begin(),
+                                     terminals_right.end(), n_workers);
+  }
 
   spdlog::debug("sorted terminals_right");
 
