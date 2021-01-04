@@ -13,6 +13,7 @@ find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS thread)
 find_package(mimalloc REQUIRED)
+find_package(benchmark REQUIRED)
 
 find_library(streamvbyte_LIBRARIES streamvbyte_static REQUIRED)
 
@@ -48,7 +49,6 @@ foreach (
     add_executable(${NAME} src/${NAME}.cc)
 endforeach ()
 
-link_libraries(GTest::gtest_main)
 include(GoogleTest)
 include(CTest)
 
@@ -66,5 +66,14 @@ foreach (
         spss
 )
     add_executable(test_${NAME} test/${NAME}.cc)
+    target_link_libraries(test_${NAME} GTest::gtest_main)
     gtest_add_tests(test_${NAME} "" AUTO)
 endforeach ()
+
+foreach (
+        NAME
+        kmer
+)
+    add_executable(benchmark_${NAME} benchmark/${NAME}.cc)
+    target_link_libraries(benchmark_${NAME} benchmark::benchmark)
+endforeach()
