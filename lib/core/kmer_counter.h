@@ -316,8 +316,13 @@ class KmerCounter {
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (int i = 0; i < kBucketsNum; i++) {
-      boost::asio::post(pool, [&, i] { f(buckets_[i], i); });
+    for (const Range& range :
+         Range(0, kBucketsNum).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (int i : range) {
+          f(buckets_[i], i);
+        }
+      });
     }
 
     pool.join();
