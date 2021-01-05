@@ -1,6 +1,4 @@
 build
-.vscode
-build-*
-.DS_Store
 extern/include
 extern/lib
+extern/lib64
