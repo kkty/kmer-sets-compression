@@ -1,7 +1,6 @@
 #ifndef IO_H_
 #define IO_H_
 
-#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -10,12 +9,9 @@
 #include <thread>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #include "absl/random/random.h"
-#include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "core/kmer_counter.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
 #include "spdlog/spdlog.h"
@@ -52,63 +48,6 @@ absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromFile(
   return kmer_set;
 }
 
-// Returns a list of reads in a FASTA file.
-absl::StatusOr<std::vector<std::string>> ReadFASTAFile(
-    const std::string& file_name, const std::string& decompressor,
-    int n_workers) {
-  std::vector<std::string> lines;
-
-  {
-    absl::StatusOr<std::vector<std::string>> statusor =
-        ReadLines(file_name, decompressor);
-
-    if (!statusor.ok()) {
-      return statusor.status();
-    }
-
-    lines = std::move(statusor).value();
-  }
-
-  const int n_lines = lines.size();
-
-  if (n_lines % 2 != 0) {
-    return absl::FailedPreconditionError(
-        "FASTA files should contain an even number of lines");
-  }
-
-  std::vector<std::string> reads(n_lines / 2);
-
-  {
-    std::vector<std::thread> threads;
-    std::atomic_bool is_valid = true;
-
-    for (const Range& range : Range(0, n_lines).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        for (std::int64_t i : range) {
-          const std::string& line = lines[i];
-          if (i % 2 == 0) {
-            if (line[0] != '>') {
-              is_valid = false;
-            }
-
-            std::string().swap(lines[i]);
-          } else {
-            reads[i / 2] = std::move(lines[i]);
-          }
-        }
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    if (!is_valid) {
-      return absl::FailedPreconditionError("invalid FASTA file");
-    }
-  }
-
-  return reads;
-}
-
 // Creates a temporary directory on initialization and removes it on
 // deconstruction.
 class TemporaryDirectory {
@@ -127,6 +66,7 @@ class TemporaryDirectory {
 
   ~TemporaryDirectory() { std::filesystem::remove_all(name_); }
 
+  // Returns the directory path.
   std::string Name() const { return name_; }
 
  private:
