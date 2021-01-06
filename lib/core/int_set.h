@@ -1,6 +1,11 @@
 #ifndef CORE_INT_SET_H_
 #define CORE_INT_SET_H_
 
+#if defined(__GNUC__) && defined(__x86_64__)
+#include <x86intrin.h>
+#define INT_SET_USE_SIMD
+#endif
+
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -79,9 +84,38 @@ class IntSet {
 
     std::vector<std::uint32_t> diff(n_ - 1);
 
+#ifdef INT_SET_USE_SIMD
+    if (std::is_same<T, std::uint32_t>::value) {
+      std::uint32_t* in = (std::uint32_t*)v.data() + 1;
+      std::uint32_t* out = diff.data();
+
+      __m128i prev_vec = _mm_set1_epi32(first_);
+
+      for (std::int64_t i = 0; i < (n_ - 1) / 4; i++) {
+        __m128i cur_vec = _mm_lddqu_si128((__m128i*)in + i);
+        __m128i delta_vec =
+            _mm_sub_epi32(cur_vec, _mm_alignr_epi8(cur_vec, prev_vec, 12));
+        _mm_storeu_si128((__m128i*)out + i, delta_vec);
+        prev_vec = cur_vec;
+      }
+
+      std::uint32_t prev = _mm_extract_epi32(prev_vec, 3);
+
+      for (std::int64_t i = (n_ - 1) / 4 * 4; i < n_ - 1; i++) {
+        std::uint32_t cur = in[i];
+        out[i] = cur - prev;
+        prev = cur;
+      }
+    } else {
+      for (std::int64_t i = 0; i < n_ - 1; i++) {
+        diff[i] = v[i + 1] - v[i];
+      }
+    }
+#else
     for (std::int64_t i = 0; i < n_ - 1; i++) {
       diff[i] = v[i + 1] - v[i];
     }
+#endif
 
     compressed_diff_ =
         new std::uint8_t[streamvbyte_max_compressedbytes(n_ - 1)];
