@@ -23,13 +23,13 @@ jobs:
         env:
           CC: gcc-10
           CXX: g++-10
-      - run: ./benchmark_kmer --benchmark_repetitions=3
+      - run: ./benchmark_kmer
         working-directory: build
-      - run: ./benchmark_kmer_counter --benchmark_repetitions=3
+      - run: ./benchmark_kmer_counter
         working-directory: build
-      - run: ./benchmark_kmer_set --benchmark_repetitions=3
+      - run: ./benchmark_kmer_set
         working-directory: build
-      - run: ./benchmark_spss --benchmark_repetitions=3
+      - run: ./benchmark_spss
         working-directory: build
-      - run: ./benchmark_int_set --benchmark_repetitions=3
+      - run: ./benchmark_int_set
         working-directory: build
