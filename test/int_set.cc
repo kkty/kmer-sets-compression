@@ -5,38 +5,9 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_set.h"
 #include "absl/random/random.h"
 #include "gtest/gtest.h"
-
-std::vector<int> GetRandomInts(int n, bool is_unique = false,
-                               bool is_sorted = false,
-                               int min = std::numeric_limits<int>::min(),
-                               int max = std::numeric_limits<int>::max()) {
-  absl::InsecureBitGen bitgen;
-
-  std::vector<int> v;
-
-  if (is_unique) {
-    absl::flat_hash_set<int> s;
-
-    while (static_cast<int>(s.size()) < n) {
-      s.insert(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
-    }
-
-    v.insert(v.end(), s.begin(), s.end());
-  } else {
-    for (int i = 0; i < n; i++) {
-      v.push_back(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
-    }
-  }
-
-  if (is_sorted) {
-    std::sort(v.begin(), v.end());
-  }
-
-  return v;
-}
+#include "random.h"
 
 TEST(IntSet, MoveConstructor) {
   std::vector<int> v{1, 3, 5, 7, 9};

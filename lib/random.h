@@ -133,4 +133,35 @@ KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, bool canonical,
       canonical, n_workers);
 }
 
+// Returns n randomly generated ints.
+template <typename T = int>
+std::vector<T> GetRandomInts(int n, bool is_unique = false,
+                             bool is_sorted = false,
+                             int min = std::numeric_limits<T>::min(),
+                             int max = std::numeric_limits<T>::max()) {
+  absl::InsecureBitGen bitgen;
+
+  std::vector<T> v;
+
+  if (is_unique) {
+    absl::flat_hash_set<T> s;
+
+    while (static_cast<int>(s.size()) < n) {
+      s.insert(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
+    }
+
+    v.insert(v.end(), s.begin(), s.end());
+  } else {
+    for (int i = 0; i < n; i++) {
+      v.push_back(absl::Uniform(absl::IntervalClosed, bitgen, min, max));
+    }
+  }
+
+  if (is_sorted) {
+    std::sort(v.begin(), v.end());
+  }
+
+  return v;
+}
+
 #endif
