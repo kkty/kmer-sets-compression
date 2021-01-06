@@ -137,8 +137,8 @@ KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, bool canonical,
 template <typename T = int>
 std::vector<T> GetRandomInts(int n, bool is_unique = false,
                              bool is_sorted = false,
-                             int min = std::numeric_limits<T>::min(),
-                             int max = std::numeric_limits<T>::max()) {
+                             T min = std::numeric_limits<T>::min(),
+                             T max = std::numeric_limits<T>::max()) {
   absl::InsecureBitGen bitgen;
 
   std::vector<T> v;
