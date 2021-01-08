@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -33,7 +34,7 @@ std::string ConcatenateKmers(const std::vector<Kmer<K>>& kmers) {
     assert(kmers[i - 1].String().substr(1, K - 1) ==
            kmers[i].String().substr(0, K - 1));
 
-    s += kmers[i].String()[K - 1];
+    s += kmers[i].Last();
   }
 
   return s;
@@ -152,10 +153,11 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
     std::mutex mu_unitigs;
     std::mutex mu_visited;
 
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
 
-    for (const Range& range : Range(0, start_kmers.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range :
+         Range(0, start_kmers.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::string> buf_unitigs;
         KmerSet<K, N, KeyType> buf_visited;
 
@@ -195,7 +197,7 @@ std::vector<std::string> GetUnitigs(const KmerSet<K, N, KeyType>& kmer_set,
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   // Considers loops where every node has 1 incoming edge and 1 outgoing edge.
@@ -457,13 +459,13 @@ std::vector<std::string> GetUnitigsCanonical(
   spdlog::debug("processing kmers in terminals_both");
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu_unitigs;
     std::mutex mu_visited;
 
     for (const Range& range :
-         Range(0, terminals_both.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+         Range(0, terminals_both.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
@@ -485,7 +487,7 @@ std::vector<std::string> GetUnitigsCanonical(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   spdlog::debug("processed kmers in terminals_both");
@@ -493,13 +495,13 @@ std::vector<std::string> GetUnitigsCanonical(
   spdlog::debug("processing paths from terminals_left");
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu_unitigs;
     std::mutex mu_visited;
 
     for (const Range& range :
-         Range(0, terminals_left.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+         Range(0, terminals_left.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
@@ -529,7 +531,7 @@ std::vector<std::string> GetUnitigsCanonical(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   spdlog::debug("processed paths from terminals_left");
@@ -537,13 +539,13 @@ std::vector<std::string> GetUnitigsCanonical(
   spdlog::debug("processing paths from terminals_right");
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu_unitigs;
     std::mutex mu_visited;
 
     for (const Range& range :
-         Range(0, terminals_right.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+         Range(0, terminals_right.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::string> buf_unitigs;
         std::vector<Kmer<K>> buf_visited;
 
@@ -573,7 +575,7 @@ std::vector<std::string> GetUnitigsCanonical(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   spdlog::debug("processed paths from terminals_right");
@@ -622,11 +624,11 @@ absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetPrefixesFromUnitigs(
   absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes;
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu;
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf;
 
         for (std::int64_t i : range) {
@@ -646,7 +648,7 @@ absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetPrefixesFromUnitigs(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   return prefixes;
@@ -662,11 +664,11 @@ absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetSuffixesFromUnitigs(
   absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes;
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu;
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> buf;
 
         for (std::int64_t i : range) {
@@ -686,7 +688,7 @@ absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> GetSuffixesFromUnitigs(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   return suffixes;
@@ -733,7 +735,6 @@ std::vector<std::string> GetSPSS(
   {
     spdlog::debug("constructing edge_in and edge_out");
 
-    std::vector<std::thread> threads;
     std::vector<std::mutex> mus(n_buckets);
     std::vector<absl::flat_hash_map<std::int64_t, std::int64_t>> buf_edge_in(
         n_buckets);
@@ -792,24 +793,28 @@ std::vector<std::string> GetSPSS(
       buf_edge_out[bucket_i][i] = j;
     };
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        for (std::int64_t i : range) {
-          for (std::int64_t j : GetEdgesOut(i)) {
-            AcquireLock(i, j);
+    {
+      boost::asio::thread_pool pool(n_workers);
 
-            if (!HasEdgeOut(i) && !HasEdgeIn(j)) {
-              AddEdgeOut(i, j);
-              AddEdgeIn(j, i);
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
+          for (std::int64_t i : range) {
+            for (std::int64_t j : GetEdgesOut(i)) {
+              AcquireLock(i, j);
+
+              if (!HasEdgeOut(i) && !HasEdgeIn(j)) {
+                AddEdgeOut(i, j);
+                AddEdgeIn(j, i);
+              }
+
+              ReleaseLock(i, j);
             }
-
-            ReleaseLock(i, j);
           }
-        }
-      });
-    }
+        });
+      }
 
-    for (std::thread& t : threads) t.join();
+      pool.join();
+    }
 
     spdlog::debug("moving from buffers");
 
@@ -850,10 +855,10 @@ std::vector<std::string> GetSPSS(
     spdlog::debug("constructing disjoint_set");
 
     {
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
 
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           for (std::int64_t i : range) {
             auto it = edge_out.find(i);
             if (it == edge_out.end()) continue;
@@ -862,7 +867,7 @@ std::vector<std::string> GetSPSS(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     spdlog::debug("constructed disjoint_set");
@@ -875,12 +880,12 @@ std::vector<std::string> GetSPSS(
 
       spdlog::debug("constructing groups and groups_with_terminals");
 
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
       std::mutex mu_groups;
       std::mutex mu_groups_with_terminals;
 
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           absl::flat_hash_set<std::int64_t> buf_groups;
           absl::flat_hash_set<std::int64_t> buf_groups_with_terminals;
 
@@ -912,7 +917,7 @@ std::vector<std::string> GetSPSS(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
 
       spdlog::debug("constructed groups and groups_with_terminals");
 
@@ -933,11 +938,11 @@ std::vector<std::string> GetSPSS(
   spdlog::debug("constructing starts");
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu;
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::int64_t> buf;
 
         for (std::int64_t i : range) {
@@ -953,7 +958,7 @@ std::vector<std::string> GetSPSS(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   spdlog::debug("constructed starts");
@@ -963,11 +968,12 @@ std::vector<std::string> GetSPSS(
   spdlog::debug("constructing spss");
 
   {
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu;
 
-    for (const Range& range : Range(0, starts.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range :
+         Range(0, starts.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::string> buf;
 
         for (std::int64_t i : range) {
@@ -1001,7 +1007,7 @@ std::vector<std::string> GetSPSS(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
   }
 
   spdlog::debug("constructed spss");
@@ -1035,7 +1041,7 @@ std::vector<std::string> GetSPSSCanonical(
     const std::vector<std::string>& unitigs,
     const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& prefixes,
     const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>>& suffixes,
-    bool fast, int n_workers, int n_buckets = 64) {
+    bool fast, int n_workers, int n_buckets = 512) {
   const std::int64_t n = unitigs.size();
 
   // Considers a graph where node i represents unitigs[i].
@@ -1354,7 +1360,6 @@ std::vector<std::string> GetSPSSCanonical(
 
     // Nodes are divided into n_buckets buckets to allow parallel processing.
 
-    std::vector<std::thread> threads;
     std::vector<std::mutex> mus(n_buckets);
     std::vector<absl::flat_hash_map<std::int64_t, Edge>> buf_edge_left(
         n_buckets);
@@ -1363,6 +1368,8 @@ std::vector<std::string> GetSPSSCanonical(
 
     // Acquires locks for node i and j.
     const auto AcquireLock = [&](std::int64_t i, std::int64_t j) {
+      if (n_workers == 1) return;
+
       int bucket_i = i % n_buckets;
       int bucket_j = j % n_buckets;
 
@@ -1377,6 +1384,8 @@ std::vector<std::string> GetSPSSCanonical(
 
     // Releases locks for node i and j.
     const auto ReleaseLock = [&](std::int64_t i, std::int64_t j) {
+      if (n_workers == 1) return;
+
       int bucket_i = i % n_buckets;
       int bucket_j = j % n_buckets;
 
@@ -1391,12 +1400,20 @@ std::vector<std::string> GetSPSSCanonical(
 
     // Returns true if an edge is incident to the left side of i.
     const auto HasEdgeLeft = [&](std::int64_t i) {
+      if (n_workers == 1) {
+        return edge_left.find(i) != edge_left.end();
+      }
+
       int bucket = i % n_buckets;
       return buf_edge_left[bucket].find(i) != buf_edge_left[bucket].end();
     };
 
     // Returns true if an edge is incident to the right side of i.
     const auto HasEdgeRight = [&](std::int64_t i) {
+      if (n_workers == 1) {
+        return edge_right.find(i) != edge_right.end();
+      }
+
       int bucket = i % n_buckets;
       return buf_edge_right[bucket].find(i) != buf_edge_right[bucket].end();
     };
@@ -1404,73 +1421,87 @@ std::vector<std::string> GetSPSSCanonical(
     // Adds an edge incident to the left side of i.
     const auto AddEdgeLeft = [&](std::int64_t i, std::int64_t j,
                                  bool is_same_side) {
+      if (n_workers == 1) {
+        edge_left[i] = std::make_pair(j, is_same_side);
+        return;
+      }
+
       int bucket_i = i % n_buckets;
-      buf_edge_left[bucket_i][i] = {j, is_same_side};
+      buf_edge_left[bucket_i][i] = std::make_pair(j, is_same_side);
     };
 
     // Adds an edge incident to the right side of i.
     const auto AddEdgeRight = [&](std::int64_t i, std::int64_t j,
                                   bool is_same_side) {
+      if (n_workers == 1) {
+        edge_right[i] = std::make_pair(j, is_same_side);
+        return;
+      }
+
       int bucket_i = i % n_buckets;
-      buf_edge_right[bucket_i][i] = {j, is_same_side};
+      buf_edge_right[bucket_i][i] = std::make_pair(j, is_same_side);
     };
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        for (std::int64_t i : range) {
-          for (const Edge& edge : GetEdgesRight(i)) {
-            std::int64_t j;
-            bool is_same_side;
-            std::tie(j, is_same_side) = edge;
+    {
+      boost::asio::thread_pool pool(n_workers);
 
-            AcquireLock(i, j);
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
+          for (std::int64_t i : range) {
+            for (const Edge& edge : GetEdgesRight(i)) {
+              std::int64_t j;
+              bool is_same_side;
+              std::tie(j, is_same_side) = edge;
 
-            if (is_same_side) {
-              if (!HasEdgeRight(i) && !HasEdgeRight(j)) {
-                AddEdgeRight(i, j, true);
-                AddEdgeRight(j, i, true);
+              AcquireLock(i, j);
+
+              if (is_same_side) {
+                if (!HasEdgeRight(i) && !HasEdgeRight(j)) {
+                  AddEdgeRight(i, j, true);
+                  AddEdgeRight(j, i, true);
+                }
+              } else {
+                if (!HasEdgeRight(i) && !HasEdgeLeft(j)) {
+                  AddEdgeRight(i, j, false);
+                  AddEdgeLeft(j, i, false);
+                }
               }
-            } else {
-              if (!HasEdgeRight(i) && !HasEdgeLeft(j)) {
-                AddEdgeRight(i, j, false);
-                AddEdgeLeft(j, i, false);
-              }
+
+              ReleaseLock(i, j);
             }
 
-            ReleaseLock(i, j);
-          }
+            for (const Edge& edge : GetEdgesLeft(i)) {
+              std::int64_t j;
+              bool is_same_side;
+              std::tie(j, is_same_side) = edge;
 
-          for (const Edge& edge : GetEdgesLeft(i)) {
-            std::int64_t j;
-            bool is_same_side;
-            std::tie(j, is_same_side) = edge;
+              AcquireLock(i, j);
 
-            AcquireLock(i, j);
-
-            if (is_same_side) {
-              if (!HasEdgeLeft(i) && !HasEdgeLeft(j)) {
-                AddEdgeLeft(i, j, true);
-                AddEdgeLeft(j, i, true);
+              if (is_same_side) {
+                if (!HasEdgeLeft(i) && !HasEdgeLeft(j)) {
+                  AddEdgeLeft(i, j, true);
+                  AddEdgeLeft(j, i, true);
+                }
+              } else {
+                if (!HasEdgeLeft(i) && !HasEdgeRight(j)) {
+                  AddEdgeLeft(i, j, false);
+                  AddEdgeRight(j, i, false);
+                }
               }
-            } else {
-              if (!HasEdgeLeft(i) && !HasEdgeRight(j)) {
-                AddEdgeLeft(i, j, false);
-                AddEdgeRight(j, i, false);
-              }
+
+              ReleaseLock(i, j);
             }
-
-            ReleaseLock(i, j);
           }
-        }
-      });
+        });
+      }
+
+      pool.join();
     }
-
-    for (std::thread& t : threads) t.join();
 
     spdlog::debug("moving from buffers");
 
     // Moves from buffers.
-    {
+    if (n_workers != 1) {
       boost::asio::thread_pool pool(n_workers);
 
       boost::asio::post(pool, [&] {
@@ -1513,10 +1544,10 @@ std::vector<std::string> GetSPSSCanonical(
     spdlog::debug("constructing disjoint_set");
 
     {
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
 
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           for (std::int64_t i : range) {
             {
               auto it = edge_left.find(i);
@@ -1537,7 +1568,7 @@ std::vector<std::string> GetSPSSCanonical(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     spdlog::debug("constructed disjoint_set");
@@ -1550,12 +1581,12 @@ std::vector<std::string> GetSPSSCanonical(
 
       spdlog::debug("constructing groups and groups_with_terminals");
 
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
       std::mutex mu_groups;
       std::mutex mu_groups_with_terminals;
 
-      for (const Range& range : Range(0, n).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+      for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           absl::flat_hash_set<int> buf_groups;
           absl::flat_hash_set<int> buf_groups_with_terminals;
 
@@ -1588,7 +1619,7 @@ std::vector<std::string> GetSPSSCanonical(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
 
       spdlog::debug("constructed groups and groups_with_terminals");
 
@@ -1626,13 +1657,13 @@ std::vector<std::string> GetSPSSCanonical(
     spdlog::debug(
         "constructing terminals_left, terminals_right, and terminals_both");
 
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::mutex mu_terminals_left;
     std::mutex mu_terminals_right;
     std::mutex mu_terminals_both;
 
-    for (const Range& range : Range(0, n).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range : Range(0, n).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<std::int64_t> buf_terminals_left;
         std::vector<std::int64_t> buf_terminals_right;
         std::vector<std::int64_t> buf_terminals_both;
@@ -1691,7 +1722,7 @@ std::vector<std::string> GetSPSSCanonical(
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
 
     spdlog::debug(
         "constructed terminals_left, terminals_right, and terminals_both");
@@ -1704,12 +1735,12 @@ std::vector<std::string> GetSPSSCanonical(
 
     // Considers paths from terminals_left.
     {
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
       std::mutex mu_spss;
 
       for (const Range& range :
-           Range(0, terminals_left.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+           Range(0, terminals_left.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           std::vector<std::string> buf_spss;
 
           for (std::int64_t i : range) {
@@ -1731,17 +1762,17 @@ std::vector<std::string> GetSPSSCanonical(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     // Considers paths from terminals_right.
     {
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
       std::mutex mu_spss;
 
       for (const Range& range :
-           Range(0, terminals_right.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+           Range(0, terminals_right.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           std::vector<std::string> buf_spss;
 
           for (std::int64_t i : range) {
@@ -1763,17 +1794,17 @@ std::vector<std::string> GetSPSSCanonical(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     // Considers nodes in terminal_both.
     {
-      std::vector<std::thread> threads;
+      boost::asio::thread_pool pool(n_workers);
       std::mutex mu_spss;
 
       for (const Range& range :
-           Range(0, terminals_both.size()).Split(n_workers)) {
-        threads.emplace_back([&, range] {
+           Range(0, terminals_both.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
           std::vector<std::string> buf_spss;
 
           for (std::int64_t i : range) {
@@ -1791,7 +1822,7 @@ std::vector<std::string> GetSPSSCanonical(
         });
       }
 
-      for (std::thread& t : threads) t.join();
+      pool.join();
     }
 
     spdlog::debug("constructed spss");
@@ -1877,45 +1908,48 @@ std::int64_t GetSPSSWeight(const KmerSet<K, N, KeyType>& kmer_set,
     return neighbors;
   };
 
-  std::vector<std::thread> threads;
+  boost::asio::thread_pool pool(n_workers);
 
-  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
-    for (std::int64_t i : range) {
-      const Kmer<K>& kmer = kmers[i];
+  for (const Range& range :
+       Range(0, kmers.size()).Split(n_workers * n_workers)) {
+    boost::asio::post(pool, [&, range] {
+      for (std::int64_t i : range) {
+        const Kmer<K>& kmer = kmers[i];
 
-      std::vector<Kmer<K>> neighbors_in = GetNeighborsIn(kmer);
-      std::vector<Kmer<K>> neighbors_out = GetNeighborsOut(kmer);
+        std::vector<Kmer<K>> neighbors_in = GetNeighborsIn(kmer);
+        std::vector<Kmer<K>> neighbors_out = GetNeighborsOut(kmer);
 
-      if (neighbors_in.size() == 0 && neighbors_out.size() == 0) {
-        n_iso += 1;
-        continue;
-      }
-
-      if (neighbors_in.size() == 0 || neighbors_out.size() == 0) {
-        n_dead += 1;
-      }
-
-      int n_special_neighbors_in = 0;
-      int n_special_neighbors_out = 0;
-
-      for (const Kmer<K>& neighbor : neighbors_in) {
-        if (GetNeighborsOut(neighbor).size() == 1) {
-          n_special_neighbors_in += 1;
+        if (neighbors_in.size() == 0 && neighbors_out.size() == 0) {
+          n_iso += 1;
+          continue;
         }
-      }
 
-      for (const Kmer<K>& neighbor : neighbors_out) {
-        if (GetNeighborsIn(neighbor).size() == 1) {
-          n_special_neighbors_out += 1;
+        if (neighbors_in.size() == 0 || neighbors_out.size() == 0) {
+          n_dead += 1;
         }
-      }
 
-      n_sp += std::max(0, n_special_neighbors_in - 1);
-      n_sp += std::max(0, n_special_neighbors_out - 1);
-    }
+        int n_special_neighbors_in = 0;
+        int n_special_neighbors_out = 0;
+
+        for (const Kmer<K>& neighbor : neighbors_in) {
+          if (GetNeighborsOut(neighbor).size() == 1) {
+            n_special_neighbors_in += 1;
+          }
+        }
+
+        for (const Kmer<K>& neighbor : neighbors_out) {
+          if (GetNeighborsIn(neighbor).size() == 1) {
+            n_special_neighbors_out += 1;
+          }
+        }
+
+        n_sp += std::max(0, n_special_neighbors_in - 1);
+        n_sp += std::max(0, n_special_neighbors_out - 1);
+      }
+    });
   }
 
-  for (std::thread& t : threads) t.join();
+  pool.join();
 
   std::int64_t weight =
       ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
@@ -1989,10 +2023,11 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
     return neighbors;
   };
 
-  std::vector<std::thread> threads;
+  boost::asio::thread_pool pool(n_workers);
 
-  for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
+  for (const Range& range :
+       Range(0, kmers.size()).Split(n_workers * n_workers)) {
+    boost::asio::post(pool, [&, range] {
       for (std::int64_t i : range) {
         const Kmer<K>& kmer = kmers[i];
 
@@ -2042,7 +2077,7 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
     });
   }
 
-  for (std::thread& t : threads) t.join();
+  pool.join();
 
   std::int64_t weight =
       ((n_dead + n_sp + 1) / 2 + n_iso) * (K - 1) + kmers.size();
@@ -2054,75 +2089,18 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
   return weight;
 }
 
-// Reads SPSS and returns a list of kmers.
-template <int K>
-std::vector<Kmer<K>> GetKmersFromSPSS(const std::vector<std::string>& spss,
-                                      bool canonical, int n_workers) {
-  std::vector<Kmer<K>> kmers;
-  std::vector<std::thread> threads;
-  std::mutex mu;
-
-  if (n_workers != 1) {
-    std::int64_t size = 0;
-
-    for (const std::string& s : spss) {
-      size += s.length() - K + 1;
-    }
-
-    kmers.reserve(size);
-  }
-
-  for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
-      std::vector<Kmer<K>> buf;
-
-      {
-        std::int64_t size = 0;
-
-        for (std::int64_t i : range) {
-          const std::string& s = spss[i];
-          size += s.length() - K + 1;
-        }
-
-        buf.reserve(size);
-      }
-
-      for (std::int64_t i : range) {
-        const std::string& s = spss[i];
-
-        for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
-          Kmer<K> kmer(s.substr(j, K));
-          if (canonical) kmer = kmer.Canonical();
-          buf.push_back(kmer);
-        }
-      }
-
-      if (n_workers == 1) {
-        kmers = std::move(buf);
-      } else {
-        std::lock_guard lck(mu);
-        kmers.insert(kmers.end(), buf.begin(), buf.end());
-      }
-    });
-  }
-
-  for (std::thread& t : threads) t.join();
-
-  return kmers;
-}
-
 // Reads SPSS and returns the corresponding kmer set.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
                                           bool canonical, int n_workers) {
-  std::vector<std::thread> threads;
+  boost::asio::thread_pool pool(n_workers);
 
   KmerSet<K, N, KeyType> kmer_set;
   std::mutex mu;
-  int done_count = 0;
 
-  for (const Range& range : Range(0, spss.size()).Split(n_workers)) {
-    threads.emplace_back([&, range] {
+  for (const Range& range :
+       Range(0, spss.size()).Split(n_workers * n_workers)) {
+    boost::asio::post(pool, [&, range] {
       KmerSet<K, N, KeyType> buf;
 
       for (std::int64_t i : range) {
@@ -2135,12 +2113,11 @@ KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
       }
 
       std::lock_guard lck(mu);
-      kmer_set.Add(buf, 1 + done_count);
-      done_count += 1;
+      kmer_set.Add(buf, 1);
     });
   }
 
-  for (std::thread& t : threads) t.join();
+  pool.join();
 
   return kmer_set;
 }
