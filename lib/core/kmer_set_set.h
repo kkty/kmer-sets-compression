@@ -95,56 +95,73 @@ class KmerSetSet {
     // Considers a non-directed complete graph where ith node represents
     // kmer_sets_immutable_[i].
 
-    std::int64_t bloom_filter_size;
+    // Contains random numbers from 0 to (1 << N) - 1.
+    std::vector<int> bucket_ids;
 
-    // The size of each bloom filter is equal to the average number of kmers in
-    // kmer_sets_compact_.
     {
-      std::int64_t sum = 0;
+      absl::InsecureBitGen bitgen;
 
-      for (const KmerSetCompact<K, N, KeyType>& kmer_set_compact :
-           kmer_sets_compact_) {
-        sum += kmer_set_compact.Size();
+      for (int i = 0; i < (1 << N); i++) {
+        // Adds i to bucket_ids with the probability of 10%.
+        if (absl::Uniform(bitgen, 0, 10) == 0) {
+          bucket_ids.push_back(i);
+        }
       }
-
-      bloom_filter_size = sum / kmer_sets_compact_.size();
     }
 
-    // Leaves out 90% of kmers from bloom filters.
-    const std::int64_t bloom_filter_mod = bloom_filter_size * 10;
+    int n_buckets = bucket_ids.size();
 
-    spdlog::debug("bloom_filter_size = {}", bloom_filter_size);
+    // Elements in the ith element corresponds to bucket_ids[i].
+    using SampledKmerSet = std::vector<std::vector<KeyType>>;
 
-    // bloom_filters[i] represents kmer_sets_compact_[i].
-    std::vector<std::vector<bool>> bloom_filters;
+    // sampled_kmer_sets[i] holds a SampledKmerSet made from
+    // kmer_sets_compact_[i].
+    std::vector<SampledKmerSet> sampled_kmer_sets;
 
-    spdlog::debug("calculating bloom_filters");
+    spdlog::debug("constructing sampled_kmer_sets");
 
     {
       const int n = kmer_sets_compact_.size();
-      bloom_filters.resize(n);
+
+      sampled_kmer_sets.resize(n);
 
       boost::asio::thread_pool pool(n_workers);
 
       for (int i = 0; i < n; i++) {
         boost::asio::post(pool, [&, i] {
-          bloom_filters[i] = kmer_sets_compact_[i].GetBloomFilter(
-              bloom_filter_size, bloom_filter_mod, 1);
+          sampled_kmer_sets[i] =
+              kmer_sets_compact_[i].GetSampledKmerSet(bucket_ids, canonical, 1);
         });
       }
 
       pool.join();
     }
 
-    spdlog::debug("calculated bloom_filters");
+    spdlog::debug("constructed sampled_kmer_sets");
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
       std::int64_t count = 0;
 
-      for (std::int64_t k = 0; k < bloom_filter_size; k++) {
-        if (bloom_filters[i][k] && bloom_filters[j][k]) {
-          count += 1;
+      for (int k = 0; k < n_buckets; k++) {
+        const std::vector<KeyType>& bucket_i = sampled_kmer_sets[i][k];
+        const std::vector<KeyType>& bucket_j = sampled_kmer_sets[j][k];
+
+        // Calculates the intersection size of bucket_i and bucket_j.
+
+        auto it_i = bucket_i.begin();
+        auto it_j = bucket_j.begin();
+
+        while (it_i != bucket_i.end() && it_j != bucket_j.end()) {
+          if (*it_i < *it_j) {
+            it_i++;
+          } else if (*it_i > *it_j) {
+            it_j++;
+          } else {
+            count += 1;
+            it_i += 1;
+            it_j += 1;
+          }
         }
       }
 
@@ -310,20 +327,20 @@ class KmerSetSet {
         kmer_sets_compact_.push_back(KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_n, canonical, true, n_workers));
 
-        bloom_filters.push_back(kmer_sets_compact_[n].GetBloomFilter(
-            bloom_filter_size, bloom_filter_mod, n_workers));
+        sampled_kmer_sets.push_back(kmer_sets_compact_[n].GetSampledKmerSet(
+            bucket_ids, canonical, n_workers));
 
         kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_j, canonical, true, n_workers);
 
-        bloom_filters[j] = kmer_sets_compact_[j].GetBloomFilter(
-            bloom_filter_size, bloom_filter_mod, n_workers);
+        sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
+            bucket_ids, canonical, n_workers);
 
         kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_k, canonical, true, n_workers);
 
-        bloom_filters[k] = kmer_sets_compact_[k].GetBloomFilter(
-            bloom_filter_size, bloom_filter_mod, n_workers);
+        sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
+            bucket_ids, canonical, n_workers);
 
         children_[j].push_back(n);
         children_[k].push_back(n);

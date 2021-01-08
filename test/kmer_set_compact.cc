@@ -1,5 +1,6 @@
 #include "core/kmer_set_compact.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 
@@ -88,7 +89,7 @@ TEST(KmerSetCompact, FromAndToKmerSet) {
   ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
 
-TEST(KmerSetCompact, GetBloomFilter) {
+TEST(KmerSetCompact, GetSampledKmerSet) {
   const int K = 9;
   const int N = 10;
   using KeyType = std::uint8_t;
@@ -103,9 +104,26 @@ TEST(KmerSetCompact, GetBloomFilter) {
       KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, true,
                                                  n_workers);
 
-  const std::vector<bool> bloom_filter =
-      kmer_set_compact.GetBloomFilter(n, n * 10, n_workers);
+  std::vector<int> bucket_ids;
+  for (int i = 0; i < (1 << N); i++) bucket_ids.push_back(i);
 
-  ASSERT_EQ(bloom_filter.size(), n);
-  ASSERT_FALSE(std::vector<bool>(n) == bloom_filter);
+  std::reverse(bucket_ids.begin(), bucket_ids.end());
+
+  KmerSet<K, N, KeyType> reconstructed;
+
+  {
+    std::vector<std::vector<KeyType>> sampled =
+        kmer_set_compact.GetSampledKmerSet(bucket_ids, true, n_workers);
+
+    for (int i = 0; i < (1 << N); i++) {
+      ASSERT_TRUE(std::is_sorted(sampled[i].begin(), sampled[i].end()));
+
+      for (KeyType key : sampled[i]) {
+        reconstructed.Add(
+            GetKmerFromBucketAndKey<K, N, KeyType>(bucket_ids[i], key));
+      }
+    }
+  }
+
+  ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }

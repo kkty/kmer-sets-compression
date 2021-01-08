@@ -1,10 +1,12 @@
 #ifndef CORE_KMER_SET_COMPACT_H_
 #define CORE_KMER_SET_COMPACT_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -92,46 +94,92 @@ class KmerSetCompact {
     return size;
   }
 
-  // Returns a bloom filter of size n.
-  // Each kmer gets hashed and is divided by mod. If the reminder is less
-  // than n, it is inserted to the bloom filter.
-  std::vector<bool> GetBloomFilter(std::int64_t n, std::int64_t mod,
-                                   int n_workers) const {
+  // Constructs a structure like KmerSet, with selected buckets.
+  // Each bucket is a vector of KeyType instead of a hash set, and they are
+  // sorted.
+  std::vector<std::vector<KeyType>> GetSampledKmerSet(
+      const std::vector<int>& bucket_ids, bool canonical, int n_workers) const {
     std::vector<std::string> spss = ToStrings(n_workers);
 
-    std::vector<bool> bloom_filter(n);
-    std::mutex mu;
+    int n_buckets = bucket_ids.size();
 
-    boost::asio::thread_pool pool(n_workers);
-
-    for (const Range& range :
-         Range(0, spss.size()).Split(n_workers * n_workers)) {
-      boost::asio::post(pool, [&, range] {
-        std::vector<std::int64_t> buf;
-
-        for (std::int64_t i : range) {
-          const std::string& s = spss[i];
-
-          for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
-            const std::int64_t pos =
-                absl::Hash<std::string>()(s.substr(j, K)) % mod;
-
-            if (pos < n) {
-              buf.push_back(pos);
-            }
-          }
-        }
-
-        std::lock_guard lck(mu);
-        for (std::int64_t pos : buf) {
-          bloom_filter[pos] = true;
-        }
-      });
+    // bucket_ids[i] = j <-> map[j] = i.
+    absl::flat_hash_map<int, int> map;
+    for (int i = 0; i < n_buckets; i++) {
+      map[bucket_ids[i]] = i;
     }
 
-    pool.join();
+    std::vector<std::vector<KeyType>> buckets(n_buckets);
 
-    return bloom_filter;
+    {
+      boost::asio::thread_pool pool(n_workers);
+      std::vector<std::mutex> mus(n_buckets);
+
+      for (const Range& range :
+           Range(0, spss.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
+          std::vector<std::vector<KeyType>> buf(n_buckets);
+
+          for (std::int64_t i : range) {
+            const std::string& s = spss[i];
+
+            for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
+              Kmer<K> kmer(s.substr(j, K));
+
+              if (canonical) kmer = kmer.Canonical();
+
+              int bucket;
+              KeyType key;
+              std::tie(bucket, key) =
+                  GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
+
+              auto it = map.find(bucket);
+              if (it == map.end()) continue;
+
+              buf[it->second].push_back(key);
+            }
+          }
+
+          // Moves from buffer.
+
+          if (n_workers == 1) {
+            buckets = std::move(buf);
+          } else {
+            int done_count = 0;
+            std::vector<bool> done(n_buckets);
+
+            while (done_count < n_buckets) {
+              for (int i = 0; i < n_buckets; i++) {
+                if (!done[i] && mus[i].try_lock()) {
+                  buckets[i].insert(buckets[i].end(), buf[i].begin(),
+                                    buf[i].end());
+
+                  mus[i].unlock();
+                  done[i] = true;
+                  done_count += 1;
+                }
+              }
+            }
+          }
+        });
+      }
+
+      pool.join();
+    }
+
+    // Sorts keys in each bucket.
+    {
+      boost::asio::thread_pool pool(n_workers);
+
+      for (int i = 0; i < n_buckets; i++) {
+        boost::asio::post(
+            pool, [&, i] { std::sort(buckets[i].begin(), buckets[i].end()); });
+      }
+
+      pool.join();
+    }
+
+    return buckets;
   }
 
  private:
