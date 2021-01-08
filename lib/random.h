@@ -11,7 +11,6 @@
 #include "core/kmer.h"
 #include "core/kmer_counter.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_immutable.h"
 #include "core/kmer_set_set.h"
 
 // Returns a randomly-generated kmer.
@@ -104,24 +103,25 @@ KmerSet<K, N, KeyType> GetRandomKmerSet(int n, bool canonical) {
 }
 
 template <int K, int N, typename KeyType>
-KmerSetImmutable<K, N, KeyType> GetRandomKmerSetImmutable(int n, bool canonical,
-                                                          int n_workers) {
-  return KmerSetImmutable<K, N, KeyType>(
-      GetRandomKmerSet<K, N, KeyType>(n, canonical), n_workers);
+KmerSetCompact<K, N, KeyType> GetRandomKmerSetCompact(int n, bool canonical,
+                                                      int n_workers) {
+  return KmerSetCompact<K, N, KeyType>::FromKmerSet(
+      GetRandomKmerSet<K, N, KeyType>(n, canonical), canonical, true,
+      n_workers);
 }
 
-// Constructs n "KmerSetImmutable"s each with m kmers.
+// Constructs n KmerSetCompact each with m kmers.
 template <int K, int N, typename KeyType>
-std::vector<KmerSetImmutable<K, N, KeyType>> GetRandomKmerSetsImmutable(
+std::vector<KmerSetCompact<K, N, KeyType>> GetRandomKmerSetsCompact(
     int n, int m, bool canonical, int n_workers) {
-  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n);
+  std::vector<KmerSetCompact<K, N, KeyType>> kmer_sets_compact(n);
 
   for (int i = 0; i < n; i++) {
-    kmer_sets_immutable[i] = KmerSetImmutable<K, N, KeyType>(
-        GetRandomKmerSet<K, N, KeyType>(m, canonical), n_workers);
+    kmer_sets_compact[i] =
+        GetRandomKmerSetCompact<K, N, KeyType>(m, canonical, n_workers);
   }
 
-  return kmer_sets_immutable;
+  return kmer_sets_compact;
 }
 
 // Constructs a KmerSetSet with n kmer sets, each with m kmers.
@@ -129,7 +129,7 @@ template <int K, int N, typename KeyType>
 KmerSetSet<K, N, KeyType> GetRandomKmerSetSet(int n, int m, bool canonical,
                                               int n_workers) {
   return KmerSetSet<K, N, KeyType>(
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, canonical, n_workers),
+      GetRandomKmerSetsCompact<K, N, KeyType>(n, m, canonical, n_workers),
       canonical, n_workers);
 }
 

@@ -12,9 +12,7 @@
 #include "absl/strings/str_format.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
-#include "core/kmer_set_immutable.h"
 #include "core/kmer_set_set.h"
 #include "flags.h"
 #include "log.h"
@@ -43,7 +41,7 @@ void Main(const std::vector<std::string>& files) {
 
   const int n_datasets = files.size();
 
-  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable(n_datasets);
+  std::vector<KmerSetCompact<K, N, KeyType>> kmer_sets_compact(n_datasets);
 
   // Reads the ith file and constructs kmer_sets_immutable[i].
   const auto ReadFile = [&](int i, int n_workers) {
@@ -58,7 +56,7 @@ void Main(const std::vector<std::string>& files) {
 
     {
       absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-          KmerSetCompact<K, N, KeyType>::Load(file, decompressor);
+          KmerSetCompact<K, N, KeyType>::Load(file, decompressor, n_workers);
 
       if (!statusor.ok()) {
         spdlog::error("failed to read file: {}", statusor.status().ToString());
@@ -70,22 +68,7 @@ void Main(const std::vector<std::string>& files) {
 
     spdlog::info("constructed kmer_set_compact");
 
-    spdlog::info("constructing kmers");
-
-    std::vector<Kmer<K>> kmers = kmer_set_compact.ToKmers(canonical, n_workers);
-
-    spdlog::info("constructed kmers");
-
-    spdlog::info("kmers.size() = {}", kmers.size());
-
-    spdlog::info("constructing kmer_sets_immutable[{}]", i);
-
-    kmer_sets_immutable[i] = KmerSetImmutable<K, N, KeyType>(kmers, n_workers);
-
-    spdlog::info("constructed kmer_sets_immutable[{}]", i);
-
-    spdlog::info("kmer_sets_immutable[{}].Bytes() = {}", i,
-                 kmer_sets_immutable[i].Bytes());
+    kmer_sets_compact[i] = std::move(kmer_set_compact);
 
     spdlog::info("finished reading {}", file);
   };
@@ -113,7 +96,7 @@ void Main(const std::vector<std::string>& files) {
     std::int64_t total_size = 0;
 
     for (int i = 0; i < n_datasets; i++) {
-      std::int64_t size = kmer_sets_immutable[i].Size();
+      std::int64_t size = kmer_sets_compact[i].Size();
       spdlog::info("i = {}, size = {}", i, size);
       total_size += size;
     }
@@ -124,7 +107,7 @@ void Main(const std::vector<std::string>& files) {
   spdlog::info("constructing kmer_set_set");
 
   KmerSetSet<K, N, KeyType> kmer_set_set = KmerSetSet<K, N, KeyType>(
-      std::move(kmer_sets_immutable), canonical, n_workers);
+      std::move(kmer_sets_compact), canonical, n_workers);
 
   spdlog::info("constructed kmer_set_set");
 
@@ -154,8 +137,7 @@ void Main(const std::vector<std::string>& files) {
     absl::Status status;
 
     if (!out.empty()) {
-      status = kmer_set_set.Dump(out, compressor, extension, canonical, true,
-                                 n_workers);
+      status = kmer_set_set.Dump(out, compressor, extension, n_workers);
     }
 
     if (!status.ok()) {

@@ -85,8 +85,7 @@ void Main(const std::string& file_name) {
                                                  n_workers);
   spdlog::info("constructed kmer_set_compact");
 
-  spdlog::info("kmer_set_compact.Size() = {}",
-               kmer_set_compact.Size(n_workers));
+  spdlog::info("kmer_set_compact.Size() = {}", kmer_set_compact.Size());
 
   if (check) {
     const KmerSet<K, N, KeyType> decompressed =
@@ -101,7 +100,7 @@ void Main(const std::string& file_name) {
   }
 
   if (!out.empty()) {
-    absl::Status status = kmer_set_compact.Dump(out, compressor);
+    absl::Status status = kmer_set_compact.Dump(out, compressor, n_workers);
 
     if (!status.ok()) {
       spdlog::error("failed to dump kmer_set_compact: {}", status.ToString());

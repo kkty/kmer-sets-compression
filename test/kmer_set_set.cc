@@ -7,7 +7,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "core/kmer_set.h"
-#include "core/kmer_set_immutable.h"
+#include "core/kmer_set_compact.h"
 #include "gtest/gtest.h"
 #include "io.h"
 #include "random.h"
@@ -21,16 +21,16 @@ TEST(KmerSetSet, GetRandom) {
   const int n = 10;
   const int m = 10000;
 
-  std::vector<KmerSetImmutable<K, N, KeyType>> kmer_sets_immutable =
-      GetRandomKmerSetsImmutable<K, N, KeyType>(n, m, true, n_workers);
+  std::vector<KmerSetCompact<K, N, KeyType>> kmer_sets_compact =
+      GetRandomKmerSetsCompact<K, N, KeyType>(n, m, true, n_workers);
 
-  const KmerSetSet<K, N, KeyType> kmer_set_set(kmer_sets_immutable, true,
+  const KmerSetSet<K, N, KeyType> kmer_set_set(kmer_sets_compact, true,
                                                n_workers);
 
   for (int i = 0; i < n; i++) {
-    ASSERT_TRUE(
-        kmer_set_set.Get(i, n_workers)
-            .Equals(kmer_sets_immutable[i].ToKmerSet(n_workers), n_workers));
+    ASSERT_TRUE(kmer_set_set.Get(i, true, n_workers)
+                    .Equals(kmer_sets_compact[i].ToKmerSet(true, n_workers),
+                            n_workers));
   }
 }
 
@@ -49,8 +49,8 @@ TEST(KmerSetSet, DumpAndLoadRandom) {
       GetRandomKmerSetSet<K, N, KeyType>(n, m, true, n_workers);
 
   {
-    absl::Status status = kmer_set_set.Dump(temporary_directory.Name(), "",
-                                            "txt", true, false, n_workers);
+    absl::Status status =
+        kmer_set_set.Dump(temporary_directory.Name(), "", "txt", n_workers);
     ASSERT_TRUE(status.ok());
   }
 
@@ -58,7 +58,7 @@ TEST(KmerSetSet, DumpAndLoadRandom) {
   {
     absl::StatusOr<KmerSetSet<K, N, KeyType>> statusor =
         KmerSetSet<K, N, KeyType>::Load(temporary_directory.Name(), "", "txt",
-                                        true, n_workers);
+                                        n_workers);
 
     ASSERT_TRUE(statusor.ok());
 
@@ -70,8 +70,8 @@ TEST(KmerSetSet, DumpAndLoadRandom) {
   // Makes sure that every kmer set can be reconstructed.
 
   for (int i = 0; i < kmer_set_set.Size(); i++) {
-    ASSERT_TRUE(kmer_set_set.Get(i, n_workers)
-                    .Equals(loaded.Get(i, n_workers), n_workers));
+    ASSERT_TRUE(kmer_set_set.Get(i, true, n_workers)
+                    .Equals(loaded.Get(i, true, n_workers), n_workers));
   }
 }
 
@@ -90,8 +90,8 @@ TEST(KmerSetSet, ReaderRandom) {
       GetRandomKmerSetSet<K, N, KeyType>(n, m, true, n_workers);
 
   {
-    absl::Status status = kmer_set_set.Dump(temporary_directory.Name(), "",
-                                            "txt", true, false, n_workers);
+    absl::Status status =
+        kmer_set_set.Dump(temporary_directory.Name(), "", "txt", n_workers);
     ASSERT_TRUE(status.ok());
   }
 
@@ -118,6 +118,6 @@ TEST(KmerSetSet, ReaderRandom) {
 
     const KmerSet<K, N, KeyType> kmer_set = std::move(statusor).value();
 
-    ASSERT_TRUE(kmer_set_set.Get(i, n_workers).Equals(kmer_set, n_workers));
+    ASSERT_TRUE(kmer_set_set.Get(i, true, n_workers).Equals(kmer_set, n_workers));
   }
 }
