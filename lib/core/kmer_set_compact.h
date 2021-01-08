@@ -93,7 +93,10 @@ class KmerSetCompact {
   }
 
   // Returns a bloom filter of size n.
-  std::vector<bool> GetBloomFilter(std::int64_t n, int n_workers) const {
+  // Each kmer gets hashed and is divided by mod. If the reminder is less
+  // than n, it is inserted to the bloom filter.
+  std::vector<bool> GetBloomFilter(std::int64_t n, std::int64_t mod,
+                                   int n_workers) const {
     std::vector<std::string> spss = ToStrings(n_workers);
 
     std::vector<bool> bloom_filter(n);
@@ -110,13 +113,18 @@ class KmerSetCompact {
           const std::string& s = spss[i];
 
           for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
-            buf.push_back(absl::Hash<std::string>()(s.substr(j, K)) % n);
+            const std::int64_t pos =
+                absl::Hash<std::string>()(s.substr(j, K)) % mod;
+
+            if (pos < n) {
+              buf.push_back(pos);
+            }
           }
         }
 
         std::lock_guard lck(mu);
-        for (std::int64_t i : buf) {
-          bloom_filter[i] = true;
+        for (std::int64_t pos : buf) {
+          bloom_filter[pos] = true;
         }
       });
     }

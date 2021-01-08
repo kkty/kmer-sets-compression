@@ -104,7 +104,7 @@ TEST(KmerSetCompact, GetBloomFilter) {
                                                  n_workers);
 
   const std::vector<bool> bloom_filter =
-      kmer_set_compact.GetBloomFilter(n, n_workers);
+      kmer_set_compact.GetBloomFilter(n, n * 10, n_workers);
 
   ASSERT_EQ(bloom_filter.size(), n);
   ASSERT_FALSE(std::vector<bool>(n) == bloom_filter);

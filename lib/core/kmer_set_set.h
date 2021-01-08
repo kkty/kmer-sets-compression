@@ -110,6 +110,9 @@ class KmerSetSet {
       bloom_filter_size = sum / kmer_sets_compact_.size();
     }
 
+    // Leaves out 90% of kmers from bloom filters.
+    const std::int64_t bloom_filter_mod = bloom_filter_size * 10;
+
     spdlog::debug("bloom_filter_size = {}", bloom_filter_size);
 
     // bloom_filters[i] represents kmer_sets_compact_[i].
@@ -125,8 +128,8 @@ class KmerSetSet {
 
       for (int i = 0; i < n; i++) {
         boost::asio::post(pool, [&, i] {
-          bloom_filters[i] =
-              kmer_sets_compact_[i].GetBloomFilter(bloom_filter_size, 1);
+          bloom_filters[i] = kmer_sets_compact_[i].GetBloomFilter(
+              bloom_filter_size, bloom_filter_mod, 1);
         });
       }
 
@@ -307,20 +310,20 @@ class KmerSetSet {
         kmer_sets_compact_.push_back(KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_n, canonical, true, n_workers));
 
-        bloom_filters.push_back(
-            kmer_sets_compact_[n].GetBloomFilter(bloom_filter_size, n_workers));
+        bloom_filters.push_back(kmer_sets_compact_[n].GetBloomFilter(
+            bloom_filter_size, bloom_filter_mod, n_workers));
 
         kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_j, canonical, true, n_workers);
 
-        bloom_filters[j] =
-            kmer_sets_compact_[j].GetBloomFilter(bloom_filter_size, n_workers);
+        bloom_filters[j] = kmer_sets_compact_[j].GetBloomFilter(
+            bloom_filter_size, bloom_filter_mod, n_workers);
 
         kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_k, canonical, true, n_workers);
 
-        bloom_filters[k] =
-            kmer_sets_compact_[k].GetBloomFilter(bloom_filter_size, n_workers);
+        bloom_filters[k] = kmer_sets_compact_[k].GetBloomFilter(
+            bloom_filter_size, bloom_filter_mod, n_workers);
 
         children_[j].push_back(n);
         children_[k].push_back(n);
