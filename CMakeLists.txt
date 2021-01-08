@@ -51,11 +51,9 @@ include(CTest)
 
 foreach (
         NAME
-        int_set
         kmer
         kmer_counter
         kmer_set
-        kmer_set_immutable
         kmer_set_set
         parallel_disjoint_set
         range
@@ -69,7 +67,6 @@ endforeach ()
 
 foreach (
         NAME
-        int_set
         kmer
         kmer_counter
         kmer_set

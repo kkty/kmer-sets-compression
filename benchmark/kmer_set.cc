@@ -1,7 +1,8 @@
+#include "core/kmer_set.h"
+
 #include <cstdint>
 
 #include "benchmark/benchmark.h"
-#include "core/kmer_set_immutable.h"
 #include "random.h"
 
 void Benchmark_KmerSet_Find(benchmark::State& state) {
