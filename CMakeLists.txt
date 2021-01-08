@@ -40,7 +40,6 @@ foreach (
         kmerset-build
         kmerset-multiple-compress
         kmerset-multiple-decompress
-        kmerset-similarity
         kmerset-stat
         spss
 )
