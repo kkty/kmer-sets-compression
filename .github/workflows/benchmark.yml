@@ -31,5 +31,3 @@ jobs:
         working-directory: build
       - run: ./benchmark_spss
         working-directory: build
-      - run: ./benchmark_int_set
-        working-directory: build
