@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -91,16 +92,36 @@ class KmerSetCompact {
     return size;
   }
 
-  std::vector<bool> GetBloomFilter(std::int64_t n) const {
-    std::vector<std::string> spss = ToStrings(1);
+  // Returns a bloom filter of size n.
+  std::vector<bool> GetBloomFilter(std::int64_t n, int n_workers) const {
+    std::vector<std::string> spss = ToStrings(n_workers);
 
     std::vector<bool> bloom_filter(n);
+    std::mutex mu;
 
-    for (const std::string& s : spss) {
-      for (int i = 0; i < static_cast<int>(s.length()) - K + 1; i++) {
-        bloom_filter[absl::Hash<std::string>()(s.substr(i, K)) % n] = true;
-      }
+    boost::asio::thread_pool pool(n_workers);
+
+    for (const Range& range :
+         Range(0, spss.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::vector<std::int64_t> buf;
+
+        for (std::int64_t i : range) {
+          const std::string& s = spss[i];
+
+          for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
+            buf.push_back(absl::Hash<std::string>()(s.substr(j, K)) % n);
+          }
+        }
+
+        std::lock_guard lck(mu);
+        for (std::int64_t i : buf) {
+          bloom_filter[i] = true;
+        }
+      });
     }
+
+    pool.join();
 
     return bloom_filter;
   }
