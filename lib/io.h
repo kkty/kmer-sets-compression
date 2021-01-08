@@ -48,8 +48,33 @@ absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromFile(
   return kmer_set;
 }
 
-// Creates a temporary directory on initialization and removes it on
+// Creates a path to a temporary file on initialization and removes it on
 // deconstruction.
+class TemporaryFile {
+ public:
+  TemporaryFile() {
+    std::stringstream ss;
+    absl::InsecureBitGen bitgen;
+
+    ss << std::hex
+       << absl::Uniform<std::uint64_t>(
+              absl::IntervalClosed, bitgen, 0,
+              std::numeric_limits<std::uint64_t>::max());
+
+    name_ = (std::filesystem::temp_directory_path() / ss.str()).string();
+  }
+
+  ~TemporaryFile() { std::filesystem::remove(name_); }
+
+  // Returns the file path.
+  std::string Name() const { return name_; }
+
+ private:
+  std::string name_;
+};
+
+// Creates a path to a temporary directory on initialization and removes it
+// on deconstruction.
 class TemporaryDirectory {
  public:
   TemporaryDirectory() {
