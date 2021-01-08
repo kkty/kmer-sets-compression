@@ -38,8 +38,6 @@ link_libraries(
 foreach (
         NAME
         kmerset-build
-        kmerset-intersection-approximation
-        kmerset-intersection-performance
         kmerset-multiple-compress
         kmerset-multiple-decompress
         kmerset-similarity
@@ -80,4 +78,4 @@ foreach (
 )
     add_executable(benchmark_${NAME} benchmark/${NAME}.cc)
     target_link_libraries(benchmark_${NAME} benchmark::benchmark)
-endforeach()
+endforeach ()
