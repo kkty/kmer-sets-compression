@@ -78,6 +78,22 @@ class Kmer {
     return s;
   }
 
+  char Last() const {
+    switch (bits_ % 4) {
+      case 0:
+        return 'A';
+      case 1:
+        return 'C';
+      case 2:
+        return 'G';
+      case 3:
+        return 'T';
+    }
+
+    assert(false);
+    return ' ';
+  }
+
   // Returns the complement of the kmer.
   // The complement of a kmer is constructed by reversing the original kmer and
   // replacing 'A', 'C', 'G' and 'T' with 'T', 'G', 'C' and 'A' respectively.
