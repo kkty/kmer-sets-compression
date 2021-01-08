@@ -87,3 +87,25 @@ TEST(KmerSetCompact, FromAndToKmerSet) {
 
   ASSERT_TRUE(kmer_set.Equals(reconstructed, n_workers));
 }
+
+TEST(KmerSetCompact, GetBloomFilter) {
+  const int K = 9;
+  const int N = 10;
+  using KeyType = std::uint8_t;
+  const int n_workers = 4;
+
+  const int n = 100000;
+
+  const KmerSet<K, N, KeyType> kmer_set =
+      GetRandomKmerSet<K, N, KeyType>(n, true);
+
+  const KmerSetCompact<K, N, KeyType> kmer_set_compact =
+      KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, true,
+                                                 n_workers);
+
+  const std::vector<bool> bloom_filter =
+      kmer_set_compact.GetBloomFilter(n, n_workers);
+
+  ASSERT_EQ(bloom_filter.size(), n);
+  ASSERT_FALSE(std::vector<bool>(n) == bloom_filter);
+}
