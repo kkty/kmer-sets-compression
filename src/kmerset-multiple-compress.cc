@@ -48,7 +48,7 @@ void Main(const std::vector<std::string>& files) {
     const std::string& file = files[i];
     const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
-    spdlog::info("reading {}", file);
+    spdlog::info("reading: i = {}, file = {}", i, file);
 
     spdlog::info("constructing kmer_set_compact");
 
@@ -70,7 +70,7 @@ void Main(const std::vector<std::string>& files) {
 
     kmer_sets_compact[i] = std::move(kmer_set_compact);
 
-    spdlog::info("finished reading {}", file);
+    spdlog::info("finished reading: i = {}, file = {}", i, file);
   };
 
   {
