@@ -96,6 +96,13 @@ class KmerSet {
     return buckets_[bucket].find(key) != buckets_[bucket].end();
   }
 
+  // Allocates memory to accommodate n kmers.
+  void Reserve(std::int64_t n) {
+    for (int i = 0; i < kBucketsNum; i++) {
+      buckets_[i].reserve(n / kBucketsNum);
+    }
+  }
+
   // Finds all the k-mers that match the condition.
   template <typename PredType>
   std::vector<Kmer<K>> Find(PredType pred, int n_workers,
@@ -224,39 +231,6 @@ class KmerSet {
   // Returns true if two sets are the same.
   bool Equals(const KmerSet& other, int n_workers) const {
     return Diff(other, n_workers) == 0;
-  }
-
-  // Extracts K2-mers from the K-mer set.
-  // K2 should be equal to or less than K.
-  template <int K2, int N2, typename KeyType2>
-  KmerSet<K2, N2, KeyType2> Extract(int n_workers) const {
-    std::vector<Kmer<K>> kmers = Find(n_workers);
-    KmerSet<K2, N2, KeyType2> extracted;
-
-    std::vector<std::thread> threads;
-    int done = 0;
-    std::mutex mu;
-
-    for (const Range& range : Range(0, kmers.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
-        KmerSet<K2, N2, KeyType2> buf;
-
-        for (std::int64_t i : range) {
-          const std::string s = kmers[i].String();
-          for (int j = 0; j < (int)s.size() - K2 + 1; j++) {
-            buf.Add(Kmer<K2>(s.substr(j, K2)));
-          }
-        }
-
-        std::lock_guard lck(mu);
-        extracted.Add(buf, 1 + done);
-        done += 1;
-      });
-    }
-
-    for (std::thread& t : threads) t.join();
-
-    return extracted;
   }
 
   // Returns the hash value.
