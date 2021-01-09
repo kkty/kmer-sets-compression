@@ -65,18 +65,6 @@ pushd $WORK_DIR
     popd
   popd
 
-  echo "installing streamvbyte"
-  wget https://github.com/lemire/streamvbyte/archive/v0.4.1.tar.gz
-  tar xf v0.4.1.tar.gz
-  pushd streamvbyte-0.4.1
-    mkdir build
-    pushd build
-      cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX
-      make -j
-      make install
-    popd
-  popd
-
   echo "installing google benchmark"
   wget https://github.com/google/benchmark/archive/v1.5.2.tar.gz
   tar xf v1.5.2.tar.gz
