@@ -12,6 +12,7 @@
 #include <queue>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -323,11 +324,27 @@ class KmerSetSet {
           "updating kmer_sets_compact_, sampled_kmer_sets_, and children_");
 
       {
-        KmerSet<K, N, KeyType> kmer_set_j =
-            kmer_sets_compact_[j].ToKmerSet(canonical, n_workers);
+        KmerSet<K, N, KeyType> kmer_set_j;
+        KmerSet<K, N, KeyType> kmer_set_k;
 
-        KmerSet<K, N, KeyType> kmer_set_k =
-            kmer_sets_compact_[k].ToKmerSet(canonical, n_workers);
+        if (n_workers == 1) {
+          kmer_set_j = kmer_sets_compact_[j].ToKmerSet(canonical, n_workers);
+          kmer_set_k = kmer_sets_compact_[k].ToKmerSet(canonical, n_workers);
+        } else {
+          std::vector<std::thread> threads;
+
+          threads.emplace_back([&] {
+            kmer_set_j =
+                kmer_sets_compact_[j].ToKmerSet(canonical, n_workers / 2);
+          });
+
+          threads.emplace_back([&] {
+            kmer_set_k = kmer_sets_compact_[k].ToKmerSet(
+                canonical, n_workers - n_workers / 2);
+          });
+
+          for (std::thread& t : threads) t.join();
+        }
 
         {
           const KmerSet<K, N, KeyType> kmer_set_n =
