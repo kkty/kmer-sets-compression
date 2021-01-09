@@ -41,7 +41,7 @@ foreach (
         kmerset-multiple-compress
         kmerset-multiple-decompress
         kmerset-stat
-        spss
+        spss-benchmark
 )
     add_executable(${NAME} src/${NAME}.cc)
 endforeach ()

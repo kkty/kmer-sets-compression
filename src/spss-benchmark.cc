@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -52,9 +53,10 @@ void Main(const std::string& file_name) {
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
 
-  std::int64_t weight = GetSPSSWeightCanonical(kmer_set, n_workers);
-
-  spdlog::info("weight = {}", weight);
+  {
+    const std::int64_t weight = GetSPSSWeightCanonical(kmer_set, n_workers);
+    spdlog::info("weight = {}", weight);
+  }
 
   spdlog::info("constructing unitigs");
 
@@ -65,10 +67,10 @@ void Main(const std::string& file_name) {
 
   spdlog::info("constructing prefixes and suffixes");
 
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
+  const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> prefixes =
       GetPrefixesFromUnitigs<K>(unitigs, n_workers);
 
-  absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes =
+  const absl::flat_hash_map<Kmer<K>, std::vector<std::int64_t>> suffixes =
       GetSuffixesFromUnitigs<K>(unitigs, n_workers);
 
   spdlog::info("constructed prefixes and suffixes");
@@ -111,6 +113,7 @@ void Main(const std::string& file_name) {
 
         std::cout << sw.elapsed().count() << ' ';
 
+        // This should be true.
         const bool is_equal = kmer_set.Equals(reconstructed, n_workers);
 
         spdlog::info("is_equal = {}", is_equal);
