@@ -93,9 +93,16 @@ class KmerSetSet {
              bool canonical, int n_workers)
       : kmer_sets_compact_(std::move(kmer_sets_compact)) {
     // Considers a non-directed complete graph where ith node represents
-    // kmer_sets_immutable_[i].
+    // kmer_sets_compact_[i].
+    // If the edge between ith node and jth node has large weight,
+    // kmer_sets_compact_[i] and kmer_sets_compact_[j] have many common kmers.
 
-    // Contains random numbers from 0 to (1 << N) - 1.
+    // To calculate weights among nodes efficiently, we use "SampledKmerSet"s.
+    using SampledKmerSet = std::vector<std::vector<KeyType>>;
+
+    // "bucket_ids" contains random numbers from 0 to (1 << N) - 1.
+    // Elements in the ith element of a SampledKmerSet corresponds to
+    // bucket_ids[i].
     std::vector<int> bucket_ids;
 
     {
@@ -111,14 +118,11 @@ class KmerSetSet {
 
     int n_buckets = bucket_ids.size();
 
-    // Elements in the ith element corresponds to bucket_ids[i].
-    using SampledKmerSet = std::vector<std::vector<KeyType>>;
-
     // sampled_kmer_sets[i] holds a SampledKmerSet made from
     // kmer_sets_compact_[i].
     std::vector<SampledKmerSet> sampled_kmer_sets;
 
-    spdlog::debug("constructing sampled_kmer_sets");
+    spdlog::debug("constructing initial sampled_kmer_sets");
 
     {
       const int n = kmer_sets_compact_.size();
@@ -137,7 +141,7 @@ class KmerSetSet {
       pool.join();
     }
 
-    spdlog::debug("constructed sampled_kmer_sets");
+    spdlog::debug("constructed initial sampled_kmer_sets");
 
     // Calculates the weight of the edge between ith node and jth node.
     const auto GetEdgeWeight = [&](int i, int j) {
@@ -220,40 +224,42 @@ class KmerSetSet {
 
     spdlog::debug("total_size = {}", total_size);
 
-    // Returns the sum of expected SPSS weights.
-    const auto GetTotalSPSSWeight = [&] {
-      std::atomic_int64_t weight = 0;
+    // Returns an approximate of the final file size.
+    const auto GetExpectedFinalFileSize = [&] {
+      std::atomic_int64_t size = 0;
 
       boost::asio::thread_pool pool(n_workers);
 
       for (int i = 0; i < static_cast<int>(kmer_sets_compact_.size()); i++) {
         boost::asio::post(pool, [&, i] {
           if (canonical) {
-            weight += GetSPSSWeightCanonical(
+            size += GetSPSSWeightCanonical(
                 kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.1);
           } else {
-            weight += GetSPSSWeight(
-                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.1);
+            size += GetSPSSWeight(kmer_sets_compact_[i].ToKmerSet(canonical, 1),
+                                  1, 0.1);
           }
         });
       }
 
       pool.join();
 
-      return static_cast<std::int64_t>(weight);
+      return static_cast<std::int64_t>(size);
     };
 
-    spdlog::debug("calculating total_spss_weight");
+    spdlog::debug("calculating expected_final_file_size");
 
-    std::int64_t total_spss_weight = GetTotalSPSSWeight();
+    std::int64_t expected_final_file_size = GetExpectedFinalFileSize();
 
-    spdlog::debug("calculated total_spss_weight");
-    spdlog::debug("total_spss_weight = {}", total_spss_weight);
+    spdlog::debug("calculated expected_final_file_size");
+    spdlog::debug("expected_final_file_size = {}", expected_final_file_size);
 
-    // The interval with which total_spss_weight is updated.
+    // The interval with which expected_final_file_size is updated.
     const int interval = kmer_sets_compact_.size() / 4 + 1;
 
     // The threshold to decide when to stop the iterations.
+    // If the (ratio of) decrease of expected_final_file_size during an interval
+    // is less than this number, we break the loop.
     const float improvement_threshold =
         0.1 * interval / kmer_sets_compact_.size();
 
@@ -264,26 +270,28 @@ class KmerSetSet {
       spdlog::debug("i = {}", i);
 
       if (i > 0 && i % interval == 0) {
-        // Updates total_spss_weight.
+        // Updates expected_final_file_size.
         // If the improvement is less than the threshold, breaks the loop.
 
-        spdlog::debug("updating total_spss_weight");
+        spdlog::debug("updating expected_final_file_size");
 
-        const std::int64_t updated = GetTotalSPSSWeight();
+        const std::int64_t updated = GetExpectedFinalFileSize();
 
         const float improvement =
-            static_cast<float>(total_spss_weight - updated) / total_spss_weight;
+            static_cast<float>(expected_final_file_size - updated) /
+            expected_final_file_size;
 
-        spdlog::debug("total_spss_weight = {}, updated = {}, improvement = {}",
-                      total_spss_weight, updated, improvement);
+        spdlog::debug(
+            "expected_final_file_size = {}, updated = {}, improvement = {}",
+            expected_final_file_size, updated, improvement);
 
         if (improvement <= improvement_threshold) {
           break;
         }
 
-        total_spss_weight = updated;
+        expected_final_file_size = updated;
 
-        spdlog::debug("updated total_spss_weight");
+        spdlog::debug("updated expected_final_file_size");
       }
 
       const int n = kmer_sets_compact_.size();
@@ -301,7 +309,10 @@ class KmerSetSet {
       }
 
       // If there are no edges with positive weights, stops the iteration.
-      if (weight == 0) break;
+      if (weight == 0) {
+        spdlog::debug("found no positive weights");
+        break;
+      }
 
       spdlog::debug("j = {}, k = {}, weight = {}", j, k, weight);
 
@@ -309,7 +320,7 @@ class KmerSetSet {
           kmer_sets_compact_[j].Size() + kmer_sets_compact_[k].Size();
 
       spdlog::debug(
-          "updating kmer_sets_compact_, bloom_filters, and children_");
+          "updating kmer_sets_compact_, sampled_kmer_sets_, and children_");
 
       {
         KmerSet<K, N, KeyType> kmer_set_j =
@@ -318,17 +329,20 @@ class KmerSetSet {
         KmerSet<K, N, KeyType> kmer_set_k =
             kmer_sets_compact_[k].ToKmerSet(canonical, n_workers);
 
-        KmerSet<K, N, KeyType> kmer_set_n =
-            Intersection(kmer_set_j, kmer_set_k, n_workers);
+        {
+          const KmerSet<K, N, KeyType> kmer_set_n =
+              Intersection(kmer_set_j, kmer_set_k, n_workers);
 
-        kmer_set_j.Sub(kmer_set_n, n_workers);
-        kmer_set_k.Sub(kmer_set_n, n_workers);
+          kmer_set_j.Sub(kmer_set_n, n_workers);
+          kmer_set_k.Sub(kmer_set_n, n_workers);
 
-        kmer_sets_compact_.push_back(KmerSetCompact<K, N, KeyType>::FromKmerSet(
-            kmer_set_n, canonical, true, n_workers));
+          kmer_sets_compact_.push_back(
+              KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set_n, canonical,
+                                                         true, n_workers));
 
-        sampled_kmer_sets.push_back(kmer_sets_compact_[n].GetSampledKmerSet(
-            bucket_ids, canonical, n_workers));
+          sampled_kmer_sets.push_back(kmer_sets_compact_[n].GetSampledKmerSet(
+              bucket_ids, canonical, n_workers));
+        }
 
         kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
             kmer_set_j, canonical, true, n_workers);
@@ -346,10 +360,11 @@ class KmerSetSet {
         children_[k].push_back(n);
       }
 
-      spdlog::debug("updated kmer_sets_compact_, bloom_filters, and children_");
+      spdlog::debug(
+          "updated kmer_sets_compact_, sampled_kmer_sets, and children_");
 
       // The change in the number of kmers that are stored in
-      // kmer_sets_immutable_. It should be negative.
+      // kmer_sets_compact_. It should be negative.
       const std::int64_t size_diff =
           kmer_sets_compact_[n].Size() + kmer_sets_compact_[j].Size() +
           kmer_sets_compact_[k].Size() - original_size;
