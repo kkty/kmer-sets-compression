@@ -39,8 +39,7 @@ TEST(KmerSetCompact, DumpAndLoad) {
 
   {
     absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-        KmerSetCompact<K, N, KeyType>::Load(temporary_file.Name(), "",
-                                            n_workers);
+        KmerSetCompact<K, N, KeyType>::Load(temporary_file.Name(), "");
 
     ASSERT_TRUE(statusor.ok());
 

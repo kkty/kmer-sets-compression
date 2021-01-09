@@ -27,7 +27,7 @@ absl::StatusOr<KmerSet<K, N, KeyType>> GetKmerSetFromFile(
     spdlog::info("constructing kmer_set_compact");
 
     absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-        KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor, n_workers);
+        KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
 
     if (!statusor.ok()) {
       return statusor.status();

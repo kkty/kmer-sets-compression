@@ -43,53 +43,43 @@ void Main(const std::vector<std::string>& files) {
 
   std::vector<KmerSetCompact<K, N, KeyType>> kmer_sets_compact(n_datasets);
 
-  // Reads the ith file and constructs kmer_sets_immutable[i].
-  const auto ReadFile = [&](int i, int n_workers) {
-    const std::string& file = files[i];
+  {
     const std::string decompressor = absl::GetFlag(FLAGS_decompressor);
 
-    spdlog::info("reading: i = {}, file = {}", i, file);
+    boost::asio::thread_pool pool(n_workers);
 
-    spdlog::info("constructing kmer_set_compact");
+    for (int i = 0; i < n_datasets; i++) {
+      boost::asio::post(pool, [&, i] {
+        const std::string& file = files[i];
 
-    KmerSetCompact<K, N, KeyType> kmer_set_compact;
+        spdlog::info("reading: i = {}, file = {}", i, file);
 
-    {
-      absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-          KmerSetCompact<K, N, KeyType>::Load(file, decompressor, n_workers);
+        spdlog::info("constructing kmer_set_compact");
 
-      if (!statusor.ok()) {
-        spdlog::error("failed to read file: {}", statusor.status().ToString());
-        std::exit(1);
-      }
+        KmerSetCompact<K, N, KeyType> kmer_set_compact;
 
-      kmer_set_compact = std::move(statusor).value();
+        {
+          absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
+              KmerSetCompact<K, N, KeyType>::Load(file, decompressor);
+
+          if (!statusor.ok()) {
+            spdlog::error("failed to read file: {}",
+                          statusor.status().ToString());
+            std::exit(1);
+          }
+
+          kmer_set_compact = std::move(statusor).value();
+        }
+
+        spdlog::info("constructed kmer_set_compact");
+
+        kmer_sets_compact[i] = std::move(kmer_set_compact);
+
+        spdlog::info("finished reading: i = {}, file = {}", i, file);
+      });
     }
 
-    spdlog::info("constructed kmer_set_compact");
-
-    kmer_sets_compact[i] = std::move(kmer_set_compact);
-
-    spdlog::info("finished reading: i = {}, file = {}", i, file);
-  };
-
-  {
-    // Reading files in parallel may use a lot of memory.
-    const bool parallel_input = absl::GetFlag(FLAGS_parallel_input);
-
-    if (parallel_input) {
-      boost::asio::thread_pool pool(n_workers);
-
-      for (int i = 0; i < n_datasets; i++) {
-        boost::asio::post(pool, [&, i] { ReadFile(i, 1); });
-      }
-
-      pool.join();
-    } else {
-      for (int i = 0; i < n_datasets; i++) {
-        ReadFile(i, n_workers);
-      }
-    }
+    pool.join();
   }
 
   {

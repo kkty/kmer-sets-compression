@@ -41,8 +41,7 @@ void Main(const std::vector<std::string>& files) {
       spdlog::info("constructing kmer_set_compact");
 
       absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-          KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor,
-                                              n_workers);
+          KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
 
       if (!statusor.ok()) {
         spdlog::error("failed to load kmer_set_compact: {}",

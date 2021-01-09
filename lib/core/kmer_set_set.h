@@ -119,6 +119,8 @@ class KmerSetSet {
 
     int n_buckets = bucket_ids.size();
 
+    spdlog::debug("n_buckets = {}", n_buckets);
+
     // sampled_kmer_sets[i] holds a SampledKmerSet made from
     // kmer_sets_compact_[i].
     std::vector<SampledKmerSet> sampled_kmer_sets;
@@ -601,8 +603,7 @@ class KmerSetSet {
                 .string();
 
         absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-            KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor,
-                                                n_workers);
+            KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor);
 
         if (!statusor.ok()) {
           spdlog::error("failed to load {}: {}", file_name,
@@ -724,7 +725,7 @@ class KmerSetSetReader {
           spdlog::debug("file_name = {}", file_name);
 
           absl::StatusOr<KmerSetCompact<K, N, KeyType>> statusor =
-              KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor_, 1);
+              KmerSetCompact<K, N, KeyType>::Load(file_name, decompressor_);
 
           if (!statusor.ok()) {
             spdlog::debug("failed to load kmer_set: {}",

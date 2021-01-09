@@ -18,6 +18,7 @@
 #include "core/kmer_set.h"
 #include "core/range.h"
 #include "core/spss.h"
+#include "streamvbyte.h"
 
 // KmerSetCompact can store a set of kmers efficiently by using the binary form
 // of SPSS. It is not possible to add or remove kmers from the structure, but it
@@ -39,7 +40,7 @@ class KmerSetCompact {
       spss = GetSPSS<K, N, KeyType>(kmer_set, n_workers);
     }
 
-    return KmerSetCompact(spss, n_workers);
+    return KmerSetCompact(spss);
   }
 
   // Constructs a KmerSet.
@@ -65,8 +66,7 @@ class KmerSetCompact {
   //   ... = Load("foo.kmersetcompact.bz2", "bzip2 -d", n_workers);
   //   ... = Load("foo.kmersetcompact", "", n_workers);
   static absl::StatusOr<KmerSetCompact> Load(const std::string& file_name,
-                                             const std::string& decompressor,
-                                             int n_workers) {
+                                             const std::string& decompressor) {
     std::vector<std::string> lines;
 
     {
@@ -80,15 +80,17 @@ class KmerSetCompact {
       lines = std::move(statusor).value();
     }
 
-    return KmerSetCompact(lines, n_workers);
+    return KmerSetCompact(lines);
   }
 
   // Returns the number of stored kmers.
   std::int64_t Size() const {
+    std::vector<std::uint32_t> lengths = GetLengths();
+
     std::int64_t size = 0;
 
-    for (const std::vector<bool>& v : spss_binary_) {
-      size += v.size() / 2 - K + 1;
+    for (std::uint32_t length : lengths) {
+      size += length - K + 1;
     }
 
     return size;
@@ -183,65 +185,95 @@ class KmerSetCompact {
   }
 
  private:
-  explicit KmerSetCompact(std::vector<std::vector<bool>> spss_binary)
-      : spss_binary_(std::move(spss_binary)){};
+  KmerSetCompact(std::vector<std::string>& spss) {
+    n_ = spss.size();
 
-  KmerSetCompact(std::vector<std::string>& spss, int n_workers) {
-    std::vector<std::vector<bool>> spss_binary(spss.size());
+    std::vector<std::uint32_t> lengths(n_);
+    std::vector<std::int64_t> positions(n_);
 
-    boost::asio::thread_pool pool(n_workers);
+    {
+      std::int64_t size = 0;
 
-    for (const Range& range :
-         Range(0, spss.size()).Split(n_workers * n_workers)) {
-      boost::asio::post(pool, [&, range] {
-        for (std::int64_t i : range) {
-          const std::string& s = spss[i];
+      for (std::int64_t i = 0; i < n_; i++) {
+        positions[i] = size;
 
-          spss_binary[i].resize(s.length() * 2);
+        std::uint32_t length = spss[i].length();
+        lengths[i] = length;
+        size += length * 2;
+      }
 
-          for (int j = 0; j < static_cast<int>(s.length()); j++) {
-            switch (s[j]) {
-              case 'A':
-                break;
-              case 'C':
-                spss_binary[i][j * 2 + 1] = true;
-                break;
-              case 'G':
-                spss_binary[i][j * 2] = true;
-                break;
-              case 'T':
-                spss_binary[i][j * 2] = true;
-                spss_binary[i][j * 2 + 1] = true;
-                break;
-              default:
-                assert(false);
-            }
-          }
-        }
-      });
+      data_.resize(size);
     }
 
-    pool.join();
+    for (std::int64_t i = 0; i < n_; i++) {
+      const std::string& s = spss[i];
 
-    spss_binary_ = std::move(spss_binary);
+      std::int64_t position = positions[i];
+      int length = lengths[i];
+
+      for (int j = 0; j < length; j++) {
+        switch (s[j]) {
+          case 'A':
+            break;
+          case 'C':
+            data_[position + j * 2 + 1] = true;
+            break;
+          case 'G':
+            data_[position + j * 2] = true;
+            break;
+          case 'T':
+            data_[position + j * 2] = true;
+            data_[position + j * 2 + 1] = true;
+
+            break;
+          default:
+            assert(false);
+        }
+      }
+    }
+
+    {
+      lengths_compressed_.resize(streamvbyte_max_compressedbytes(n_));
+
+      std::int64_t size =
+          streamvbyte_encode(lengths.data(), n_, lengths_compressed_.data());
+
+      lengths_compressed_.resize(size);
+      lengths_compressed_.shrink_to_fit();
+    }
+  }
+
+  std::vector<std::uint32_t> GetLengths() const {
+    std::vector<std::uint32_t> lengths(n_);
+    streamvbyte_decode(lengths_compressed_.data(), lengths.data(), n_);
+    return lengths;
   }
 
   // Returns the SPSS as a vector of strings.
   std::vector<std::string> ToStrings(int n_workers) const {
-    std::vector<std::string> spss(spss_binary_.size());
+    std::vector<std::uint32_t> lengths = GetLengths();
+
+    std::vector<std::int64_t> positions(n_);
+
+    for (std::int64_t i = 0; i < n_ - 1; i++) {
+      positions[i + 1] = positions[i] + lengths[i] * 2;
+    }
+
+    std::vector<std::string> spss(n_);
 
     boost::asio::thread_pool pool(n_workers);
 
-    for (const Range& range :
-         Range(0, spss_binary_.size()).Split(n_workers * n_workers)) {
+    for (const Range& range : Range(0, n_).Split(n_workers * n_workers)) {
       boost::asio::post(pool, [&, range] {
         for (std::int64_t i : range) {
-          spss[i].resize(spss_binary_[i].size() / 2);
+          const int length = lengths[i];
+          const std::int64_t position = positions[i];
 
-          for (int j = 0; j < static_cast<int>(spss_binary_[i].size()) / 2;
-               j++) {
-            bool first = spss_binary_[i][j * 2];
-            bool second = spss_binary_[i][j * 2 + 1];
+          spss[i].resize(length);
+
+          for (int j = 0; j < length; j++) {
+            const bool first = data_[position + 2 * j];
+            const bool second = data_[position + 2 * j + 1];
 
             if (first) {
               if (second) {
@@ -266,7 +298,9 @@ class KmerSetCompact {
     return spss;
   }
 
-  std::vector<std::vector<bool>> spss_binary_;
+  std::int64_t n_;
+  std::vector<std::uint8_t> lengths_compressed_;
+  std::vector<bool> data_;
 };
 
 #endif
