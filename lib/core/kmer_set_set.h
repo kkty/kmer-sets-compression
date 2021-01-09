@@ -109,8 +109,8 @@ class KmerSetSet {
       absl::InsecureBitGen bitgen;
 
       for (int i = 0; i < (1 << N); i++) {
-        // Adds i to bucket_ids with the probability of 10%.
-        if (absl::Uniform(bitgen, 0, 10) == 0) {
+        // Adds i to bucket_ids with the probability of 5%.
+        if (absl::Uniform(bitgen, 0, 20) == 0) {
           bucket_ids.push_back(i);
         }
       }
