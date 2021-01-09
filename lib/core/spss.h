@@ -1835,7 +1835,7 @@ std::vector<std::string> GetSPSSCanonical(
 template <int K, int N, typename KeyType>
 std::vector<std::string> GetSPSSCanonical(
     const KmerSet<K, N, KeyType>& kmer_set, bool fast, int n_workers,
-    int n_buckets = 64) {
+    int n_buckets = 512) {
   spdlog::debug("constructing unitigs");
 
   const std::vector<std::string> unitigs =
