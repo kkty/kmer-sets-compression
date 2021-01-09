@@ -15,6 +15,8 @@ find_package(Boost REQUIRED COMPONENTS thread)
 find_package(mimalloc REQUIRED)
 find_package(benchmark REQUIRED)
 
+find_library(streamvbyte_LIBRARIES streamvbyte_static REQUIRED)
+
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 include_directories(lib)
 
