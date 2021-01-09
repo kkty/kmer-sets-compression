@@ -2093,31 +2093,70 @@ std::int64_t GetSPSSWeightCanonical(const KmerSet<K, N, KeyType>& kmer_set,
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
                                           bool canonical, int n_workers) {
-  boost::asio::thread_pool pool(n_workers);
-
   KmerSet<K, N, KeyType> kmer_set;
-  std::mutex mu;
 
-  for (const Range& range :
-       Range(0, spss.size()).Split(n_workers * n_workers)) {
-    boost::asio::post(pool, [&, range] {
-      KmerSet<K, N, KeyType> buf;
+  // Calculates number of kmers and calls kmer_set.Reserve().
+  {
+    boost::asio::thread_pool pool(n_workers);
 
-      for (std::int64_t i : range) {
-        const std::string& s = spss[i];
-        for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
-          Kmer<K> kmer(s.substr(j, K));
-          if (canonical) kmer = kmer.Canonical();
-          buf.Add(kmer);
+    std::atomic_int64_t size = 0;
+
+    for (const Range& range :
+         Range(0, spss.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::int64_t buf = 0;
+
+        for (std::int64_t i : range) {
+          buf += spss[i].length() - K + 1;
         }
-      }
 
-      std::lock_guard lck(mu);
-      kmer_set.Add(buf, 1);
-    });
+        size += buf;
+      });
+    }
+
+    pool.join();
+
+    kmer_set.Reserve(size);
   }
 
-  pool.join();
+  // Populates kmer_set.
+  {
+    boost::asio::thread_pool pool(n_workers);
+
+    std::mutex mu;
+
+    for (const Range& range :
+         Range(0, spss.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::vector<Kmer<K>> buf;
+
+        {
+          std::int64_t size = 0;
+          for (std::int64_t i : range) {
+            size += spss[i].length() - K + 1;
+          }
+          buf.reserve(size);
+        }
+
+        for (std::int64_t i : range) {
+          const std::string& s = spss[i];
+          for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
+            Kmer<K> kmer(s.substr(j, K));
+            if (canonical) kmer = kmer.Canonical();
+            buf.push_back(kmer);
+          }
+        }
+
+        std::lock_guard lck(mu);
+
+        for (const Kmer<K>& kmer : buf) {
+          kmer_set.Add(kmer);
+        }
+      });
+    }
+
+    pool.join();
+  }
 
   return kmer_set;
 }
