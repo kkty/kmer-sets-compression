@@ -1,5 +1,6 @@
 #include "core/kmer_set.h"
 
+#include <cstdint>
 #include <tuple>
 #include <vector>
 
@@ -9,7 +10,7 @@
 TEST(KmerSet, BucketAndKey) {
   const int K = 5;
   const int N = 3;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
 
   Kmer<K> kmer("AGCTG");
 
@@ -24,7 +25,7 @@ TEST(KmerSet, BucketAndKey) {
 TEST(KmerSet, AddRemove) {
   const int K = 5;
   const int N = 3;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
 
   Kmer<K> kmer("AAAAA");
 
@@ -47,7 +48,7 @@ TEST(KmerSet, AddRemove) {
 TEST(KmerSet, Find) {
   const int K = 5;
   const int N = 3;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
 
   KmerSet<K, N, KeyType> kmer_set;
   kmer_set.Add(Kmer<K>("AAAAA"));
@@ -71,7 +72,7 @@ TEST(KmerSet, Find) {
 TEST(KmerSet, Operators) {
   const int K = 5;
   const int N = 3;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
 
   KmerSet<K, N, KeyType> kmer_set1;
   KmerSet<K, N, KeyType> kmer_set2;
@@ -95,7 +96,7 @@ TEST(KmerSet, Operators) {
 TEST(KmerSet, EqualsAndDiff) {
   const int K = 5;
   const int N = 3;
-  using KeyType = uint8_t;
+  using KeyType = std::uint8_t;
 
   KmerSet<K, N, KeyType> kmer_set1;
   KmerSet<K, N, KeyType> kmer_set2;
@@ -129,25 +130,4 @@ TEST(KmerSet, EqualsAndDiff) {
 
   ASSERT_DOUBLE_EQ(kmer_set1.Similarity(kmer_set3, 1), 0.25);
   ASSERT_DOUBLE_EQ(kmer_set3.Similarity(kmer_set1, 1), 0.25);
-}
-
-TEST(KmerSet, Extract) {
-  const int K = 5;
-  const int N = 3;
-  using KeyType = uint8_t;
-
-  KmerSet<K, N, KeyType> kmer_set;
-  kmer_set.Add(Kmer<K>("ACGTA"));
-  kmer_set.Add(Kmer<K>("CGTAC"));
-
-  const int K2 = 4;
-  const int N2 = 3;
-  using KeyType2 = uint8_t;
-
-  KmerSet<K2, N2, KeyType2> extracted =
-      kmer_set.template Extract<K2, N2, KeyType2>(1);
-  ASSERT_EQ(extracted.Size(), 3);
-  ASSERT_TRUE(extracted.Contains(Kmer<K2>("ACGT")));
-  ASSERT_TRUE(extracted.Contains(Kmer<K2>("CGTA")));
-  ASSERT_TRUE(extracted.Contains(Kmer<K2>("GTAC")));
 }
