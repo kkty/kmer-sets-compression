@@ -234,10 +234,10 @@ class KmerSetSet {
         boost::asio::post(pool, [&, i] {
           if (canonical) {
             size += GetSPSSWeightCanonical(
-                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.1);
+                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.05);
           } else {
             size += GetSPSSWeight(kmer_sets_compact_[i].ToKmerSet(canonical, 1),
-                                  1, 0.1);
+                                  1, 0.05);
           }
         });
       }
