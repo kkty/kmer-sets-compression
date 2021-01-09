@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -79,10 +80,10 @@ void Main(const std::string& directory_name) {
 }
 
 int main(int argc, char** argv) {
-  absl::SetProgramUsageMessage(
-      absl::StrFormat("Decompresses the output of \"kmerset-compress\". Usage: "
-                      "%s [options] <path to directory>",
-                      argv[0]));
+  absl::SetProgramUsageMessage(absl::StrFormat(
+      "Decompresses the output of \"kmerset-multiple-compress\". Usage: "
+      "%s [options] <path to directory>",
+      argv[0]));
 
   std::string directory_name;
 
