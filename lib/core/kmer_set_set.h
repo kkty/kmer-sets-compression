@@ -249,7 +249,7 @@ class KmerSetSet {
     spdlog::debug("total_spss_weight = {}", total_spss_weight);
 
     // The interval with which total_spss_weight is updated.
-    const int interval = kmer_sets_compact_.size() / 4 + 1;
+    const int interval = kmer_sets_compact_.size() / 8 + 1;
 
     // The threshold to decide when to stop the iterations.
     // If the (ratio of) decrease of total_spss_weight during an interval
