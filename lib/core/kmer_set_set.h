@@ -30,6 +30,7 @@
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/kmer_set_compact.h"
+#include "core/random.h"
 #include "core/range.h"
 #include "core/spss.h"
 #include "spdlog/spdlog.h"
@@ -104,19 +105,11 @@ class KmerSetSet {
     // "bucket_ids" contains random numbers from 0 to (1 << N) - 1.
     // Elements in the ith element of a SampledKmerSet corresponds to
     // bucket_ids[i].
-    std::vector<int> bucket_ids;
+    std::vector<int> bucket_ids =
+        GetRandomInts((1 << N) / 50, true, true, 0, (1 << N) - 1);
 
-    {
-      absl::InsecureBitGen bitgen;
-
-      for (int i = 0; i < (1 << N); i++) {
-        // Adds i to bucket_ids with the probability of 2%.
-        if (absl::Uniform(bitgen, 0, 50) == 0) {
-          bucket_ids.push_back(i);
-        }
-      }
-    }
-
+    // This should equal to (1 << N) / 50. That is, around 2% of buckets are
+    // used.
     int n_buckets = bucket_ids.size();
 
     spdlog::debug("n_buckets = {}", n_buckets);
@@ -235,12 +228,14 @@ class KmerSetSet {
 
       for (int i = 0; i < static_cast<int>(kmer_sets_compact_.size()); i++) {
         boost::asio::post(pool, [&, i] {
+          // Uses 2% of k-mers.
+
           if (canonical) {
             size += GetSPSSWeightCanonical(
-                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.05);
+                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.02);
           } else {
             size += GetSPSSWeight(kmer_sets_compact_[i].ToKmerSet(canonical, 1),
-                                  1, 0.05);
+                                  1, 0.02);
           }
         });
       }
@@ -348,32 +343,82 @@ class KmerSetSet {
           for (std::thread& t : threads) t.join();
         }
 
-        {
-          const KmerSet<K, N, KeyType> kmer_set_n =
-              Intersection(kmer_set_j, kmer_set_k, n_workers);
+        KmerSet<K, N, KeyType> kmer_set_n =
+            Intersection(kmer_set_j, kmer_set_k, n_workers);
 
-          kmer_set_j.Sub(kmer_set_n, n_workers);
-          kmer_set_k.Sub(kmer_set_n, n_workers);
+        kmer_set_j.Sub(kmer_set_n, n_workers);
+        kmer_set_k.Sub(kmer_set_n, n_workers);
 
-          kmer_sets_compact_.push_back(
-              KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set_n, canonical,
-                                                         true, n_workers));
+        kmer_sets_compact_.resize(n + 1);
+        sampled_kmer_sets.resize(n + 1);
 
-          sampled_kmer_sets.push_back(kmer_sets_compact_[n].GetSampledKmerSet(
-              bucket_ids, canonical, n_workers));
+        if (n_workers == 1) {
+          kmer_sets_compact_[n] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+              kmer_set_n, canonical, true, n_workers);
+
+          kmer_set_n.Clear();
+
+          sampled_kmer_sets[n] = kmer_sets_compact_[n].GetSampledKmerSet(
+              bucket_ids, canonical, n_workers);
+
+          kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+              kmer_set_j, canonical, true, n_workers);
+
+          kmer_set_j.Clear();
+
+          sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
+              bucket_ids, canonical, n_workers);
+
+          kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+              kmer_set_k, canonical, true, n_workers);
+
+          kmer_set_k.Clear();
+
+          sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
+              bucket_ids, canonical, n_workers);
+        } else {
+          std::vector<std::thread> threads;
+
+          std::atomic_int done = 0;
+
+          threads.emplace_back([&] {
+            kmer_sets_compact_[n] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+                kmer_set_n, canonical, true, n_workers / 3);
+
+            kmer_set_n.Clear();
+
+            sampled_kmer_sets[n] = kmer_sets_compact_[n].GetSampledKmerSet(
+                bucket_ids, canonical, n_workers / 3 + done);
+
+            done += n_workers / 3;
+          });
+
+          threads.emplace_back([&] {
+            kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+                kmer_set_j, canonical, true, n_workers / 3);
+
+            kmer_set_j.Clear();
+
+            sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
+                bucket_ids, canonical, n_workers / 3 + done);
+
+            done += n_workers / 3;
+          });
+
+          threads.emplace_back([&] {
+            kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+                kmer_set_k, canonical, true, n_workers - n_workers / 3 * 2);
+
+            kmer_set_k.Clear();
+
+            sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
+                bucket_ids, canonical, n_workers - n_workers / 3 * 2 + done);
+
+            done += n_workers - n_workers / 3 * 2;
+          });
+
+          for (std::thread& t : threads) t.join();
         }
-
-        kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-            kmer_set_j, canonical, true, n_workers);
-
-        sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
-            bucket_ids, canonical, n_workers);
-
-        kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-            kmer_set_k, canonical, true, n_workers);
-
-        sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
-            bucket_ids, canonical, n_workers);
 
         children_[j].push_back(n);
         children_[k].push_back(n);
