@@ -222,27 +222,22 @@ class KmerSetSet {
 
     // Returns an approximate of the final file size.
     const auto GetExpectedFinalFileSize = [&] {
-      std::atomic_int64_t size = 0;
+      std::int64_t size = 0;
 
-      boost::asio::thread_pool pool(n_workers);
-
-      for (int i = 0; i < static_cast<int>(kmer_sets_compact_.size()); i++) {
-        boost::asio::post(pool, [&, i] {
-          // Uses 2% of k-mers.
-
-          if (canonical) {
-            size += GetSPSSWeightCanonical(
-                kmer_sets_compact_[i].ToKmerSet(canonical, 1), 1, 0.02);
-          } else {
-            size += GetSPSSWeight(kmer_sets_compact_[i].ToKmerSet(canonical, 1),
-                                  1, 0.02);
-          }
-        });
+      for (const KmerSetCompact<K, N, KeyType>& kmer_set_compact :
+           kmer_sets_compact_) {
+        if (canonical) {
+          size += GetSPSSWeightCanonical(
+              kmer_set_compact.ToKmerSet(canonical, n_workers), n_workers,
+              0.02);
+        } else {
+          size +=
+              GetSPSSWeight(kmer_set_compact.ToKmerSet(canonical, n_workers),
+                            n_workers, 0.02);
+        }
       }
 
-      pool.join();
-
-      return static_cast<std::int64_t>(size);
+      return size;
     };
 
     spdlog::debug("calculating expected_final_file_size");
