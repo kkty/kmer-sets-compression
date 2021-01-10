@@ -220,38 +220,39 @@ class KmerSetSet {
 
     spdlog::debug("total_size = {}", total_size);
 
-    // Returns an approximate of the final file size.
-    const auto GetExpectedFinalFileSize = [&] {
-      std::int64_t size = 0;
+    // Returns the total SPSS weight.
+    // It can be used as an estimate of the final file size.
+    const auto GetTotalSPSSWeight = [&] {
+      std::atomic_int64_t total = 0;
 
-      for (const KmerSetCompact<K, N, KeyType>& kmer_set_compact :
-           kmer_sets_compact_) {
-        if (canonical) {
-          size += GetSPSSWeightCanonical(
-              kmer_set_compact.ToKmerSet(canonical, n_workers), n_workers,
-              0.02);
-        } else {
-          size +=
-              GetSPSSWeight(kmer_set_compact.ToKmerSet(canonical, n_workers),
-                            n_workers, 0.02);
-        }
+      boost::asio::thread_pool pool(n_workers);
+
+      for (const Range& range :
+           Range(0, kmer_sets_compact_.size()).Split(n_workers * n_workers)) {
+        boost::asio::post(pool, [&, range] {
+          for (int i : range) {
+            total += kmer_sets_compact_[i].Weight(1);
+          }
+        });
       }
 
-      return size;
+      pool.join();
+
+      return static_cast<std::int64_t>(total);
     };
 
-    spdlog::debug("calculating expected_final_file_size");
+    spdlog::debug("calculating total_spss_weight");
 
-    std::int64_t expected_final_file_size = GetExpectedFinalFileSize();
+    std::int64_t total_spss_weight = GetTotalSPSSWeight();
 
-    spdlog::debug("calculated expected_final_file_size");
-    spdlog::debug("expected_final_file_size = {}", expected_final_file_size);
+    spdlog::debug("calculated total_spss_weight");
+    spdlog::debug("total_spss_weight = {}", total_spss_weight);
 
-    // The interval with which expected_final_file_size is updated.
+    // The interval with which total_spss_weight is updated.
     const int interval = kmer_sets_compact_.size() / 4 + 1;
 
     // The threshold to decide when to stop the iterations.
-    // If the (ratio of) decrease of expected_final_file_size during an interval
+    // If the (ratio of) decrease of total_spss_weight during an interval
     // is less than this number, we break the loop.
     const float improvement_threshold =
         0.1 * interval / kmer_sets_compact_.size();
@@ -263,28 +264,26 @@ class KmerSetSet {
       spdlog::debug("i = {}", i);
 
       if (i > 0 && i % interval == 0) {
-        // Updates expected_final_file_size.
+        // Updates total_spss_weight.
         // If the improvement is less than the threshold, breaks the loop.
 
-        spdlog::debug("updating expected_final_file_size");
+        spdlog::debug("updating total_spss_weight");
 
-        const std::int64_t updated = GetExpectedFinalFileSize();
+        const std::int64_t updated = GetTotalSPSSWeight();
 
         const float improvement =
-            static_cast<float>(expected_final_file_size - updated) /
-            expected_final_file_size;
+            static_cast<float>(total_spss_weight - updated) / total_spss_weight;
 
-        spdlog::debug(
-            "expected_final_file_size = {}, updated = {}, improvement = {}",
-            expected_final_file_size, updated, improvement);
+        spdlog::debug("total_spss_weight = {}, updated = {}, improvement = {}",
+                      total_spss_weight, updated, improvement);
 
         if (improvement <= improvement_threshold) {
           break;
         }
 
-        expected_final_file_size = updated;
+        total_spss_weight = updated;
 
-        spdlog::debug("updated expected_final_file_size");
+        spdlog::debug("updated total_spss_weight");
       }
 
       const int n = kmer_sets_compact_.size();
