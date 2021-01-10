@@ -2,6 +2,7 @@
 #define CORE_KMER_SET_COMPACT_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -106,6 +107,32 @@ class KmerSetCompact {
     pool.join();
 
     return size;
+  }
+
+  // Returns the sum of each string's length.
+  std::int64_t Weight(std::int64_t n_workers) const {
+    std::atomic_int64_t weight = 0;
+
+    std::vector<std::uint32_t> lengths = GetLengths(n_workers);
+
+    boost::asio::thread_pool pool(n_workers);
+
+    for (const Range& range :
+         Range(0, lengths.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::int64_t buf = 0;
+
+        for (std::int64_t i : range) {
+          buf += lengths[i];
+        }
+
+        weight += buf;
+      });
+    }
+
+    pool.join();
+
+    return static_cast<std::int64_t>(weight);
   }
 
   // Constructs a structure like KmerSet, with selected buckets.
