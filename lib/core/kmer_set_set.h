@@ -321,104 +321,37 @@ class KmerSetSet {
           "updating kmer_sets_compact_, sampled_kmer_sets_, and children_");
 
       {
-        KmerSet<K, N, KeyType> kmer_set_j;
-        KmerSet<K, N, KeyType> kmer_set_k;
+        KmerSet<K, N, KeyType> kmer_set_j =
+            kmer_sets_compact_[j].ToKmerSet(canonical, n_workers);
+        KmerSet<K, N, KeyType> kmer_set_k =
+            kmer_sets_compact_[k].ToKmerSet(canonical, n_workers);
 
-        if (n_workers == 1) {
-          kmer_set_j = kmer_sets_compact_[j].ToKmerSet(canonical, n_workers);
-          kmer_set_k = kmer_sets_compact_[k].ToKmerSet(canonical, n_workers);
-        } else {
-          std::vector<std::thread> threads;
+        {
+          const KmerSet<K, N, KeyType> kmer_set_n =
+              Intersection(kmer_set_j, kmer_set_k, n_workers);
 
-          threads.emplace_back([&] {
-            kmer_set_j =
-                kmer_sets_compact_[j].ToKmerSet(canonical, n_workers / 2);
-          });
+          kmer_set_j.Sub(kmer_set_n, n_workers);
+          kmer_set_k.Sub(kmer_set_n, n_workers);
 
-          threads.emplace_back([&] {
-            kmer_set_k = kmer_sets_compact_[k].ToKmerSet(
-                canonical, n_workers - n_workers / 2);
-          });
+          kmer_sets_compact_.push_back(
+              KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set_n, canonical,
+                                                         true, n_workers));
 
-          for (std::thread& t : threads) t.join();
+          sampled_kmer_sets.push_back(kmer_sets_compact_[n].GetSampledKmerSet(
+              bucket_ids, canonical, n_workers));
         }
 
-        KmerSet<K, N, KeyType> kmer_set_n =
-            Intersection(kmer_set_j, kmer_set_k, n_workers);
+        kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+            kmer_set_j, canonical, true, n_workers);
 
-        kmer_set_j.Sub(kmer_set_n, n_workers);
-        kmer_set_k.Sub(kmer_set_n, n_workers);
+        sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
+            bucket_ids, canonical, n_workers);
 
-        kmer_sets_compact_.resize(n + 1);
-        sampled_kmer_sets.resize(n + 1);
+        kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
+            kmer_set_k, canonical, true, n_workers);
 
-        if (n_workers == 1) {
-          kmer_sets_compact_[n] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-              kmer_set_n, canonical, true, n_workers);
-
-          kmer_set_n.Clear();
-
-          sampled_kmer_sets[n] = kmer_sets_compact_[n].GetSampledKmerSet(
-              bucket_ids, canonical, n_workers);
-
-          kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-              kmer_set_j, canonical, true, n_workers);
-
-          kmer_set_j.Clear();
-
-          sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
-              bucket_ids, canonical, n_workers);
-
-          kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-              kmer_set_k, canonical, true, n_workers);
-
-          kmer_set_k.Clear();
-
-          sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
-              bucket_ids, canonical, n_workers);
-        } else {
-          std::vector<std::thread> threads;
-
-          std::atomic_int done = 0;
-
-          threads.emplace_back([&] {
-            kmer_sets_compact_[n] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                kmer_set_n, canonical, true, n_workers / 3);
-
-            kmer_set_n.Clear();
-
-            sampled_kmer_sets[n] = kmer_sets_compact_[n].GetSampledKmerSet(
-                bucket_ids, canonical, n_workers / 3 + done);
-
-            done += n_workers / 3;
-          });
-
-          threads.emplace_back([&] {
-            kmer_sets_compact_[j] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                kmer_set_j, canonical, true, n_workers / 3);
-
-            kmer_set_j.Clear();
-
-            sampled_kmer_sets[j] = kmer_sets_compact_[j].GetSampledKmerSet(
-                bucket_ids, canonical, n_workers / 3 + done);
-
-            done += n_workers / 3;
-          });
-
-          threads.emplace_back([&] {
-            kmer_sets_compact_[k] = KmerSetCompact<K, N, KeyType>::FromKmerSet(
-                kmer_set_k, canonical, true, n_workers - n_workers / 3 * 2);
-
-            kmer_set_k.Clear();
-
-            sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
-                bucket_ids, canonical, n_workers - n_workers / 3 * 2 + done);
-
-            done += n_workers - n_workers / 3 * 2;
-          });
-
-          for (std::thread& t : threads) t.join();
-        }
+        sampled_kmer_sets[k] = kmer_sets_compact_[k].GetSampledKmerSet(
+            bucket_ids, canonical, n_workers);
 
         children_[j].push_back(n);
         children_[k].push_back(n);
