@@ -86,7 +86,7 @@ void Main(const std::vector<std::string>& files) {
     std::int64_t total_size = 0;
 
     for (int i = 0; i < n_datasets; i++) {
-      std::int64_t size = kmer_sets_compact[i].Size();
+      std::int64_t size = kmer_sets_compact[i].Size(n_workers);
       spdlog::info("i = {}, size = {}", i, size);
       total_size += size;
     }

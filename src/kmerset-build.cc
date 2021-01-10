@@ -85,7 +85,8 @@ void Main(const std::string& file_name) {
                                                  n_workers);
   spdlog::info("constructed kmer_set_compact");
 
-  spdlog::info("kmer_set_compact.Size() = {}", kmer_set_compact.Size());
+  spdlog::info("kmer_set_compact.Size() = {}",
+               kmer_set_compact.Size(n_workers));
 
   if (check) {
     const KmerSet<K, N, KeyType> decompressed =

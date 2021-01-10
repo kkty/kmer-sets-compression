@@ -220,7 +220,7 @@ class KmerSetSet {
       boost::asio::thread_pool pool(n_workers);
       for (std::size_t i = 0; i < kmer_sets_compact_.size(); i++) {
         boost::asio::post(
-            pool, [&, i] { total_size += kmer_sets_compact_[i].Size(); });
+            pool, [&, i] { total_size += kmer_sets_compact_[i].Size(1); });
       }
       pool.join();
     }
@@ -319,8 +319,8 @@ class KmerSetSet {
 
       spdlog::debug("j = {}, k = {}, weight = {}", j, k, weight);
 
-      const std::int64_t original_size =
-          kmer_sets_compact_[j].Size() + kmer_sets_compact_[k].Size();
+      const std::int64_t original_size = kmer_sets_compact_[j].Size(n_workers) +
+                                         kmer_sets_compact_[k].Size(n_workers);
 
       spdlog::debug(
           "updating kmer_sets_compact_, sampled_kmer_sets_, and children_");
@@ -384,9 +384,10 @@ class KmerSetSet {
 
       // The change in the number of kmers that are stored in
       // kmer_sets_compact_. It should be negative.
-      const std::int64_t size_diff =
-          kmer_sets_compact_[n].Size() + kmer_sets_compact_[j].Size() +
-          kmer_sets_compact_[k].Size() - original_size;
+      const std::int64_t size_diff = kmer_sets_compact_[n].Size(n_workers) +
+                                     kmer_sets_compact_[j].Size(n_workers) +
+                                     kmer_sets_compact_[k].Size(n_workers) -
+                                     original_size;
 
       total_size += size_diff;
       spdlog::debug("size_diff = {}, total_size = {}", size_diff, total_size);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -64,7 +65,7 @@ TEST(KmerSetCompact, Size) {
       KmerSetCompact<K, N, KeyType>::FromKmerSet(kmer_set, true, true,
                                                  n_workers);
 
-  ASSERT_EQ(kmer_set.Size(), kmer_set_compact.Size());
+  ASSERT_EQ(kmer_set.Size(), kmer_set_compact.Size(n_workers));
 }
 
 TEST(KmerSetCompact, FromAndToKmerSet) {

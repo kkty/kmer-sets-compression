@@ -84,14 +84,26 @@ class KmerSetCompact {
   }
 
   // Returns the number of stored kmers.
-  std::int64_t Size() const {
-    std::vector<std::uint32_t> lengths = GetLengths();
+  std::int64_t Size(int n_workers) const {
+    std::vector<std::uint32_t> lengths = GetLengths(n_workers);
 
-    std::int64_t size = 0;
+    std::atomic_int64_t size = 0;
 
-    for (std::uint32_t length : lengths) {
-      size += length - K + 1;
+    boost::asio::thread_pool pool(n_workers);
+
+    for (const Range& range : Range(0, n_).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        std::int64_t buf = 0;
+
+        for (std::int64_t i : range) {
+          buf += lengths[i] - K + 1;
+        }
+
+        size += buf;
+      });
     }
+
+    pool.join();
 
     return size;
   }
@@ -188,9 +200,13 @@ class KmerSetCompact {
   KmerSetCompact(std::vector<std::string>& spss) {
     n_ = spss.size();
 
+    // lengths[i] stored the length of spss[i], subtracted by K.
     std::vector<std::uint32_t> lengths(n_);
+
+    // positions[i] stores the starting position in data_ for the ith string.
     std::vector<std::int64_t> positions(n_);
 
+    // Calculates positions, lengths, and size of data_.
     {
       std::int64_t size = 0;
 
@@ -198,7 +214,7 @@ class KmerSetCompact {
         positions[i] = size;
 
         std::uint32_t length = spss[i].length();
-        lengths[i] = length;
+        lengths[i] = length - K;
         size += length * 2;
       }
 
@@ -209,7 +225,7 @@ class KmerSetCompact {
       const std::string& s = spss[i];
 
       std::int64_t position = positions[i];
-      int length = lengths[i];
+      int length = lengths[i] + K;
 
       for (int j = 0; j < length; j++) {
         switch (s[j]) {
@@ -235,23 +251,37 @@ class KmerSetCompact {
     {
       lengths_compressed_.resize(streamvbyte_max_compressedbytes(n_));
 
-      std::int64_t size =
-          streamvbyte_encode(lengths.data(), n_, lengths_compressed_.data());
+      std::int64_t size = streamvbyte_encode_0124(lengths.data(), n_,
+                                                  lengths_compressed_.data());
 
       lengths_compressed_.resize(size);
       lengths_compressed_.shrink_to_fit();
     }
   }
 
-  std::vector<std::uint32_t> GetLengths() const {
+  std::vector<std::uint32_t> GetLengths(int n_workers) const {
     std::vector<std::uint32_t> lengths(n_);
-    streamvbyte_decode(lengths_compressed_.data(), lengths.data(), n_);
+
+    streamvbyte_decode_0124(lengths_compressed_.data(), lengths.data(), n_);
+
+    boost::asio::thread_pool pool(n_workers);
+
+    for (const Range& range : Range(0, n_).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
+        for (std::int64_t i : range) {
+          lengths[i] += K;
+        }
+      });
+    }
+
+    pool.join();
+
     return lengths;
   }
 
   // Returns the SPSS as a vector of strings.
   std::vector<std::string> ToStrings(int n_workers) const {
-    std::vector<std::uint32_t> lengths = GetLengths();
+    std::vector<std::uint32_t> lengths = GetLengths(n_workers);
 
     std::vector<std::int64_t> positions(n_);
 
@@ -298,8 +328,15 @@ class KmerSetCompact {
     return spss;
   }
 
+  // Number of stored strings.
   std::int64_t n_;
+
+  // Lengths of each string.
+  // Its size should be equal to n_.
   std::vector<std::uint8_t> lengths_compressed_;
+
+  // All the strings are saved to this one vector. It is more memory efficient
+  // than std::vector<std::vector<bool>>.
   std::vector<bool> data_;
 };
 
