@@ -10,7 +10,7 @@ jobs:
         id: cache
         with:
           path: '**/extern'
-          key: ${{ runner.os }}-${{ hashFiles('**/extern/install.sh') }}
+          key: v1-${{ runner.os }}-${{ hashFiles('**/extern/install.sh') }}
       - run: PREFIX=$(pwd) ./install.sh
         if: steps.cache.outputs.cache-hit != 'true'
         working-directory: extern
