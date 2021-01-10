@@ -2119,38 +2119,49 @@ KmerSet<K, N, KeyType> GetKmerSetFromSPSS(const std::vector<std::string>& spss,
     kmer_set.Reserve(size);
   }
 
+  const int n_buckets = 1 << N;
+
   // Populates kmer_set.
   {
     boost::asio::thread_pool pool(n_workers);
 
-    std::mutex mu;
+    std::vector<std::mutex> mus(n_buckets);
 
     for (const Range& range :
          Range(0, spss.size()).Split(n_workers * n_workers)) {
       boost::asio::post(pool, [&, range] {
-        std::vector<Kmer<K>> buf;
-
-        {
-          std::int64_t size = 0;
-          for (std::int64_t i : range) {
-            size += spss[i].length() - K + 1;
-          }
-          buf.reserve(size);
-        }
+        std::vector<std::vector<KeyType>> buf(n_buckets);
 
         for (std::int64_t i : range) {
           const std::string& s = spss[i];
           for (int j = 0; j < static_cast<int>(s.length()) - K + 1; j++) {
             Kmer<K> kmer(s.substr(j, K));
             if (canonical) kmer = kmer.Canonical();
-            buf.push_back(kmer);
+
+            int bucket;
+            KeyType key;
+            std::tie(bucket, key) =
+                GetBucketAndKeyFromKmer<K, N, KeyType>(kmer);
+
+            buf[bucket].push_back(key);
           }
         }
 
-        std::lock_guard lck(mu);
+        std::vector<bool> done(n_buckets);
+        int done_count = 0;
 
-        for (const Kmer<K>& kmer : buf) {
-          kmer_set.Add(kmer);
+        while (done_count < n_buckets) {
+          for (int i = 0; i < n_buckets; i++) {
+            if (!done[i] && mus[i].try_lock()) {
+              for (KeyType key : buf[i]) {
+                kmer_set.Add(GetKmerFromBucketAndKey<K, N, KeyType>(i, key));
+              }
+
+              mus[i].unlock();
+              done[i] = true;
+              done_count += 1;
+            }
+          }
         }
       });
     }
