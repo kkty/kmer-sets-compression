@@ -1,5 +1,3 @@
-#include "core/spss.h"
-
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -15,6 +13,7 @@
 #include "absl/strings/str_format.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
+#include "core/spss.h"
 #include "flags.h"
 #include "io.h"
 #include "log.h"
@@ -52,11 +51,6 @@ void Main(const std::string& file_name) {
 
   spdlog::info("kmer_set.Size() = {}", kmer_set.Size());
   spdlog::info("kmer_set.Hash() = {}", kmer_set.Hash(n_workers));
-
-  {
-    const std::int64_t weight = GetSPSSWeightCanonical(kmer_set, n_workers);
-    spdlog::info("weight = {}", weight);
-  }
 
   spdlog::info("constructing unitigs");
 
