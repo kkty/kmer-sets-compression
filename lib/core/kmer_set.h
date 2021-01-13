@@ -4,8 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
-#include <string>
-#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -16,7 +14,6 @@
 #include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
-#include "core/io.h"
 #include "core/kmer.h"
 #include "core/range.h"
 
@@ -33,6 +30,7 @@ std::pair<int, KeyType> GetBucketAndKeyFromKmer(const Kmer<K>& kmer) {
   return std::make_pair(bucket_id, key);
 }
 
+// Inverse of GetBucketAndKeyFromKmer().
 template <int K, int N, typename KeyType>
 Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
   const int n_key_bits = K * 2 - N;
@@ -45,11 +43,21 @@ Kmer<K> GetKmerFromBucketAndKey(int bucket_id, KeyType key) {
 }
 
 // KmerSet can be used to hold a unique set of kmers.
-// As data are divided into multiple buckets, some operations can be done
+//
+// The data is divided to 1 << N buckets and keys of 2 * K - N bits are saved to
+// each bucket. The bucket id and the key for a kmer can be calculated with
+// GetBucketAndKeyFromKmer().
+//
+// All the const methods are thread-safe, and it is also safe to add / remove
+// kmers from multiple threads if they belong to different buckets.
+//
+// As data is divided into multiple buckets, some operations can be done
 // efficiently in parallel. E.g., it supports multi-threaded operations for
 // merging 2 KmerSets and finding all the kmers that match a condition.
 template <int K, int N, typename KeyType>
 class KmerSet {
+  static_assert(2 * K - N <= sizeof(KeyType) * 8);
+
  public:
   KmerSet() : buckets_(kBucketsNum) {}
 
@@ -104,6 +112,7 @@ class KmerSet {
   }
 
   // Finds all the k-mers that match the condition.
+  // If an estimate of the resulting size is given, it is used for speed-up.
   template <typename PredType>
   std::vector<Kmer<K>> Find(PredType pred, int n_workers,
                             std::int64_t estimated_size = 0) const {
@@ -204,30 +213,6 @@ class KmerSet {
     return count;
   }
 
-  // Returns the number of kmers that is in the both of two sets.
-  std::int64_t Common(const KmerSet& other, int n_workers) const {
-    std::atomic_int64_t count = 0;
-
-    other.ForEachBucket(
-        [&](const Bucket& other_bucket, int bucket_id) {
-          for (const KeyType& key : other_bucket) {
-            if (buckets_[bucket_id].find(key) != buckets_[bucket_id].end())
-              count += 1;
-          }
-        },
-        n_workers);
-
-    return count;
-  }
-
-  // Returns the Jaccard similarity of two sets.
-  double Similarity(const KmerSet& other, int n_workers) const {
-    std::int64_t diff = Diff(other, n_workers);
-    std::int64_t common = Common(other, n_workers);
-
-    return static_cast<double>(common) / static_cast<double>(diff + common);
-  }
-
   // Returns true if two sets are the same.
   bool Equals(const KmerSet& other, int n_workers) const {
     return Diff(other, n_workers) == 0;
@@ -267,7 +252,7 @@ class KmerSet {
 
   void Add(int bucket, KeyType key) { buckets_[bucket].insert(key); }
 
-  // Executes a function for each bucket (in parallel.)
+  // Executes a function for each bucket (in parallel).
   //
   // Example:
   //   ForEachBucket([&](const Bucket& bucket, int bucket_id) { ... },
@@ -300,18 +285,21 @@ class KmerSet {
   friend class KmerCounter;
 };
 
+// Calculates the union of two KmerSets.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> Add(KmerSet<K, N, KeyType> lhs,
                            const KmerSet<K, N, KeyType>& rhs, int n_workers) {
   return lhs.Add(rhs, n_workers);
 }
 
+// Calculates the difference between two KmerSets.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> Sub(KmerSet<K, N, KeyType> lhs,
                            const KmerSet<K, N, KeyType>& rhs, int n_workers) {
   return lhs.Sub(rhs, n_workers);
 }
 
+// Calculates the intersection between two KmerSets.
 template <int K, int N, typename KeyType>
 KmerSet<K, N, KeyType> Intersection(KmerSet<K, N, KeyType> lhs,
                                     const KmerSet<K, N, KeyType>& rhs,
