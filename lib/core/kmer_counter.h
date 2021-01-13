@@ -7,7 +7,6 @@
 #include <limits>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -39,8 +38,13 @@ T AddWithMax(T x, T y) {
 }
 
 // KmerCounter can be used to count kmers.
-// Data is divided to 1 << N buckets so that some operations can be done
-// efficiently in parallel.
+//
+// The data is divided to 1 << N buckets and keys of 2 * K - N bits (in the form
+// of KeyType) and values of ValueType are saved to each bucket.
+//
+// As data is divided into multiple buckets, some operations are performed
+// efficiently in parallel, including the conversion to KmerSet and the counting
+// of kmers in FASTA files.
 template <int K, int N, typename KeyType, typename ValueType = std::uint8_t>
 class KmerCounter {
  public:
@@ -62,10 +66,11 @@ class KmerCounter {
     KmerCounter kmer_counter;
 
     std::vector<std::mutex> buckets_mutexes(kBucketsNum);
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
 
-    for (const Range& range : Range(0, reads.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range :
+         Range(0, reads.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         std::vector<Bucket> buf(kBucketsNum);
 
         for (std::int64_t i : range) {
@@ -122,7 +127,7 @@ class KmerCounter {
       });
     }
 
-    for (std::thread& thread : threads) thread.join();
+    pool.join();
 
     return kmer_counter;
   }
@@ -161,11 +166,12 @@ class KmerCounter {
     }
 
     std::vector<std::string> reads(lines.size() / 2);
-    std::vector<std::thread> threads;
+    boost::asio::thread_pool pool(n_workers);
     std::atomic_bool is_valid = true;
 
-    for (const Range& range : Range(0, lines.size()).Split(n_workers)) {
-      threads.emplace_back([&, range] {
+    for (const Range& range :
+         Range(0, lines.size()).Split(n_workers * n_workers)) {
+      boost::asio::post(pool, [&, range] {
         for (int i : range) {
           std::string& line = lines[i];
 
@@ -190,7 +196,7 @@ class KmerCounter {
       });
     }
 
-    for (std::thread& t : threads) t.join();
+    pool.join();
 
     if (!is_valid) {
       return absl::FailedPreconditionError("invalid FASTA file");
@@ -207,9 +213,7 @@ class KmerCounter {
   std::pair<KmerSet<K, N, KeyType>, std::int64_t> ToKmerSet(
       ValueType cutoff, int n_workers) const {
     KmerSet<K, N, KeyType> set;
-    std::mutex mu;
 
-    std::vector<std::thread> threads;
     std::atomic_int64_t cutoff_count = 0;
 
     ForEachBucket(
@@ -229,7 +233,9 @@ class KmerCounter {
             buf.push_back(key);
           }
 
-          set.buckets_[bucket_id].insert(buf.begin(), buf.end());
+          for (KeyType key : buf) {
+            set.Add(GetKmerFromBucketAndKey<K, N, KeyType>(bucket_id, key));
+          }
         },
         n_workers);
 
@@ -255,43 +261,6 @@ class KmerCounter {
 
     buckets_[bucket][key] = AddWithMax(buckets_[bucket][key], v);
     return *this;
-  }
-
-  // For each kmer in "other", increments the count for that kmer.
-  KmerCounter& Add(const KmerCounter& other, int n_workers) {
-    other.ForEachBucket(
-        [&](const Bucket& other_bucket, int bucket_id) {
-          for (const std::pair<const KeyType, ValueType>& p : other_bucket) {
-            KeyType key;
-            ValueType value;
-            std::tie(key, value) = p;
-
-            buckets_[bucket_id][key] =
-                AddWithMax(buckets_[bucket_id][key], value);
-          }
-        },
-        n_workers);
-
-    return *this;
-  }
-
-  // Constructs a KmerCounter from a KmerSet. The counts are set to 1.
-  static KmerCounter FromKmerSet(const KmerSet<K, N, KeyType>& kmer_set,
-                                 int n_workers) {
-    KmerCounter kmer_counter;
-
-    kmer_set.ForEachBucket(
-        [&](const typename KmerSet<K, N, KeyType>::Bucket& bucket,
-            int bucket_id) {
-          kmer_counter.buckets_[bucket_id].reserve(bucket.size());
-
-          for (const KeyType& key : bucket) {
-            kmer_counter.buckets_[bucket_id][key] = 1;
-          }
-        },
-        n_workers);
-
-    return kmer_counter;
   }
 
  private:

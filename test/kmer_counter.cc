@@ -37,7 +37,7 @@ TEST(KmerCounter, AddAndGet) {
   ASSERT_EQ(kmer_counter.Get(kmer3), 3);
 }
 
-TEST(KmerCounter, ToAndFromKmerSet) {
+TEST(KmerCounter, ToKmerSet) {
   const int K = 5;
   const int N = 3;
   const int n_workers = 1;
@@ -59,13 +59,6 @@ TEST(KmerCounter, ToAndFromKmerSet) {
   ASSERT_EQ(kmer_set.Size(), 2);
   ASSERT_TRUE(kmer_set.Contains(Kmer<K>("AAAAA")));
   ASSERT_TRUE(kmer_set.Contains(Kmer<K>("TTTTT")));
-
-  KmerCounter<K, N, KeyType, ValueType> reconstructed_kmer_counter =
-      KmerCounter<K, N, KeyType, ValueType>::FromKmerSet(kmer_set, n_workers);
-
-  ASSERT_EQ(reconstructed_kmer_counter.Size(), 2);
-  ASSERT_EQ(reconstructed_kmer_counter.Get(Kmer<K>("AAAAA")), n_workers);
-  ASSERT_EQ(reconstructed_kmer_counter.Get(Kmer<K>("TTTTT")), n_workers);
 }
 
 TEST(KmerCounter, FromReads) {

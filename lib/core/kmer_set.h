@@ -280,9 +280,6 @@ class KmerSet {
 
     pool.join();
   }
-
-  template <int, int, typename, typename>
-  friend class KmerCounter;
 };
 
 // Calculates the union of two KmerSets.
