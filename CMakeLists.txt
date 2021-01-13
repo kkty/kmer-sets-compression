@@ -1,12 +1,10 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.17)
 
-project(research)
+project(kmer-sets-compression)
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -march=native -fsanitize=address")
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_LINKER_FLAGS_DEBUG "-fsanitize=address")
 
 find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
@@ -21,7 +19,6 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 include_directories(lib)
 
 link_libraries(
-        mimalloc
         spdlog::spdlog
         absl::strings
         absl::flat_hash_set
@@ -34,6 +31,12 @@ link_libraries(
         ${Boost_LIBRARIES}
         ${streamvbyte_LIBRARIES}
 )
+
+# mimalloc does not work on the latest version of MacOS. See https://github.com/microsoft/mimalloc/issues/347.
+if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    link_libraries(mimalloc)
+endif ()
+
 
 foreach (
         NAME
