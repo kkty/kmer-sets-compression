@@ -37,6 +37,7 @@
 
 namespace internal {
 
+// Adjacency list representation of a graph.
 using AdjacencyList = absl::flat_hash_map<int, std::vector<int>>;
 
 // Serializes an AdjacencyList to a string. The string only contains digits and
@@ -86,8 +87,22 @@ AdjacencyList DeserializeAdjacencyList(const std::string& s) {
 }  // namespace internal
 
 // KmerSetSet can be used to represent multiple kmer sets efficiently.
+//
+// It is possible to compress multiple kmer sets, provided in the form of
+// KmerSetCompact. It is also possible to decompress the data and return the
+// original kmer set in the form of KmerSet.
+//
+// It is possible to dump data to files in a specified directory, or to load
+// data from files in a directory. Dumped data can also be utilized by
+// KmerSetSetReader.
+//
+// Internally, a kmer (represented by 2 * K bits) is divided into N higher bits
+// and 2 * K - N lower bits, stored in KeyType. It is recommended to set N in
+// the range of [10, 14].
 template <int K, int N, typename KeyType>
 class KmerSetSet {
+  static_assert(2 * K - N <= sizeof(KeyType) * 8);
+
  public:
   KmerSetSet() = default;
 
@@ -231,7 +246,7 @@ class KmerSetSet {
            Range(0, kmer_sets_compact_.size()).Split(n_workers * n_workers)) {
         boost::asio::post(pool, [&, range] {
           for (int i : range) {
-            total += kmer_sets_compact_[i].Weight(1);
+            total += kmer_sets_compact_[i].Weight();
           }
         });
       }

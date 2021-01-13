@@ -15,6 +15,7 @@
 #include "absl/status/statusor.h"
 #include "boost/asio/post.hpp"
 #include "boost/asio/thread_pool.hpp"
+#include "core/io.h"
 #include "core/kmer.h"
 #include "core/kmer_set.h"
 #include "core/range.h"
@@ -23,7 +24,8 @@
 
 // KmerSetCompact can store a set of kmers efficiently by using the binary form
 // of SPSS. It is not possible to add or remove kmers from the structure, but it
-// is possible to dump data to a file or load data from a file.
+// supports conversion from a KmerSet and conversion to a KmerSet. Also, it
+// supports dumping data to a file and loading data from a file.
 template <int K, int N, typename KeyType>
 class KmerSetCompact {
  public:
@@ -64,8 +66,8 @@ class KmerSetCompact {
 
   // Loads data from a file.
   // Example:
-  //   ... = Load("foo.kmersetcompact.bz2", "bzip2 -d", n_workers);
-  //   ... = Load("foo.kmersetcompact", "", n_workers);
+  //   ... = Load("foo.kmersetcompact.bz2", "bzip2 -d");
+  //   ... = Load("foo.kmersetcompact", "");
   static absl::StatusOr<KmerSetCompact> Load(const std::string& file_name,
                                              const std::string& decompressor) {
     std::vector<std::string> lines;
@@ -110,30 +112,7 @@ class KmerSetCompact {
   }
 
   // Returns the sum of each string's length.
-  std::int64_t Weight(std::int64_t n_workers) const {
-    std::atomic_int64_t weight = 0;
-
-    std::vector<std::uint32_t> lengths = GetLengths(n_workers);
-
-    boost::asio::thread_pool pool(n_workers);
-
-    for (const Range& range :
-         Range(0, lengths.size()).Split(n_workers * n_workers)) {
-      boost::asio::post(pool, [&, range] {
-        std::int64_t buf = 0;
-
-        for (std::int64_t i : range) {
-          buf += lengths[i];
-        }
-
-        weight += buf;
-      });
-    }
-
-    pool.join();
-
-    return static_cast<std::int64_t>(weight);
-  }
+  std::int64_t Weight() const { return data_.size() / 2; }
 
   // Constructs a structure like KmerSet, with selected buckets.
   // Each bucket is a vector of KeyType instead of a hash set, and they are
@@ -286,6 +265,7 @@ class KmerSetCompact {
     }
   }
 
+  // Returns the lengths of the stored strings.
   std::vector<std::uint32_t> GetLengths(int n_workers) const {
     std::vector<std::uint32_t> lengths(n_);
 
@@ -306,7 +286,7 @@ class KmerSetCompact {
     return lengths;
   }
 
-  // Returns the SPSS as a vector of strings.
+  // Returns the stored strings as a vector.
   std::vector<std::string> ToStrings(int n_workers) const {
     std::vector<std::uint32_t> lengths = GetLengths(n_workers);
 
@@ -316,7 +296,7 @@ class KmerSetCompact {
       positions[i + 1] = positions[i] + lengths[i] * 2;
     }
 
-    std::vector<std::string> spss(n_);
+    std::vector<std::string> strings(n_);
 
     boost::asio::thread_pool pool(n_workers);
 
@@ -326,7 +306,7 @@ class KmerSetCompact {
           const int length = lengths[i];
           const std::int64_t position = positions[i];
 
-          spss[i].resize(length);
+          strings[i].resize(length);
 
           for (int j = 0; j < length; j++) {
             const bool first = data_[position + 2 * j];
@@ -334,15 +314,15 @@ class KmerSetCompact {
 
             if (first) {
               if (second) {
-                spss[i][j] = 'T';
+                strings[i][j] = 'T';
               } else {
-                spss[i][j] = 'G';
+                strings[i][j] = 'G';
               }
             } else {
               if (second) {
-                spss[i][j] = 'C';
+                strings[i][j] = 'C';
               } else {
-                spss[i][j] = 'A';
+                strings[i][j] = 'A';
               }
             }
           }
@@ -352,18 +332,18 @@ class KmerSetCompact {
 
     pool.join();
 
-    return spss;
+    return strings;
   }
 
   // Number of stored strings.
   std::int64_t n_;
 
-  // Lengths of each string.
-  // Its size should be equal to n_.
+  // Lengths of each string, subtracted by K and compressed with StreamVByte.
   std::vector<std::uint8_t> lengths_compressed_;
 
-  // All the strings are saved to this one vector. It is more memory efficient
-  // than std::vector<std::vector<bool>>.
+  // All the strings are saved to this one vector in a binary format (00 for A,
+  // 01 for C, 10 for G, and 11 for T). It is more memory efficient than
+  // std::vector<std::vector<bool>>.
   std::vector<bool> data_;
 };
 
