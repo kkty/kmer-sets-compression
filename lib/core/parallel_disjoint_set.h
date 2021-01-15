@@ -8,17 +8,19 @@
 
 // ParallelDisjointSet is an implementation of the disjoint set data structure
 // that can be used by multiple threads.
+//
 // It is based on "Anderson, R. J., & Woll, H. (1991, January). Wait-free
 // parallel algorithms for the union-find problem. In Proceedings of the
 // twenty-third annual ACM symposium on Theory of computing (pp. 370-380)".
 class ParallelDisjointSet {
  public:
-  ParallelDisjointSet(int size) : a_(size) {
+  explicit ParallelDisjointSet(int size) : a_(size) {
     for (int i = 0; i < size; i++) {
       a_[i] = i;
     }
   }
 
+  // Returns the root of x.
   int Find(int x) {
     int y = x;
 
@@ -37,6 +39,7 @@ class ParallelDisjointSet {
     return x;
   }
 
+  // Returns true if x and y have the same root.
   bool IsSame(int x, int y) {
     while (true) {
       x = Find(x);
@@ -46,6 +49,7 @@ class ParallelDisjointSet {
     }
   }
 
+  // Modifies the structure so that x and y have the same root.
   void Unite(int x, int y) {
     while (true) {
       x = Find(x);
@@ -74,10 +78,14 @@ class ParallelDisjointSet {
   }
 
  private:
+  // Returns the rank of i.
   int GetRank(int i) const { return a_[i] >> 32; }
 
+  // Returns the parent of i.
   int GetNext(int i) const { return (a_[i] << 32) >> 32; }
 
+  // Sets y as the root of x. The rank of x is also updated from old_rank to
+  // new_rank. Returns true if the update succeeded.
   bool UpdateRoot(int x, int old_rank, int y, int new_rank) {
     std::uint64_t old = a_[x];
     if ((old << 32) >> 32 != static_cast<std::uint64_t>(x) ||
@@ -97,6 +105,8 @@ class ParallelDisjointSet {
     return x < y;
   }
 
+  // Upper 32 bits are used to store ranks and lower 32 bits are used to store
+  // parents.
   std::vector<std::atomic_uint64_t> a_;
 };
 
