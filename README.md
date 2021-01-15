@@ -1,8 +1,10 @@
+# Compression of Multiple k-mer Sets
+
 ## Requirements
 
 - Unix-like system
 - C++ compiler with C++17 support
-- [CMake](https://cmake.org/)
+- [CMake](https://cmake.org/) (>= 3.17)
 
 ### Tested Configurations
 
@@ -15,7 +17,9 @@ The following script installs [Abseil](https://abseil.io/),
 [Boost](https://www.boost.org/),
 [GoogleTest](https://github.com/google/googletest),
 [Google Benchmark](https://github.com/google/benchmark),
-[mimalloc](https://github.com/microsoft/mimalloc), and [spdlog](https://github.com/gabime/spdlog) in `extern` directory.
+[mimalloc](https://github.com/microsoft/mimalloc),
+[streamvbyte](https://github.com/lemire/streamvbyte), and [spdlog](https://github.com/gabime/spdlog) in `extern`
+directory.
 
 ```shell
 cd extern
