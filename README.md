@@ -116,7 +116,6 @@ kmerset-multiple-compress: Compresses multiple k-mer sets. Usage: ./kmerset-mult
     --k (the length of k-mers); default: 15;
     --out (directory path to save dumped files); default: "";
     --out_graph (path to save dumped DOT file); default: "";
-    --parallel_input (read files in parallel); default: false;
     --workers (number of threads to use); default: 1;
 
 Try --helpfull to get a list of all flags.
@@ -211,3 +210,7 @@ to [ctest documentation](https://cmake.org/cmake/help/latest/manual/ctest.1.html
 - `src` contains source codes for executables. Each `.cc` file corresponds to one executable with the same name.
 - `test` contains source code for functions and classes defined in `lib/core`.
 - `benchmark` contains source code for benchmarks for critical functions and classes.
+
+## Note
+
+- Currently, the value of `k` can be 15, 19, or 23.
