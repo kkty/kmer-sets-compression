@@ -5,11 +5,13 @@
 - Unix-like system
 - C++ compiler with C++17 support
 - [CMake](https://cmake.org/) (>= 3.17)
+- Processor supported by [streamvbyte](https://github.com/lemire/streamvbyte)
 
 ### Tested Configurations
 
-- Ubuntu 20.04, GCC 10, and CMake 3.19
-- MacOS Big Sur, Clang 12, and CMake 3.18
+- Ubuntu 20.04, GCC 10, CMake 3.19, and Intel Cascade Lake
+- CentOS 7, GCC 10, CMake 3.17, and Intel Skylake
+- MacOS Big Sur, Clang 12, CMake 3.18, and Intel Ice Lake
 
 ## Installing Dependencies
 
